@@ -1,0 +1,32 @@
+[cmake]
+version = "3.18"
+cmkr-include = "cmake/cmkr.cmake"
+
+[project]
+name = "llvm-nanobind"
+
+[variables]
+CMAKE_EXPORT_COMPILE_COMMANDS = true
+
+# TODO: when finding Python 3.14 this produces abi3 modules that are not compatible with 3.12
+[find-package.Python]
+version = "3.12"
+components = ["Interpreter", "Development.Module", "Development.SABIModule"]
+
+[find-package.LLVM]
+
+[fetch-content.nanobind]
+git = "https://github.com/wjakob/nanobind"
+tag = "v2.9.2"
+include-after = ["cmake/nanobind.cmake"]
+
+[template.nanobind_module]
+type = "shared"
+add-function = "nanobind_add_typed_module"
+pass-sources = true
+
+[target.llvm]
+type = "nanobind_module"
+sources = ["src/llvm-nanobind.cpp"]
+compile-features = ["cxx_std_23"]
+link-libraries = ["::LLVM-C"]
