@@ -129,25 +129,6 @@ struct LLVMModuleManager : NoMoveCopy {
   }
 };
 
-#if 0
-struct PauseContext { State &state; };
-
-auto state = nb::class_<State>(m, "State")
-   .def(...);
-
-nb::class_<PauseContext>(state, "PauseContext")
-    .def("__enter__", [](PauseContext &ctx) { ctx.state.PauseTiming(); })
-    .def("__exit__", [](PauseContext &ctx, nb::handle, nb::handle, nb::handle) { ctx.state.ResumeTiming(); },
-         nb::arg().none(), nb::arg().none(), nb::arg().none());
-
-state.def("pause", [](State &s) { return PauseContext{s}; }, nb::rv_policy::reference_internal);
-#endif
-
-static LLVMContext &global_context() {
-  static LLVMContext context(true);
-  return context;
-}
-
 // Reference: https://nanobind.readthedocs.io/en/latest/basics.html
 NB_MODULE(llvm, m) {
   nanobind::class_<LLVMContext>(m, "LLVMContext")
@@ -169,12 +150,15 @@ When true, only GlobalValue names will be available in the IR.)")
           },
           R"(Create an LLVMModule in this context.)");
 
-  m.def("global_context", &global_context, R"(Get the global LLVM Context.)",
-        nanobind::rv_policy::reference);
+  m.def(
+      "global_context",
+      [] {
+        static LLVMContext context(true);
+        return &context;
+      },
+      R"(Get the global LLVM Context.)", nanobind::rv_policy::reference);
 
   nanobind::class_<LLVMContextManager>(m, "LLVMContextManager")
-      /*.def(nanobind::init<>(),
-           R"(Wrapper class for safely managing an LLVMContext.)")*/
       .def("__enter__", &LLVMContextManager::enter,
            R"(Enter a new LLVM Context.)",
            nanobind::rv_policy::reference_internal)
@@ -198,9 +182,6 @@ When true, only GlobalValue names will be available in the IR.)")
           R"(Get or set the data layout string for this module.)");
 
   nanobind::class_<LLVMModuleManager>(m, "LLVMModuleManager")
-      /*.def(nanobind::init<const std::string &, LLVMContext *>(), "name"_a,
-           "context"_a = nullptr,
-           R"(Wrapper class for safely managing an LLVMModule.)")*/
       .def("__enter__", &LLVMModuleManager::enter, R"(Create the module.)",
            nanobind::rv_policy::reference_internal)
       .def("__exit__", &LLVMModuleManager::exit, R"(Destroy the module.)",
