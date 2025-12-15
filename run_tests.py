@@ -41,7 +41,19 @@ TESTS = [
 PYTHON_TESTS = {
     "test_context": Path("test_context.py"),
     "test_module": Path("test_module.py"),
+    "test_types": Path("test_types.py"),
+    "test_function": Path("test_function.py"),
+    "test_basic_block": Path("test_basic_block.py"),
+    "test_builder_arithmetic": Path("test_builder_arithmetic.py"),
+    "test_builder_memory": Path("test_builder_memory.py"),
+    "test_builder_control_flow": Path("test_builder_control_flow.py"),
+    "test_builder_casts": Path("test_builder_casts.py"),
+    "test_builder_cmp": Path("test_builder_cmp.py"),
+    "test_constants": Path("test_constants.py"),
+    "test_globals": Path("test_globals.py"),
+    "test_phi": Path("test_phi.py"),
     "test_factorial": Path("test_factorial.py"),
+    "test_struct": Path("test_struct.py"),
 }
 
 

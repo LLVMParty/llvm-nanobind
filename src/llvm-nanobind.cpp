@@ -151,6 +151,13 @@ struct LLVMTypeWrapper {
       return std::nullopt;
     return std::string(name);
   }
+
+  bool is_vararg_function() const {
+    check_valid();
+    if (!is_function())
+      throw LLVMInvalidOperationError("Type is not a function type");
+    return LLVMIsFunctionVarArg(m_ref);
+  }
 };
 
 // =============================================================================
@@ -215,6 +222,22 @@ struct LLVMValueWrapper {
   bool is_poison() const {
     check_valid();
     return LLVMIsPoison(m_ref);
+  }
+
+  std::optional<LLVMValueWrapper> next_global() const {
+    check_valid();
+    LLVMValueRef next = LLVMGetNextGlobal(m_ref);
+    if (!next)
+      return std::nullopt;
+    return LLVMValueWrapper(next, m_context_token);
+  }
+
+  std::optional<LLVMValueWrapper> prev_global() const {
+    check_valid();
+    LLVMValueRef prev = LLVMGetPreviousGlobal(m_ref);
+    if (!prev)
+      return std::nullopt;
+    return LLVMValueWrapper(prev, m_context_token);
   }
 };
 
@@ -288,6 +311,21 @@ struct LLVMBasicBlockWrapper {
     if (!inst)
       return std::nullopt;
     return LLVMValueWrapper(inst, m_context_token);
+  }
+
+  // Get parent function - declared here, defined after LLVMFunctionWrapper
+  LLVMFunctionWrapper parent() const;
+
+  void move_before(const LLVMBasicBlockWrapper &other) {
+    check_valid();
+    other.check_valid();
+    LLVMMoveBasicBlockBefore(m_ref, other.m_ref);
+  }
+
+  void move_after(const LLVMBasicBlockWrapper &other) {
+    check_valid();
+    other.check_valid();
+    LLVMMoveBasicBlockAfter(m_ref, other.m_ref);
   }
 };
 
@@ -382,12 +420,37 @@ struct LLVMFunctionWrapper : LLVMValueWrapper {
     return LLVMBasicBlockWrapper(bb, m_context_token);
   }
 
+  std::vector<LLVMBasicBlockWrapper> basic_blocks() const {
+    check_valid();
+    std::vector<LLVMBasicBlockWrapper> result;
+    for (LLVMBasicBlockRef bb = LLVMGetFirstBasicBlock(m_ref); bb;
+         bb = LLVMGetNextBasicBlock(bb)) {
+      result.emplace_back(bb, m_context_token);
+    }
+    return result;
+  }
+
+  void append_existing_basic_block(const LLVMBasicBlockWrapper &bb) {
+    check_valid();
+    bb.check_valid();
+    LLVMAppendExistingBasicBlock(m_ref, bb.m_ref);
+  }
+
   void erase() {
     check_valid();
     LLVMDeleteFunction(m_ref);
     m_ref = nullptr;
   }
 };
+
+// Implementation of LLVMBasicBlockWrapper::parent() - needs LLVMFunctionWrapper
+inline LLVMFunctionWrapper LLVMBasicBlockWrapper::parent() const {
+  check_valid();
+  LLVMValueRef parent_fn = LLVMGetBasicBlockParent(m_ref);
+  if (!parent_fn)
+    throw LLVMInvalidOperationError("BasicBlock has no parent function");
+  return LLVMFunctionWrapper(parent_fn, m_context_token);
+}
 
 // =============================================================================
 // Builder Wrapper
@@ -505,6 +568,17 @@ struct LLVMBuilderWrapper : NoMoveCopy {
         m_context_token);
   }
 
+  LLVMValueWrapper nuw_sub(const LLVMValueWrapper &lhs,
+                           const LLVMValueWrapper &rhs,
+                           const std::string &name = "") {
+    check_valid();
+    lhs.check_valid();
+    rhs.check_valid();
+    return LLVMValueWrapper(
+        LLVMBuildNUWSub(m_ref, lhs.m_ref, rhs.m_ref, name.c_str()),
+        m_context_token);
+  }
+
   LLVMValueWrapper mul(const LLVMValueWrapper &lhs, const LLVMValueWrapper &rhs,
                        const std::string &name = "") {
     check_valid();
@@ -522,6 +596,17 @@ struct LLVMBuilderWrapper : NoMoveCopy {
     rhs.check_valid();
     return LLVMValueWrapper(
         LLVMBuildNSWMul(m_ref, lhs.m_ref, rhs.m_ref, name.c_str()),
+        m_context_token);
+  }
+
+  LLVMValueWrapper nuw_mul(const LLVMValueWrapper &lhs,
+                           const LLVMValueWrapper &rhs,
+                           const std::string &name = "") {
+    check_valid();
+    lhs.check_valid();
+    rhs.check_valid();
+    return LLVMValueWrapper(
+        LLVMBuildNUWMul(m_ref, lhs.m_ref, rhs.m_ref, name.c_str()),
         m_context_token);
   }
 
@@ -543,6 +628,17 @@ struct LLVMBuilderWrapper : NoMoveCopy {
     rhs.check_valid();
     return LLVMValueWrapper(LLVMBuildUDiv(m_ref, lhs.m_ref, rhs.m_ref, name.c_str()),
                             m_context_token);
+  }
+
+  LLVMValueWrapper exact_sdiv(const LLVMValueWrapper &lhs,
+                              const LLVMValueWrapper &rhs,
+                              const std::string &name = "") {
+    check_valid();
+    lhs.check_valid();
+    rhs.check_valid();
+    return LLVMValueWrapper(
+        LLVMBuildExactSDiv(m_ref, lhs.m_ref, rhs.m_ref, name.c_str()),
+        m_context_token);
   }
 
   LLVMValueWrapper srem(const LLVMValueWrapper &lhs,
@@ -622,6 +718,14 @@ struct LLVMBuilderWrapper : NoMoveCopy {
     check_valid();
     val.check_valid();
     return LLVMValueWrapper(LLVMBuildNeg(m_ref, val.m_ref, name.c_str()),
+                            m_context_token);
+  }
+
+  LLVMValueWrapper nsw_neg(const LLVMValueWrapper &val,
+                           const std::string &name = "") {
+    check_valid();
+    val.check_valid();
+    return LLVMValueWrapper(LLVMBuildNSWNeg(m_ref, val.m_ref, name.c_str()),
                             m_context_token);
   }
 
@@ -953,6 +1057,17 @@ struct LLVMBuilderWrapper : NoMoveCopy {
         m_context_token);
   }
 
+  LLVMValueWrapper int_cast2(const LLVMValueWrapper &val,
+                             const LLVMTypeWrapper &ty, bool is_signed,
+                             const std::string &name = "") {
+    check_valid();
+    val.check_valid();
+    ty.check_valid();
+    return LLVMValueWrapper(
+        LLVMBuildIntCast2(m_ref, val.m_ref, ty.m_ref, is_signed, name.c_str()),
+        m_context_token);
+  }
+
   // Control flow
   LLVMValueWrapper ret(const LLVMValueWrapper &val) {
     check_valid();
@@ -1143,12 +1258,59 @@ struct LLVMModuleWrapper : NoMoveCopy {
                             m_context_token);
   }
 
+  LLVMValueWrapper add_global_in_address_space(const LLVMTypeWrapper &ty,
+                                               const std::string &name,
+                                               unsigned address_space) {
+    check_valid();
+    ty.check_valid();
+    return LLVMValueWrapper(
+        LLVMAddGlobalInAddressSpace(m_ref, ty.m_ref, name.c_str(), address_space),
+        m_context_token);
+  }
+
   std::optional<LLVMValueWrapper> get_global(const std::string &name) {
     check_valid();
     LLVMValueRef global = LLVMGetNamedGlobal(m_ref, name.c_str());
     if (!global)
       return std::nullopt;
     return LLVMValueWrapper(global, m_context_token);
+  }
+
+  std::optional<LLVMValueWrapper> first_global() {
+    check_valid();
+    LLVMValueRef g = LLVMGetFirstGlobal(m_ref);
+    if (!g)
+      return std::nullopt;
+    return LLVMValueWrapper(g, m_context_token);
+  }
+
+  std::optional<LLVMValueWrapper> last_global() {
+    check_valid();
+    LLVMValueRef g = LLVMGetLastGlobal(m_ref);
+    if (!g)
+      return std::nullopt;
+    return LLVMValueWrapper(g, m_context_token);
+  }
+
+  std::vector<LLVMValueWrapper> globals() {
+    check_valid();
+    std::vector<LLVMValueWrapper> result;
+    for (LLVMValueRef g = LLVMGetFirstGlobal(m_ref); g;
+         g = LLVMGetNextGlobal(g)) {
+      result.emplace_back(g, m_context_token);
+    }
+    return result;
+  }
+
+  // Function iteration
+  std::vector<LLVMFunctionWrapper> functions() {
+    check_valid();
+    std::vector<LLVMFunctionWrapper> result;
+    for (LLVMValueRef fn = LLVMGetFirstFunction(m_ref); fn;
+         fn = LLVMGetNextFunction(fn)) {
+      result.emplace_back(fn, m_context_token);
+    }
+    return result;
   }
 
   // Output
@@ -1363,6 +1525,13 @@ struct LLVMContextWrapper : NoMoveCopy {
   LLVMTypeWrapper named_struct_type(const std::string &name) {
     check_valid();
     return LLVMTypeWrapper(LLVMStructCreateNamed(m_ref, name.c_str()), m_token);
+  }
+
+  // Create an unattached basic block (must be attached to a function later)
+  LLVMBasicBlockWrapper create_basic_block(const std::string &name) {
+    check_valid();
+    LLVMBasicBlockRef bb = LLVMCreateBasicBlockInContext(m_ref, name.c_str());
+    return LLVMBasicBlockWrapper(bb, m_token);
   }
 
   // Module creation (returns context manager) - defined after LLVMModuleManager
@@ -1616,6 +1785,61 @@ LLVMValueWrapper const_vector(const std::vector<LLVMValueWrapper> &vals) {
       vals[0].m_context_token);
 }
 
+LLVMValueWrapper const_string(LLVMContextWrapper *ctx, const std::string &str,
+                              bool dont_null_terminate = false) {
+  ctx->check_valid();
+  return LLVMValueWrapper(
+      LLVMConstStringInContext2(ctx->m_ref, str.c_str(), str.size(),
+                                dont_null_terminate),
+      ctx->m_token);
+}
+
+LLVMValueWrapper const_pointer_null(const LLVMTypeWrapper &ty) {
+  ty.check_valid();
+  return LLVMValueWrapper(LLVMConstPointerNull(ty.m_ref), ty.m_context_token);
+}
+
+LLVMValueWrapper const_named_struct(const LLVMTypeWrapper &struct_ty,
+                                    const std::vector<LLVMValueWrapper> &vals) {
+  struct_ty.check_valid();
+  std::vector<LLVMValueRef> refs;
+  refs.reserve(vals.size());
+  for (const auto &v : vals) {
+    v.check_valid();
+    refs.push_back(v.m_ref);
+  }
+  return LLVMValueWrapper(
+      LLVMConstNamedStruct(struct_ty.m_ref, refs.data(),
+                           static_cast<unsigned>(refs.size())),
+      struct_ty.m_context_token);
+}
+
+// Value inspection helpers
+bool value_is_null(const LLVMValueWrapper &val) {
+  val.check_valid();
+  return LLVMIsNull(val.m_ref);
+}
+
+unsigned long long const_int_get_zext_value(const LLVMValueWrapper &val) {
+  val.check_valid();
+  return LLVMConstIntGetZExtValue(val.m_ref);
+}
+
+long long const_int_get_sext_value(const LLVMValueWrapper &val) {
+  val.check_valid();
+  return LLVMConstIntGetSExtValue(val.m_ref);
+}
+
+LLVMValueWrapper const_int_of_arbitrary_precision(
+    const LLVMTypeWrapper &ty, const std::vector<uint64_t> &words) {
+  ty.check_valid();
+  return LLVMValueWrapper(
+      LLVMConstIntOfArbitraryPrecision(ty.m_ref,
+                                       static_cast<unsigned>(words.size()),
+                                       words.data()),
+      ty.m_context_token);
+}
+
 // Helper for PHI nodes
 void phi_add_incoming(LLVMValueWrapper &phi, const LLVMValueWrapper &val,
                       const LLVMBasicBlockWrapper &bb) {
@@ -1657,6 +1881,156 @@ void global_set_linkage(LLVMValueWrapper &global, LLVMLinkage linkage) {
 void global_set_alignment(LLVMValueWrapper &global, unsigned align) {
   global.check_valid();
   LLVMSetAlignment(global.m_ref, align);
+}
+
+unsigned global_get_alignment(const LLVMValueWrapper &global) {
+  global.check_valid();
+  return LLVMGetAlignment(global.m_ref);
+}
+
+bool global_is_constant(const LLVMValueWrapper &global) {
+  global.check_valid();
+  return LLVMIsGlobalConstant(global.m_ref);
+}
+
+LLVMLinkage global_get_linkage(const LLVMValueWrapper &global) {
+  global.check_valid();
+  return LLVMGetLinkage(global.m_ref);
+}
+
+void global_set_visibility(LLVMValueWrapper &global, LLVMVisibility vis) {
+  global.check_valid();
+  LLVMSetVisibility(global.m_ref, vis);
+}
+
+LLVMVisibility global_get_visibility(const LLVMValueWrapper &global) {
+  global.check_valid();
+  return LLVMGetVisibility(global.m_ref);
+}
+
+void global_set_section(LLVMValueWrapper &global, const std::string &section) {
+  global.check_valid();
+  LLVMSetSection(global.m_ref, section.c_str());
+}
+
+std::string global_get_section(const LLVMValueWrapper &global) {
+  global.check_valid();
+  const char *section = LLVMGetSection(global.m_ref);
+  return section ? std::string(section) : "";
+}
+
+void global_set_thread_local(LLVMValueWrapper &global, bool is_tls) {
+  global.check_valid();
+  LLVMSetThreadLocal(global.m_ref, is_tls);
+}
+
+bool global_is_thread_local(const LLVMValueWrapper &global) {
+  global.check_valid();
+  return LLVMIsThreadLocal(global.m_ref);
+}
+
+void global_set_externally_initialized(LLVMValueWrapper &global, bool is_ext) {
+  global.check_valid();
+  LLVMSetExternallyInitialized(global.m_ref, is_ext);
+}
+
+bool global_is_externally_initialized(const LLVMValueWrapper &global) {
+  global.check_valid();
+  return LLVMIsExternallyInitialized(global.m_ref);
+}
+
+std::optional<LLVMValueWrapper>
+global_get_initializer(const LLVMValueWrapper &global) {
+  global.check_valid();
+  LLVMValueRef init = LLVMGetInitializer(global.m_ref);
+  if (!init)
+    return std::nullopt;
+  return LLVMValueWrapper(init, global.m_context_token);
+}
+
+void global_delete(LLVMValueWrapper &global) {
+  global.check_valid();
+  LLVMDeleteGlobal(global.m_ref);
+  global.m_ref = nullptr;
+}
+
+// PHI node helpers
+unsigned phi_count_incoming(const LLVMValueWrapper &phi) {
+  phi.check_valid();
+  return LLVMCountIncoming(phi.m_ref);
+}
+
+LLVMValueWrapper phi_get_incoming_value(const LLVMValueWrapper &phi,
+                                        unsigned index) {
+  phi.check_valid();
+  return LLVMValueWrapper(LLVMGetIncomingValue(phi.m_ref, index),
+                          phi.m_context_token);
+}
+
+LLVMBasicBlockWrapper phi_get_incoming_block(const LLVMValueWrapper &phi,
+                                             unsigned index) {
+  phi.check_valid();
+  return LLVMBasicBlockWrapper(LLVMGetIncomingBlock(phi.m_ref, index),
+                               phi.m_context_token);
+}
+
+// Instruction property helpers
+bool instruction_is_conditional(const LLVMValueWrapper &inst) {
+  inst.check_valid();
+  return LLVMIsConditional(inst.m_ref);
+}
+
+LLVMValueWrapper instruction_get_condition(const LLVMValueWrapper &inst) {
+  inst.check_valid();
+  return LLVMValueWrapper(LLVMGetCondition(inst.m_ref), inst.m_context_token);
+}
+
+unsigned instruction_get_num_successors(const LLVMValueWrapper &inst) {
+  inst.check_valid();
+  return LLVMGetNumSuccessors(inst.m_ref);
+}
+
+LLVMBasicBlockWrapper instruction_get_successor(const LLVMValueWrapper &inst,
+                                                unsigned index) {
+  inst.check_valid();
+  return LLVMBasicBlockWrapper(LLVMGetSuccessor(inst.m_ref, index),
+                               inst.m_context_token);
+}
+
+void instruction_set_volatile(LLVMValueWrapper &inst, bool is_volatile) {
+  inst.check_valid();
+  LLVMSetVolatile(inst.m_ref, is_volatile);
+}
+
+bool instruction_get_volatile(const LLVMValueWrapper &inst) {
+  inst.check_valid();
+  return LLVMGetVolatile(inst.m_ref);
+}
+
+void instruction_set_alignment(LLVMValueWrapper &inst, unsigned align) {
+  inst.check_valid();
+  LLVMSetAlignment(inst.m_ref, align);
+}
+
+unsigned instruction_get_alignment(const LLVMValueWrapper &inst) {
+  inst.check_valid();
+  return LLVMGetAlignment(inst.m_ref);
+}
+
+LLVMIntPredicate instruction_get_icmp_predicate(const LLVMValueWrapper &inst) {
+  inst.check_valid();
+  return LLVMGetICmpPredicate(inst.m_ref);
+}
+
+LLVMRealPredicate instruction_get_fcmp_predicate(const LLVMValueWrapper &inst) {
+  inst.check_valid();
+  return LLVMGetFCmpPredicate(inst.m_ref);
+}
+
+// Type helpers
+unsigned type_count_struct_element_types(const LLVMTypeWrapper &ty) {
+  ty.check_valid();
+  return LLVMCountStructElementTypes(ty.m_ref);
 }
 
 // Helper for struct types
@@ -1783,7 +2157,9 @@ NB_MODULE(llvm, m) {
       .def_prop_ro("is_packed_struct", &LLVMTypeWrapper::is_packed_struct)
       .def_prop_ro("is_opaque_struct", &LLVMTypeWrapper::is_opaque_struct)
       .def_prop_ro("struct_name", &LLVMTypeWrapper::get_struct_name)
-      .def("set_body", &struct_set_body, "elem_types"_a, "packed"_a = false);
+      .def_prop_ro("is_vararg", &LLVMTypeWrapper::is_vararg_function)
+      .def("set_body", &struct_set_body, "elem_types"_a, "packed"_a = false)
+      .def_prop_ro("struct_element_count", &type_count_struct_element_types);
 
   // Value wrapper
   nb::class_<LLVMValueWrapper>(m, "Value")
@@ -1795,12 +2171,45 @@ NB_MODULE(llvm, m) {
       .def_prop_ro("is_constant", &LLVMValueWrapper::is_constant)
       .def_prop_ro("is_undef", &LLVMValueWrapper::is_undef)
       .def_prop_ro("is_poison", &LLVMValueWrapper::is_poison)
+      .def_prop_ro("next_global", &LLVMValueWrapper::next_global)
+      .def_prop_ro("prev_global", &LLVMValueWrapper::prev_global)
       .def("add_incoming", &phi_add_incoming, "val"_a, "bb"_a)
       .def("add_case", &switch_add_case, "val"_a, "bb"_a)
       .def("set_initializer", &global_set_initializer, "init"_a)
+      .def("get_initializer", &global_get_initializer)
       .def("set_constant", &global_set_constant, "is_const"_a)
+      .def("is_global_constant", &global_is_constant)
       .def("set_linkage", &global_set_linkage, "linkage"_a)
-      .def("set_alignment", &global_set_alignment, "align"_a);
+      .def("get_linkage", &global_get_linkage)
+      .def("set_visibility", &global_set_visibility, "vis"_a)
+      .def("get_visibility", &global_get_visibility)
+      .def("set_alignment", &global_set_alignment, "align"_a)
+      .def("get_alignment", &global_get_alignment)
+      .def("set_section", &global_set_section, "section"_a)
+      .def("get_section", &global_get_section)
+      .def("set_thread_local", &global_set_thread_local, "is_tls"_a)
+      .def("is_thread_local", &global_is_thread_local)
+      .def("set_externally_initialized", &global_set_externally_initialized,
+           "is_ext"_a)
+      .def("is_externally_initialized", &global_is_externally_initialized)
+      .def("delete_global", &global_delete)
+      // PHI helpers
+      .def("count_incoming", &phi_count_incoming)
+      .def("get_incoming_value", &phi_get_incoming_value, "index"_a)
+      .def("get_incoming_block", &phi_get_incoming_block, "index"_a)
+      // Branch instruction helpers
+      .def("is_conditional", &instruction_is_conditional)
+      .def("get_condition", &instruction_get_condition)
+      .def("get_num_successors", &instruction_get_num_successors)
+      .def("get_successor", &instruction_get_successor, "index"_a)
+      // Load/Store helpers
+      .def("set_volatile", &instruction_set_volatile, "is_volatile"_a)
+      .def("get_volatile", &instruction_get_volatile)
+      .def("set_inst_alignment", &instruction_set_alignment, "align"_a)
+      .def("get_inst_alignment", &instruction_get_alignment)
+      // Comparison helpers
+      .def("get_icmp_predicate", &instruction_get_icmp_predicate)
+      .def("get_fcmp_predicate", &instruction_get_fcmp_predicate);
 
   // BasicBlock wrapper
   nb::class_<LLVMBasicBlockWrapper>(m, "BasicBlock")
@@ -1811,7 +2220,10 @@ NB_MODULE(llvm, m) {
       .def_prop_ro("terminator", &LLVMBasicBlockWrapper::terminator)
       .def_prop_ro("first_instruction",
                    &LLVMBasicBlockWrapper::first_instruction)
-      .def_prop_ro("last_instruction", &LLVMBasicBlockWrapper::last_instruction);
+      .def_prop_ro("last_instruction", &LLVMBasicBlockWrapper::last_instruction)
+      .def_prop_ro("parent", &LLVMBasicBlockWrapper::parent)
+      .def("move_before", &LLVMBasicBlockWrapper::move_before, "other"_a)
+      .def("move_after", &LLVMBasicBlockWrapper::move_after, "other"_a);
 
   // Function wrapper
   nb::class_<LLVMFunctionWrapper, LLVMValueWrapper>(m, "Function")
@@ -1833,6 +2245,9 @@ NB_MODULE(llvm, m) {
       .def_prop_ro("basic_block_count", &LLVMFunctionWrapper::basic_block_count)
       .def_prop_ro("first_basic_block", &LLVMFunctionWrapper::first_basic_block)
       .def_prop_ro("last_basic_block", &LLVMFunctionWrapper::last_basic_block)
+      .def_prop_ro("basic_blocks", &LLVMFunctionWrapper::basic_blocks)
+      .def("append_existing_basic_block",
+           &LLVMFunctionWrapper::append_existing_basic_block, "bb"_a)
       .def("erase", &LLVMFunctionWrapper::erase);
 
   // Builder wrapper
@@ -1849,11 +2264,17 @@ NB_MODULE(llvm, m) {
       .def("sub", &LLVMBuilderWrapper::sub, "lhs"_a, "rhs"_a, "name"_a = "")
       .def("nsw_sub", &LLVMBuilderWrapper::nsw_sub, "lhs"_a, "rhs"_a,
            "name"_a = "")
+      .def("nuw_sub", &LLVMBuilderWrapper::nuw_sub, "lhs"_a, "rhs"_a,
+           "name"_a = "")
       .def("mul", &LLVMBuilderWrapper::mul, "lhs"_a, "rhs"_a, "name"_a = "")
       .def("nsw_mul", &LLVMBuilderWrapper::nsw_mul, "lhs"_a, "rhs"_a,
            "name"_a = "")
+      .def("nuw_mul", &LLVMBuilderWrapper::nuw_mul, "lhs"_a, "rhs"_a,
+           "name"_a = "")
       .def("sdiv", &LLVMBuilderWrapper::sdiv, "lhs"_a, "rhs"_a, "name"_a = "")
       .def("udiv", &LLVMBuilderWrapper::udiv, "lhs"_a, "rhs"_a, "name"_a = "")
+      .def("exact_sdiv", &LLVMBuilderWrapper::exact_sdiv, "lhs"_a, "rhs"_a,
+           "name"_a = "")
       .def("srem", &LLVMBuilderWrapper::srem, "lhs"_a, "rhs"_a, "name"_a = "")
       .def("urem", &LLVMBuilderWrapper::urem, "lhs"_a, "rhs"_a, "name"_a = "")
       // Float arithmetic
@@ -1864,6 +2285,7 @@ NB_MODULE(llvm, m) {
       .def("frem", &LLVMBuilderWrapper::frem, "lhs"_a, "rhs"_a, "name"_a = "")
       // Unary
       .def("neg", &LLVMBuilderWrapper::neg, "val"_a, "name"_a = "")
+      .def("nsw_neg", &LLVMBuilderWrapper::nsw_neg, "val"_a, "name"_a = "")
       .def("fneg", &LLVMBuilderWrapper::fneg, "val"_a, "name"_a = "")
       .def("not_", &LLVMBuilderWrapper::not_, "val"_a, "name"_a = "")
       // Bitwise
@@ -1913,6 +2335,8 @@ NB_MODULE(llvm, m) {
            "name"_a = "")
       .def("bitcast", &LLVMBuilderWrapper::bitcast, "val"_a, "ty"_a,
            "name"_a = "")
+      .def("int_cast2", &LLVMBuilderWrapper::int_cast2, "val"_a, "ty"_a,
+           "is_signed"_a, "name"_a = "")
       // Control flow
       .def("ret", &LLVMBuilderWrapper::ret, "val"_a)
       .def("ret_void", &LLVMBuilderWrapper::ret_void)
@@ -1940,7 +2364,14 @@ NB_MODULE(llvm, m) {
            "func_ty"_a)
       .def("get_function", &LLVMModuleWrapper::get_function, "name"_a)
       .def("add_global", &LLVMModuleWrapper::add_global, "ty"_a, "name"_a)
+      .def("add_global_in_address_space",
+           &LLVMModuleWrapper::add_global_in_address_space, "ty"_a, "name"_a,
+           "address_space"_a)
       .def("get_global", &LLVMModuleWrapper::get_global, "name"_a)
+      .def_prop_ro("first_global", &LLVMModuleWrapper::first_global)
+      .def_prop_ro("last_global", &LLVMModuleWrapper::last_global)
+      .def_prop_ro("globals", &LLVMModuleWrapper::globals)
+      .def_prop_ro("functions", &LLVMModuleWrapper::functions)
       .def("__str__", &LLVMModuleWrapper::to_string)
       .def("to_string", &LLVMModuleWrapper::to_string)
       .def("verify", &LLVMModuleWrapper::verify)
@@ -1981,7 +2412,9 @@ NB_MODULE(llvm, m) {
       .def("create_module", &LLVMContextWrapper::create_module, "name"_a,
            nb::rv_policy::take_ownership)
       .def("create_builder", &LLVMContextWrapper::create_builder,
-           nb::rv_policy::take_ownership);
+           nb::rv_policy::take_ownership)
+      .def("create_basic_block", &LLVMContextWrapper::create_basic_block,
+           "name"_a);
 
   // Context manager
   nb::class_<LLVMContextManager>(m, "ContextManager")
@@ -2039,4 +2472,20 @@ NB_MODULE(llvm, m) {
         R"(Create a struct constant.)");
   m.def("const_vector", &const_vector, "vals"_a,
         R"(Create a vector constant.)");
+  m.def("const_string", &const_string, "ctx"_a, "str"_a,
+        "dont_null_terminate"_a = false,
+        R"(Create a string constant.)");
+  m.def("const_pointer_null", &const_pointer_null, "ty"_a,
+        R"(Create a null pointer constant for a specific pointer type.)");
+  m.def("const_named_struct", &const_named_struct, "struct_ty"_a, "vals"_a,
+        R"(Create a named struct constant.)");
+  m.def("value_is_null", &value_is_null, "val"_a,
+        R"(Check if a value is null.)");
+  m.def("const_int_get_zext_value", &const_int_get_zext_value, "val"_a,
+        R"(Get the zero-extended value of an integer constant.)");
+  m.def("const_int_get_sext_value", &const_int_get_sext_value, "val"_a,
+        R"(Get the sign-extended value of an integer constant.)");
+  m.def("const_int_of_arbitrary_precision", &const_int_of_arbitrary_precision,
+        "ty"_a, "words"_a,
+        R"(Create an integer constant of arbitrary precision from 64-bit words (little-endian).)");
 }
