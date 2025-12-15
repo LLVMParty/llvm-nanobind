@@ -894,6 +894,215 @@ NB_MODULE(llvm, m) {
 
 ## Testing Strategy
 
+### Golden Master Test Harness
+
+The project uses a "golden master" testing approach:
+
+1. **C++ tests are the golden master**: They call the LLVM-C API directly and output LLVM IR to stdout
+2. **Python tests must produce identical output**: The Python bindings are verified by comparing their stdout to the C++ golden master
+3. **Comparison is byte-for-byte**: Outputs must be deterministic and identical
+
+#### How It Works
+
+```
+┌─────────────────┐      stdout      ┌──────────────────────┐
+│  C++ Test       │ ───────────────> │  tests/output/*.ll   │
+│  (golden master)│                  │  (stored reference)  │
+└─────────────────┘                  └──────────────────────┘
+                                              │
+                                              │ diff
+                                              ▼
+┌─────────────────┐      stdout      ┌──────────────────────┐
+│  Python Test    │ ───────────────> │  (compared directly) │
+│  (must match)   │                  │                      │
+└─────────────────┘                  └──────────────────────┘
+```
+
+#### Why Outputs Must Be Deterministic
+
+- **No timestamps** - dates/times change between runs
+- **No process IDs** - PIDs change between runs  
+- **No memory addresses** - addresses change between runs
+- **No content added by test harness** - raw stdout only
+- Running `./build/test_foo` directly must produce the exact same output as stored in `tests/output/test_foo.ll`
+
+#### Directory Structure
+
+```
+llvm-nanobind/
+├── run_tests.py                      # Test runner (runs C++ and Python tests)
+├── test_context.py                   # Python equivalent of test_context.cpp
+├── test_factorial.py                 # Python equivalent of test_factorial.cpp
+├── tests/                            # C++ test sources
+│   ├── test_context.cpp              
+│   ├── test_module.cpp               
+│   ├── test_types.cpp                
+│   ├── test_function.cpp             
+│   ├── test_basic_block.cpp          
+│   ├── test_builder_arithmetic.cpp   
+│   ├── test_builder_memory.cpp       
+│   ├── test_builder_control_flow.cpp 
+│   ├── test_builder_casts.cpp        
+│   ├── test_builder_cmp.cpp          
+│   ├── test_constants.cpp            
+│   ├── test_globals.cpp              
+│   ├── test_phi.cpp                  
+│   ├── test_factorial.cpp            
+│   ├── test_struct.cpp               
+│   └── output/                       # Golden master outputs (gitignored)
+│       ├── test_context.ll
+│       ├── test_module.ll
+│       └── ...
+└── playground.py                     # Human experimentation (not part of test suite)
+```
+
+#### Running Tests
+
+```bash
+# Build everything
+cmake --build build
+
+# Run all tests: C++ golden masters + Python comparison
+python3 run_tests.py
+```
+
+The test runner:
+1. Runs each C++ test executable and saves stdout to `tests/output/<name>.ll`
+2. Runs corresponding Python tests (if they exist)
+3. Compares Python output to C++ output (must be identical)
+4. Reports pass/fail for both C++ execution and Python comparison
+
+#### Manual Testing and Debugging
+
+```bash
+# Run C++ test directly (output should match tests/output/test_foo.ll)
+./build/test_factorial
+
+# Run Python test directly
+python3 test_factorial.py
+
+# Compare outputs manually
+./build/test_factorial > /tmp/cpp.ll
+python3 test_factorial.py > /tmp/py.ll
+diff /tmp/cpp.ll /tmp/py.ll
+```
+
+#### Test Output Format
+
+Each test outputs valid LLVM IR with diagnostic comments to stdout:
+
+```llvm
+; Test: test_context
+; Context created: yes
+; Discard value names (before): false
+; Discard value names (after set to true): true
+
+; ModuleID = 'test_context'
+source_filename = "test_context"
+```
+
+This format ensures:
+- Human-readable test identification via comments
+- Machine-parsable diagnostic data
+- Valid LLVM IR that can be verified with the LLVM verifier
+
+#### C++ Test Template
+
+```cpp
+#include <llvm-c/Core.h>
+#include <llvm-c/Analysis.h>
+#include <cstdio>
+
+int main() {
+    LLVMContextRef ctx = LLVMContextCreate();
+    LLVMModuleRef mod = LLVMModuleCreateWithNameInContext("test_xxx", ctx);
+    
+    // ... build IR using LLVM-C API ...
+    
+    // Verify module
+    char *error = nullptr;
+    if (LLVMVerifyModule(mod, LLVMReturnStatusAction, &error)) {
+        fprintf(stderr, "; Verification failed: %s\n", error);
+        LLVMDisposeMessage(error);
+        LLVMDisposeModule(mod);
+        LLVMContextDispose(ctx);
+        return 1;
+    }
+    LLVMDisposeMessage(error);
+    
+    // Print diagnostic comments to stdout
+    printf("; Test: test_xxx\n");
+    printf("; ... additional diagnostics ...\n");
+    printf("\n");
+    
+    // Print module IR to stdout
+    char *ir = LLVMPrintModuleToString(mod);
+    printf("%s", ir);
+    LLVMDisposeMessage(ir);
+    
+    // Cleanup
+    LLVMDisposeModule(mod);
+    LLVMContextDispose(ctx);
+    
+    return 0;
+}
+```
+
+#### Python Test Template
+
+```python
+#!/usr/bin/env python3
+import sys
+sys.path.insert(0, "build")
+import llvm
+
+def main():
+    with llvm.create_context() as ctx:
+        with ctx.create_module("test_xxx") as mod:
+            with ctx.create_builder() as builder:
+                # ... build IR using Python bindings ...
+                pass
+            
+            # Verify module
+            if not mod.verify():
+                print(f"; Verification failed: {mod.get_verification_error()}", 
+                      file=sys.stderr)
+                return 1
+            
+            # Print diagnostic comments to stdout (must match C++ exactly!)
+            print("; Test: test_xxx")
+            print("; ... additional diagnostics ...")
+            print()
+            
+            # Print module IR to stdout
+            print(mod.to_string(), end="")
+    
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+
+#### Test Coverage by Category
+
+| Category | Test File | LLVM-C APIs Covered |
+|----------|-----------|---------------------|
+| Context | `test_context.cpp` | `LLVMContextCreate`, `LLVMContextDispose`, `LLVMGetGlobalContext`, `LLVMContextShouldDiscardValueNames`, `LLVMContextSetDiscardValueNames` |
+| Module | `test_module.cpp` | `LLVMModuleCreateWithNameInContext`, `LLVMGetModuleIdentifier`, `LLVMSetModuleIdentifier`, `LLVMGetSourceFileName`, `LLVMSetSourceFileName`, `LLVMGetDataLayoutStr`, `LLVMSetDataLayout`, `LLVMGetTarget`, `LLVMSetTarget`, `LLVMCloneModule`, `LLVMPrintModuleToString` |
+| Types | `test_types.cpp` | `LLVMInt*TypeInContext`, `LLVMHalfTypeInContext`, `LLVMFloatTypeInContext`, `LLVMDoubleTypeInContext`, `LLVMVoidTypeInContext`, `LLVMPointerTypeInContext`, `LLVMArrayType2`, `LLVMVectorType`, `LLVMFunctionType`, `LLVMStructTypeInContext`, `LLVMStructCreateNamed`, `LLVMStructSetBody`, `LLVMPrintTypeToString`, `LLVMGetTypeKind` |
+| Functions | `test_function.cpp` | `LLVMAddFunction`, `LLVMGetNamedFunction`, `LLVMCountParams`, `LLVMGetParam`, `LLVMSetValueName2`, `LLVMGetFunctionCallConv`, `LLVMSetFunctionCallConv`, `LLVMGetLinkage`, `LLVMSetLinkage`, `LLVMDeleteFunction` |
+| Basic Blocks | `test_basic_block.cpp` | `LLVMAppendBasicBlockInContext`, `LLVMGetBasicBlockName`, `LLVMGetBasicBlockParent`, `LLVMGetEntryBasicBlock`, `LLVMCountBasicBlocks`, `LLVMGetFirstBasicBlock`, `LLVMGetNextBasicBlock` |
+| Arithmetic | `test_builder_arithmetic.cpp` | `LLVMBuildAdd`, `LLVMBuildSub`, `LLVMBuildMul`, `LLVMBuildSDiv`, `LLVMBuildUDiv`, `LLVMBuildFAdd`, `LLVMBuildFSub`, `LLVMBuildFMul`, `LLVMBuildFDiv`, `LLVMBuildShl`, `LLVMBuildLShr`, `LLVMBuildAShr`, `LLVMBuildAnd`, `LLVMBuildOr`, `LLVMBuildXor`, `LLVMBuildNeg`, `LLVMBuildNot` |
+| Memory | `test_builder_memory.cpp` | `LLVMBuildAlloca`, `LLVMBuildLoad2`, `LLVMBuildStore`, `LLVMBuildGEP2`, `LLVMBuildInBoundsGEP2`, `LLVMBuildStructGEP2` |
+| Control Flow | `test_builder_control_flow.cpp` | `LLVMBuildRetVoid`, `LLVMBuildRet`, `LLVMBuildBr`, `LLVMBuildCondBr`, `LLVMBuildSwitch`, `LLVMAddCase`, `LLVMBuildCall2`, `LLVMBuildUnreachable` |
+| Casts | `test_builder_casts.cpp` | `LLVMBuildTrunc`, `LLVMBuildZExt`, `LLVMBuildSExt`, `LLVMBuildFPToUI`, `LLVMBuildFPToSI`, `LLVMBuildUIToFP`, `LLVMBuildSIToFP`, `LLVMBuildFPTrunc`, `LLVMBuildFPExt`, `LLVMBuildPtrToInt`, `LLVMBuildIntToPtr`, `LLVMBuildBitCast` |
+| Comparisons | `test_builder_cmp.cpp` | `LLVMBuildICmp`, `LLVMBuildFCmp`, `LLVMBuildSelect` |
+| Constants | `test_constants.cpp` | `LLVMConstInt`, `LLVMConstReal`, `LLVMConstNull`, `LLVMConstAllOnes`, `LLVMGetUndef`, `LLVMGetPoison`, `LLVMConstStringInContext2`, `LLVMConstArray2`, `LLVMConstStructInContext` |
+| Globals | `test_globals.cpp` | `LLVMAddGlobal`, `LLVMGetNamedGlobal`, `LLVMSetInitializer`, `LLVMSetGlobalConstant`, `LLVMSetLinkage`, `LLVMSetAlignment` |
+| PHI Nodes | `test_phi.cpp` | `LLVMBuildPhi`, `LLVMAddIncoming`, `LLVMCountIncoming`, `LLVMGetIncomingValue`, `LLVMGetIncomingBlock` |
+| Integration | `test_factorial.cpp` | Complete iterative factorial function |
+| Integration | `test_struct.cpp` | Point struct with `point_add` function |
+
 ### Unit Tests
 
 ```python

@@ -91,3 +91,423 @@ endif()
 target_link_libraries(llvm PUBLIC
 	LLVM-C-Wrapper
 )
+
+# Target: test_context
+set(test_context_SOURCES
+	cmake.toml
+	"tests/test_context.cpp"
+)
+
+add_executable(test_context)
+
+target_sources(test_context PRIVATE ${test_context_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${test_context_SOURCES})
+
+target_compile_features(test_context PRIVATE
+	cxx_std_20
+)
+
+if(NOT TARGET LLVM-C-Wrapper)
+	message(FATAL_ERROR "Target \"LLVM-C-Wrapper\" referenced by \"test_context\" does not exist!")
+endif()
+
+target_link_libraries(test_context PRIVATE
+	LLVM-C-Wrapper
+)
+
+get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+if(NOT CMKR_VS_STARTUP_PROJECT)
+	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT test_context)
+endif()
+
+# Target: test_module
+set(test_module_SOURCES
+	cmake.toml
+	"tests/test_module.cpp"
+)
+
+add_executable(test_module)
+
+target_sources(test_module PRIVATE ${test_module_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${test_module_SOURCES})
+
+target_compile_features(test_module PRIVATE
+	cxx_std_20
+)
+
+if(NOT TARGET LLVM-C-Wrapper)
+	message(FATAL_ERROR "Target \"LLVM-C-Wrapper\" referenced by \"test_module\" does not exist!")
+endif()
+
+target_link_libraries(test_module PRIVATE
+	LLVM-C-Wrapper
+)
+
+get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+if(NOT CMKR_VS_STARTUP_PROJECT)
+	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT test_module)
+endif()
+
+# Target: test_types
+set(test_types_SOURCES
+	cmake.toml
+	"tests/test_types.cpp"
+)
+
+add_executable(test_types)
+
+target_sources(test_types PRIVATE ${test_types_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${test_types_SOURCES})
+
+target_compile_features(test_types PRIVATE
+	cxx_std_20
+)
+
+if(NOT TARGET LLVM-C-Wrapper)
+	message(FATAL_ERROR "Target \"LLVM-C-Wrapper\" referenced by \"test_types\" does not exist!")
+endif()
+
+target_link_libraries(test_types PRIVATE
+	LLVM-C-Wrapper
+)
+
+get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+if(NOT CMKR_VS_STARTUP_PROJECT)
+	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT test_types)
+endif()
+
+# Target: test_function
+set(test_function_SOURCES
+	cmake.toml
+	"tests/test_function.cpp"
+)
+
+add_executable(test_function)
+
+target_sources(test_function PRIVATE ${test_function_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${test_function_SOURCES})
+
+target_compile_features(test_function PRIVATE
+	cxx_std_20
+)
+
+if(NOT TARGET LLVM-C-Wrapper)
+	message(FATAL_ERROR "Target \"LLVM-C-Wrapper\" referenced by \"test_function\" does not exist!")
+endif()
+
+target_link_libraries(test_function PRIVATE
+	LLVM-C-Wrapper
+)
+
+get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+if(NOT CMKR_VS_STARTUP_PROJECT)
+	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT test_function)
+endif()
+
+# Target: test_basic_block
+set(test_basic_block_SOURCES
+	cmake.toml
+	"tests/test_basic_block.cpp"
+)
+
+add_executable(test_basic_block)
+
+target_sources(test_basic_block PRIVATE ${test_basic_block_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${test_basic_block_SOURCES})
+
+target_compile_features(test_basic_block PRIVATE
+	cxx_std_20
+)
+
+if(NOT TARGET LLVM-C-Wrapper)
+	message(FATAL_ERROR "Target \"LLVM-C-Wrapper\" referenced by \"test_basic_block\" does not exist!")
+endif()
+
+target_link_libraries(test_basic_block PRIVATE
+	LLVM-C-Wrapper
+)
+
+get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+if(NOT CMKR_VS_STARTUP_PROJECT)
+	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT test_basic_block)
+endif()
+
+# Target: test_builder_arithmetic
+set(test_builder_arithmetic_SOURCES
+	cmake.toml
+	"tests/test_builder_arithmetic.cpp"
+)
+
+add_executable(test_builder_arithmetic)
+
+target_sources(test_builder_arithmetic PRIVATE ${test_builder_arithmetic_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${test_builder_arithmetic_SOURCES})
+
+target_compile_features(test_builder_arithmetic PRIVATE
+	cxx_std_20
+)
+
+if(NOT TARGET LLVM-C-Wrapper)
+	message(FATAL_ERROR "Target \"LLVM-C-Wrapper\" referenced by \"test_builder_arithmetic\" does not exist!")
+endif()
+
+target_link_libraries(test_builder_arithmetic PRIVATE
+	LLVM-C-Wrapper
+)
+
+get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+if(NOT CMKR_VS_STARTUP_PROJECT)
+	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT test_builder_arithmetic)
+endif()
+
+# Target: test_builder_memory
+set(test_builder_memory_SOURCES
+	cmake.toml
+	"tests/test_builder_memory.cpp"
+)
+
+add_executable(test_builder_memory)
+
+target_sources(test_builder_memory PRIVATE ${test_builder_memory_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${test_builder_memory_SOURCES})
+
+target_compile_features(test_builder_memory PRIVATE
+	cxx_std_20
+)
+
+if(NOT TARGET LLVM-C-Wrapper)
+	message(FATAL_ERROR "Target \"LLVM-C-Wrapper\" referenced by \"test_builder_memory\" does not exist!")
+endif()
+
+target_link_libraries(test_builder_memory PRIVATE
+	LLVM-C-Wrapper
+)
+
+get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+if(NOT CMKR_VS_STARTUP_PROJECT)
+	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT test_builder_memory)
+endif()
+
+# Target: test_builder_control_flow
+set(test_builder_control_flow_SOURCES
+	cmake.toml
+	"tests/test_builder_control_flow.cpp"
+)
+
+add_executable(test_builder_control_flow)
+
+target_sources(test_builder_control_flow PRIVATE ${test_builder_control_flow_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${test_builder_control_flow_SOURCES})
+
+target_compile_features(test_builder_control_flow PRIVATE
+	cxx_std_20
+)
+
+if(NOT TARGET LLVM-C-Wrapper)
+	message(FATAL_ERROR "Target \"LLVM-C-Wrapper\" referenced by \"test_builder_control_flow\" does not exist!")
+endif()
+
+target_link_libraries(test_builder_control_flow PRIVATE
+	LLVM-C-Wrapper
+)
+
+get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+if(NOT CMKR_VS_STARTUP_PROJECT)
+	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT test_builder_control_flow)
+endif()
+
+# Target: test_builder_casts
+set(test_builder_casts_SOURCES
+	cmake.toml
+	"tests/test_builder_casts.cpp"
+)
+
+add_executable(test_builder_casts)
+
+target_sources(test_builder_casts PRIVATE ${test_builder_casts_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${test_builder_casts_SOURCES})
+
+target_compile_features(test_builder_casts PRIVATE
+	cxx_std_20
+)
+
+if(NOT TARGET LLVM-C-Wrapper)
+	message(FATAL_ERROR "Target \"LLVM-C-Wrapper\" referenced by \"test_builder_casts\" does not exist!")
+endif()
+
+target_link_libraries(test_builder_casts PRIVATE
+	LLVM-C-Wrapper
+)
+
+get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+if(NOT CMKR_VS_STARTUP_PROJECT)
+	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT test_builder_casts)
+endif()
+
+# Target: test_builder_cmp
+set(test_builder_cmp_SOURCES
+	cmake.toml
+	"tests/test_builder_cmp.cpp"
+)
+
+add_executable(test_builder_cmp)
+
+target_sources(test_builder_cmp PRIVATE ${test_builder_cmp_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${test_builder_cmp_SOURCES})
+
+target_compile_features(test_builder_cmp PRIVATE
+	cxx_std_20
+)
+
+if(NOT TARGET LLVM-C-Wrapper)
+	message(FATAL_ERROR "Target \"LLVM-C-Wrapper\" referenced by \"test_builder_cmp\" does not exist!")
+endif()
+
+target_link_libraries(test_builder_cmp PRIVATE
+	LLVM-C-Wrapper
+)
+
+get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+if(NOT CMKR_VS_STARTUP_PROJECT)
+	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT test_builder_cmp)
+endif()
+
+# Target: test_constants
+set(test_constants_SOURCES
+	cmake.toml
+	"tests/test_constants.cpp"
+)
+
+add_executable(test_constants)
+
+target_sources(test_constants PRIVATE ${test_constants_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${test_constants_SOURCES})
+
+target_compile_features(test_constants PRIVATE
+	cxx_std_20
+)
+
+if(NOT TARGET LLVM-C-Wrapper)
+	message(FATAL_ERROR "Target \"LLVM-C-Wrapper\" referenced by \"test_constants\" does not exist!")
+endif()
+
+target_link_libraries(test_constants PRIVATE
+	LLVM-C-Wrapper
+)
+
+get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+if(NOT CMKR_VS_STARTUP_PROJECT)
+	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT test_constants)
+endif()
+
+# Target: test_globals
+set(test_globals_SOURCES
+	cmake.toml
+	"tests/test_globals.cpp"
+)
+
+add_executable(test_globals)
+
+target_sources(test_globals PRIVATE ${test_globals_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${test_globals_SOURCES})
+
+target_compile_features(test_globals PRIVATE
+	cxx_std_20
+)
+
+if(NOT TARGET LLVM-C-Wrapper)
+	message(FATAL_ERROR "Target \"LLVM-C-Wrapper\" referenced by \"test_globals\" does not exist!")
+endif()
+
+target_link_libraries(test_globals PRIVATE
+	LLVM-C-Wrapper
+)
+
+get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+if(NOT CMKR_VS_STARTUP_PROJECT)
+	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT test_globals)
+endif()
+
+# Target: test_phi
+set(test_phi_SOURCES
+	cmake.toml
+	"tests/test_phi.cpp"
+)
+
+add_executable(test_phi)
+
+target_sources(test_phi PRIVATE ${test_phi_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${test_phi_SOURCES})
+
+target_compile_features(test_phi PRIVATE
+	cxx_std_20
+)
+
+if(NOT TARGET LLVM-C-Wrapper)
+	message(FATAL_ERROR "Target \"LLVM-C-Wrapper\" referenced by \"test_phi\" does not exist!")
+endif()
+
+target_link_libraries(test_phi PRIVATE
+	LLVM-C-Wrapper
+)
+
+get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+if(NOT CMKR_VS_STARTUP_PROJECT)
+	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT test_phi)
+endif()
+
+# Target: test_factorial
+set(test_factorial_SOURCES
+	cmake.toml
+	"tests/test_factorial.cpp"
+)
+
+add_executable(test_factorial)
+
+target_sources(test_factorial PRIVATE ${test_factorial_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${test_factorial_SOURCES})
+
+target_compile_features(test_factorial PRIVATE
+	cxx_std_20
+)
+
+if(NOT TARGET LLVM-C-Wrapper)
+	message(FATAL_ERROR "Target \"LLVM-C-Wrapper\" referenced by \"test_factorial\" does not exist!")
+endif()
+
+target_link_libraries(test_factorial PRIVATE
+	LLVM-C-Wrapper
+)
+
+get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+if(NOT CMKR_VS_STARTUP_PROJECT)
+	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT test_factorial)
+endif()
+
+# Target: test_struct
+set(test_struct_SOURCES
+	cmake.toml
+	"tests/test_struct.cpp"
+)
+
+add_executable(test_struct)
+
+target_sources(test_struct PRIVATE ${test_struct_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${test_struct_SOURCES})
+
+target_compile_features(test_struct PRIVATE
+	cxx_std_20
+)
+
+if(NOT TARGET LLVM-C-Wrapper)
+	message(FATAL_ERROR "Target \"LLVM-C-Wrapper\" referenced by \"test_struct\" does not exist!")
+endif()
+
+target_link_libraries(test_struct PRIVATE
+	LLVM-C-Wrapper
+)
+
+get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+if(NOT CMKR_VS_STARTUP_PROJECT)
+	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT test_struct)
+endif()

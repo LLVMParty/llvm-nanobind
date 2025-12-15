@@ -35,3 +35,70 @@ type = "nanobind_module"
 sources = ["src/llvm-nanobind.cpp"]
 compile-features = ["cxx_std_20"]
 link-libraries = ["::LLVM-C-Wrapper"]
+
+# Test executable template
+[template.test]
+type = "executable"
+compile-features = ["cxx_std_20"]
+link-libraries = ["::LLVM-C-Wrapper"]
+
+# Test targets
+[target.test_context]
+type = "test"
+sources = ["tests/test_context.cpp"]
+
+[target.test_module]
+type = "test"
+sources = ["tests/test_module.cpp"]
+
+[target.test_types]
+type = "test"
+sources = ["tests/test_types.cpp"]
+
+[target.test_function]
+type = "test"
+sources = ["tests/test_function.cpp"]
+
+[target.test_basic_block]
+type = "test"
+sources = ["tests/test_basic_block.cpp"]
+
+[target.test_builder_arithmetic]
+type = "test"
+sources = ["tests/test_builder_arithmetic.cpp"]
+
+[target.test_builder_memory]
+type = "test"
+sources = ["tests/test_builder_memory.cpp"]
+
+[target.test_builder_control_flow]
+type = "test"
+sources = ["tests/test_builder_control_flow.cpp"]
+
+[target.test_builder_casts]
+type = "test"
+sources = ["tests/test_builder_casts.cpp"]
+
+[target.test_builder_cmp]
+type = "test"
+sources = ["tests/test_builder_cmp.cpp"]
+
+[target.test_constants]
+type = "test"
+sources = ["tests/test_constants.cpp"]
+
+[target.test_globals]
+type = "test"
+sources = ["tests/test_globals.cpp"]
+
+[target.test_phi]
+type = "test"
+sources = ["tests/test_phi.cpp"]
+
+[target.test_factorial]
+type = "test"
+sources = ["tests/test_factorial.cpp"]
+
+[target.test_struct]
+type = "test"
+sources = ["tests/test_struct.cpp"]
