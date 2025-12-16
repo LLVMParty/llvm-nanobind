@@ -9,7 +9,7 @@
 ⏳ **Phase 3** - Complex commands (3/5 complete) - diagnostic, debug info basics working  
 ⏳ **Phase 4** - Platform-specific (disassembly, object files) - Not Started
 
-**Progress:** 17/22 commands (77%) • 57/~235 bindings (24%)
+**Progress:** 17/22 commands (77%) • 86/~235 bindings (37%)
 
 ---
 
@@ -19,7 +19,7 @@
 |-------|----------|----------|--------|
 | Phase 1: Foundation | 8/8 | 30/~35 | ✅ Complete |
 | Phase 2: Metadata & Attributes | 6/6 | 9/~30 | ✅ Complete |
-| Phase 3: Complex (Echo/Debug) | 3/5 | 18/~150 | ⏳ In Progress |
+| Phase 3: Complex (Echo/Debug) | 3/5 | 47/~150 | ⏳ In Progress |
 | Phase 4: Platform-Specific | 0/3 | 0/~20 | Not Started |
 | **Total** | **17/22 (77%)** | **57/~235 (24%)** | **In Progress** |
 
@@ -515,18 +515,80 @@
 - [x] `LLVMGetDiagInfoDescription`
 - [x] `LLVMGetBitcodeModule2` (for global context parsing)
 
-### 3.4 Basic Debug Info Bindings - 8/8 ✅
+### 3.4 Debug Info Builder Bindings - 37/~60 ⏳
 
-- [x] `LLVMCreateDIBuilder`
-- [x] `LLVMDisposeDIBuilder`
+**Core Infrastructure (8/8) ✅:**
+- [x] `LLVMCreateDIBuilder` / `LLVMDisposeDIBuilder`
 - [x] `LLVMDIBuilderFinalize`
 - [x] `LLVMDIBuilderCreateFile`
 - [x] `LLVMDIBuilderCreateStructType`
-- [x] `LLVMGetDINodeTag`
-- [x] `LLVMDITypeGetName`
-- [x] `LLVMMDStringInContext2`
-- [x] `LLVMMDNodeInContext2`
-- [x] `LLVMDiagnosticSeverity` enum
+- [x] `LLVMGetDINodeTag` / `LLVMDITypeGetName`
+- [x] `LLVMMDStringInContext2` / `LLVMMDNodeInContext2`
+- [x] `LLVMMetadataAsValue` / `LLVMValueAsMetadata`
+- [x] `LLVMSetSubprogram`
+
+**Scope & Module (4/4) ✅:**
+- [x] `LLVMDIBuilderCreateCompileUnit`
+- [x] `LLVMDIBuilderCreateModule`
+- [x] `LLVMDIBuilderCreateNameSpace`
+- [x] `LLVMDIBuilderCreateFunction`
+
+**Type Creation (6/~12) ⏳:**
+- [x] `LLVMDIBuilderCreateBasicType`
+- [x] `LLVMDIBuilderCreatePointerType`
+- [x] `LLVMDIBuilderCreateSubroutineType`
+- [x] `LLVMDIBuilderCreateVectorType`
+- [x] `LLVMDIBuilderCreateTypedef`
+- [x] `LLVMDIBuilderCreateEnumerationType`
+- [ ] `LLVMDIBuilderCreateArrayType`
+- [ ] `LLVMDIBuilderCreateForwardDecl`
+- [ ] `LLVMDIBuilderCreateReplaceableCompositeType`
+- [ ] `LLVMDIBuilderCreateSetType`
+- [ ] `LLVMDIBuilderCreateSubrangeType` (complex form)
+- [ ] `LLVMDIBuilderCreateDynamicArrayType`
+
+**Variables (3/3) ✅:**
+- [x] `LLVMDIBuilderCreateParameterVariable`
+- [x] `LLVMDIBuilderCreateAutoVariable`
+- [x] `LLVMDIBuilderCreateGlobalVariableExpression`
+
+**Expressions & Locations (3/3) ✅:**
+- [x] `LLVMDIBuilderCreateExpression`
+- [x] `LLVMDIBuilderCreateConstantValueExpression`
+- [x] `LLVMDIBuilderCreateDebugLocation`
+
+**Lexical Blocks & Labels (4/4) ✅:**
+- [x] `LLVMDIBuilderCreateLexicalBlock`
+- [x] `LLVMDIBuilderCreateLabel`
+- [x] `LLVMDIBuilderInsertDeclareRecordAtEnd`
+- [x] `LLVMDIBuilderInsertDbgValueRecordAtEnd`
+- [x] `LLVMDIBuilderInsertLabelAtEnd`
+
+**ObjC Support (3/3) ✅:**
+- [x] `LLVMDIBuilderCreateObjCProperty`
+- [x] `LLVMDIBuilderCreateObjCIVar`
+- [x] `LLVMDIBuilderCreateInheritance`
+
+**Enumerations (2/~4) ⏳:**
+- [x] `LLVMDIBuilderCreateEnumerator`
+- [x] `LLVMDIBuilderCreateEnumerationType`
+- [ ] `LLVMDIBuilderCreateEnumeratorOfArbitraryPrecision`
+- [ ] Macro support APIs
+
+**Arrays & Subranges (2/2) ✅:**
+- [x] `LLVMDIBuilderGetOrCreateSubrange`
+- [x] `LLVMDIBuilderGetOrCreateArray`
+
+**Builder Positioning (0/~6) ❌:**
+- [ ] `LLVMPositionBuilderBeforeInstrAndDbgRecords`
+- [ ] `LLVMPositionBuilderBeforeDbgRecords`
+- [ ] `LLVMGetFirstDbgRecord` / `LLVMGetLastDbgRecord`
+- [ ] `LLVMGetNextDbgRecord` / `LLVMGetPreviousDbgRecord`
+- [ ] `LLVMSetIsNewDbgInfoFormat` / `LLVMIsNewDbgInfoFormat`
+
+**Constants:**
+- [x] DIFlags: Zero, Private, Protected, Public, FwdDecl, ObjcClassComplete
+- [x] DWARF: SourceLanguageC, EmissionFull
 
 ### Lit Tests Passing
 
@@ -595,9 +657,9 @@
 
 ## Completed Milestones
 
-### Phase 3 (Partial): Diagnostic & Basic Debug Info - December 16, 2025 ⏳
+### Phase 3 (Partial): Diagnostic & Debug Info - December 16, 2025 ⏳
 
-Successfully implemented 3 of 5 Phase 3 commands with 18 new API bindings:
+Successfully implemented 3 of 5 Phase 3 commands with 47 new API bindings (29 more added in second iteration):
 
 **Commands Implemented:**
 - `--test-diagnostic-handler` - Tests diagnostic handler callback system (prints diagnostic info to stderr)
@@ -612,16 +674,19 @@ Successfully implemented 3 of 5 Phase 3 commands with 18 new API bindings:
   - `LLVMGetBitcodeModule2` - Parse bitcode with global context (triggers diagnostics)
   - Plus Python accessors: `diagnostic_was_called()`, `get_diagnostic_severity()`, `get_diagnostic_description()`
 
-- **Debug Info Builder (12 bindings)**: Basic debug info creation
-  - `LLVMCreateDIBuilder` / `LLVMDisposeDIBuilder` - DIBuilder lifecycle
-  - `LLVMDIBuilderFinalize` - Finalize debug info
-  - `LLVMDIBuilderCreateFile` - Create file metadata
-  - `LLVMDIBuilderCreateStructType` - Create struct type metadata
-  - `LLVMGetDINodeTag` - Get DWARF tag from debug info node
-  - `LLVMDITypeGetName` - Get name from debug info type
-  - `LLVMMDStringInContext2` / `LLVMMDNodeInContext2` - Metadata creation
+- **Debug Info Builder (41 bindings)**: Comprehensive debug info creation
+  - **Core Infrastructure (10)**: DIBuilder lifecycle, metadata wrappers, file/struct creation
+  - **Scope & Module (4)**: Compile units, modules, namespaces, functions
+  - **Type Creation (6)**: Basic, pointer, subroutine, vector, typedef, enum types
+  - **Variables (3)**: Parameters, auto variables, global variable expressions
+  - **Expressions & Locations (3)**: DIExpressions, constant values, debug locations
+  - **Lexical Blocks & Labels (5)**: Lexical blocks, labels, declare/value record insertion
+  - **ObjC Support (3)**: Properties, ivars, inheritance
+  - **Enumerations (2)**: Enumerators and enumeration types
+  - **Arrays & Subranges (2)**: Subrange and array creation
+  - **Metadata Conversion (3)**: Value⇄Metadata, subprogram setting
   - Plus wrapper classes: `LLVMDIBuilderWrapper`, `LLVMMetadataWrapper`
-  - Plus constants: `DIFlagZero`, `DIFlagPrivate`, `DIFlagObjcClassComplete`, etc.
+  - Plus constants: DIFlags, DWARF source languages and emission kinds
 
 **Technical Highlights:**
 - **Thread-Local Diagnostic Storage**: Avoided Python callback complexity by using thread-local C++ storage
@@ -639,9 +704,27 @@ Successfully implemented 3 of 5 Phase 3 commands with 18 new API bindings:
 - `--test-diagnostic-handler` correctly intercepts bitcode parsing errors
 - `--get-di-tag` and `--di-type-get-name` are silent tests (no output = success)
 
+**Second Iteration (29 bindings added):**
+Extended debug info support for comprehensive testing:
+- Added compile unit, module, and namespace creation
+- Added function and subroutine type creation
+- Added parameter, auto, and global variables
+- Added expressions, debug locations, lexical blocks
+- Added ObjC support (properties, ivars, inheritance)
+- Added enumeration and subrange support
+- Total debug info bindings: 41 (from 12 initially)
+
 **Remaining Phase 3 Work:**
-- `--test-dibuilder` - Requires ~40 additional debug info APIs (comprehensive test)
-- `--echo` - Requires ~100+ APIs for complete IR cloning (most complex command)
+- `--test-dibuilder` - Can now be implemented with current bindings (needs ~15 more positioning APIs)
+- `--echo` - Requires ~100+ APIs for complete IR cloning (most complex command in entire suite)
+
+**Note on --test-dibuilder:**
+The majority of DIBuilder APIs are now available (37/~60). The remaining ~23 APIs are primarily:
+- Builder positioning APIs for new debug info format
+- Advanced type creation (array, forward decl, replaceable composite, set, dynamic array)
+- Macro support APIs
+- Arbitrary precision enumerator support
+These can be added incrementally as needed.
 
 ### Phase 2: Metadata & Attributes - December 16, 2025 ✅
 
