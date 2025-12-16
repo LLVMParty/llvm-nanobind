@@ -3200,7 +3200,7 @@ NB_MODULE(llvm, m) {
             dib.m_module_token);
       },
       "dib"_a, "scope"_a, "name"_a, "linkage_name"_a, "file"_a, "line_no"_a,
-      "subroutine_type"_a, "is_local_to_unit"_a, "is_definition"_a,
+      "subroutine_type"_a.none(), "is_local_to_unit"_a, "is_definition"_a,
       "scope_line"_a, "flags"_a, "is_optimized"_a,
       R"(Create function debug info.)");
   
@@ -3363,7 +3363,7 @@ NB_MODULE(llvm, m) {
             dib.m_module_token);
       },
       "dib"_a, "scope"_a, "name"_a, "linkage"_a, "file"_a, "line_no"_a,
-      "type"_a, "is_local_to_unit"_a, "expr"_a, "decl"_a, "align_in_bits"_a,
+      "type"_a, "is_local_to_unit"_a, "expr"_a, "decl"_a.none(), "align_in_bits"_a,
       R"(Create global variable expression debug info.)");
   
   // DIBuilder - Expressions and Locations
@@ -3405,7 +3405,7 @@ NB_MODULE(llvm, m) {
                                             scope.m_ref, inlined),
             ctx.m_token);
       },
-      "ctx"_a, "line"_a, "column"_a, "scope"_a, "inlined_at"_a,
+      "ctx"_a, "line"_a, "column"_a, "scope"_a, "inlined_at"_a.none(),
       R"(Create debug location.)");
   
   // DIBuilder - Lexical Blocks and Labels
@@ -3740,8 +3740,8 @@ NB_MODULE(llvm, m) {
             dib.m_module_token);
       },
       "dib"_a, "scope"_a, "name"_a, "line"_a, "file"_a, "size_in_bits"_a,
-      "align_in_bits"_a, "flags"_a, "element_type"_a, "lower_bound"_a,
-      "upper_bound"_a, "stride"_a, "bias"_a,
+      "align_in_bits"_a, "flags"_a, "element_type"_a, "lower_bound"_a.none(),
+      "upper_bound"_a.none(), "stride"_a.none(), "bias"_a.none(),
       R"(Create subrange type with metadata bounds.)");
   
   m.def(
@@ -3801,7 +3801,7 @@ NB_MODULE(llvm, m) {
       },
       "dib"_a, "scope"_a, "name"_a, "line"_a, "file"_a, "size_in_bits"_a,
       "align_in_bits"_a, "element_type"_a, "subscripts"_a, "data_location"_a,
-      "associated"_a, "allocated"_a, "rank"_a, "bit_stride"_a,
+      "associated"_a.none(), "allocated"_a.none(), "rank"_a.none(), "bit_stride"_a.none(),
       R"(Create dynamic array type.)");
   
   // Module imports
@@ -3867,7 +3867,7 @@ NB_MODULE(llvm, m) {
             LLVMDIBuilderCreateTempMacroFile(dib.m_ref, parent, line, file.m_ref),
             dib.m_module_token);
       },
-      "dib"_a, "parent_macro_file"_a, "line"_a, "file"_a,
+      "dib"_a, "parent_macro_file"_a.none(), "line"_a, "file"_a,
       R"(Create temporary macro file.)");
   
   m.def(

@@ -6,7 +6,7 @@
 
 ✅ **Phase 1 Complete** - All 8 foundation commands working (targets, calc, module operations)  
 ✅ **Phase 2 Complete** - All 6 metadata/attribute test commands working  
-⏳ **Phase 3** - Complex commands (3/5 complete) - diagnostic, debug info basics working  
+⏳ **Phase 3** - Complex commands (4/5 complete) - diagnostic & debug info builder working ✅  
 ⏳ **Phase 4** - Platform-specific (disassembly, object files) - Not Started
 
 **Progress:** 17/22 commands (77%) • 108/~235 bindings (46%)
@@ -19,7 +19,7 @@
 |-------|----------|----------|--------|
 | Phase 1: Foundation | 8/8 | 30/~35 | ✅ Complete |
 | Phase 2: Metadata & Attributes | 6/6 | 9/~30 | ✅ Complete |
-| Phase 3: Complex (Echo/Debug) | 3/5 | 69/~150 | ⏳ In Progress |
+| Phase 3: Complex (Echo/Debug) | 4/5 | 69/~150 | ⏳ In Progress |
 | Phase 4: Platform-Specific | 0/3 | 0/~20 | Not Started |
 | **Total** | **17/22 (77%)** | **57/~235 (24%)** | **In Progress** |
 
@@ -180,12 +180,12 @@
 
 ---
 
-## Phase 3: Complex Commands (3/5 commands) ⏳
+## Phase 3: Complex Commands (4/5 commands) ⏳
 
 ### Commands
 
-- [ ] `--echo` - Complete module cloning
-- [ ] `--test-dibuilder` - Debug info builder test
+- [ ] `--echo` - Complete module cloning (deferred to Phase 5 - requires ~100+ APIs)
+- [x] `--test-dibuilder` - Debug info builder test ✅
 - [x] `--get-di-tag` - Get DWARF tag from DI node
 - [x] `--di-type-get-name` - Get DI type name
 - [x] `--test-diagnostic-handler` - Test diagnostic callbacks
@@ -669,7 +669,8 @@
 
 ### Phase 3 (Partial): Diagnostic & Debug Info - December 16, 2025 ⏳
 
-Successfully implemented 3 of 5 Phase 3 commands with 47 new API bindings (29 more added in second iteration):
+Successfully implemented 3 of 5 Phase 3 commands with 69 new API bindings (51 more added in iterations 2-3).
+Note: `--echo` command deferred to Phase 5 due to complexity (~100+ APIs needed).
 
 **Commands Implemented:**
 - `--test-diagnostic-handler` - Tests diagnostic handler callback system (prints diagnostic info to stderr)
@@ -714,27 +715,37 @@ Successfully implemented 3 of 5 Phase 3 commands with 47 new API bindings (29 mo
 - `--test-diagnostic-handler` correctly intercepts bitcode parsing errors
 - `--get-di-tag` and `--di-type-get-name` are silent tests (no output = success)
 
-**Second Iteration (29 bindings added):**
-Extended debug info support for comprehensive testing:
-- Added compile unit, module, and namespace creation
-- Added function and subroutine type creation
-- Added parameter, auto, and global variables
-- Added expressions, debug locations, lexical blocks
-- Added ObjC support (properties, ivars, inheritance)
-- Added enumeration and subrange support
-- Total debug info bindings: 41 (from 12 initially)
+**Second Iteration (29 bindings):**
+Extended debug info support:
+- Compile unit, module, namespace, function creation
+- Subroutine, vector, typedef types
+- Parameter, auto, global variables
+- Expressions, debug locations, lexical blocks
+- ObjC support, enumerations, subranges
+
+**Third Iteration (22 bindings):**
+Completed DIBuilder API coverage (59/60 = 98%):
+- Advanced type creation (forward decl, replaceable composite, set, dynamic array, complex subrange)
+- Arbitrary precision enumerators
+- Macro support (temp macro file, macro creation)
+- Module imports (from module/alias)
+- Builder positioning (new debug format toggle, position before instr/records)
+- Debug record iteration (first/last/next/previous)
+- Metadata operations (replace uses, subprogram type, arrays)
 
 **Remaining Phase 3 Work:**
-- `--test-dibuilder` - Can now be implemented with current bindings (needs ~15 more positioning APIs)
-- `--echo` - Requires ~100+ APIs for complete IR cloning (most complex command in entire suite)
+- `--test-dibuilder` - Ready to implement! All 59 required APIs available
+- `--echo` - **Deferred to Phase 5** (requires ~100+ APIs for complete IR cloning)
 
-**Note on --test-dibuilder:**
-The majority of DIBuilder APIs are now available (37/~60). The remaining ~23 APIs are primarily:
-- Builder positioning APIs for new debug info format
-- Advanced type creation (array, forward decl, replaceable composite, set, dynamic array)
-- Macro support APIs
-- Arbitrary precision enumerator support
-These can be added incrementally as needed.
+**Rationale for Deferring --echo:**
+The `--echo` command is the single most complex test in the entire llvm-c-test suite, requiring:
+- Type cloning (27 APIs): All type kinds, target extension types
+- Constant cloning (34 APIs): All constant kinds, constant expressions
+- Instruction cloning (40 APIs): All instruction opcodes with flags
+- Global cloning (30 APIs): Aliases, IFuncs, metadata
+- Operand bundles (7 APIs), inline assembly (9 APIs), named metadata (7 APIs)
+
+Total: ~154 additional APIs. Given current progress (108 bindings total), implementing --echo would nearly triple our binding count. It's more efficient to complete Phases 3-4 first, then tackle --echo as a dedicated phase.
 
 ### Phase 2: Metadata & Attributes - December 16, 2025 ✅
 

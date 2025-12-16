@@ -120,6 +120,10 @@ def main():
         from .debuginfo import di_type_get_name
 
         return di_type_get_name()
+    elif command == "--test-dibuilder":
+        from .debuginfo import test_dibuilder
+
+        return test_dibuilder()
     else:
         print(f"Unknown command: {command}", file=sys.stderr)
         print_usage()
