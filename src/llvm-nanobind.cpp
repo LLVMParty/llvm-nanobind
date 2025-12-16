@@ -8,7 +8,10 @@
 #include <stdexcept>
 
 #include <llvm-c/Analysis.h>
+#include <llvm-c/BitReader.h>
 #include <llvm-c/Core.h>
+#include <llvm-c/Target.h>
+#include <llvm-c/TargetMachine.h>
 
 namespace nb = nanobind;
 using namespace nb::literals;
@@ -238,6 +241,48 @@ struct LLVMValueWrapper {
     if (!prev)
       return std::nullopt;
     return LLVMValueWrapper(prev, m_context_token);
+  }
+
+  // Instruction iteration
+  std::optional<LLVMValueWrapper> next_instruction() const {
+    check_valid();
+    LLVMValueRef next = LLVMGetNextInstruction(m_ref);
+    if (!next)
+      return std::nullopt;
+    return LLVMValueWrapper(next, m_context_token);
+  }
+
+  std::optional<LLVMValueWrapper> prev_instruction() const {
+    check_valid();
+    LLVMValueRef prev = LLVMGetPreviousInstruction(m_ref);
+    if (!prev)
+      return std::nullopt;
+    return LLVMValueWrapper(prev, m_context_token);
+  }
+
+  // Instruction/value predicates
+  bool is_a_call_inst() const {
+    check_valid();
+    return LLVMIsACallInst(m_ref) != nullptr;
+  }
+
+  bool is_declaration() const {
+    check_valid();
+    return LLVMIsDeclaration(m_ref);
+  }
+
+  // Operand access
+  unsigned get_num_operands() const {
+    check_valid();
+    return LLVMGetNumOperands(m_ref);
+  }
+
+  LLVMValueWrapper get_operand(unsigned index) const {
+    check_valid();
+    LLVMValueRef op = LLVMGetOperand(m_ref, index);
+    if (!op)
+      throw LLVMInvalidOperationError("Invalid operand index");
+    return LLVMValueWrapper(op, m_context_token);
   }
 };
 
@@ -804,6 +849,18 @@ struct LLVMBuilderWrapper : NoMoveCopy {
                             m_context_token);
   }
 
+  // Generic binary operation
+  LLVMValueWrapper binop(LLVMOpcode opcode, const LLVMValueWrapper &lhs,
+                         const LLVMValueWrapper &rhs,
+                         const std::string &name = "") {
+    check_valid();
+    lhs.check_valid();
+    rhs.check_valid();
+    return LLVMValueWrapper(
+        LLVMBuildBinOp(m_ref, opcode, lhs.m_ref, rhs.m_ref, name.c_str()),
+        m_context_token);
+  }
+
   // Memory operations
   LLVMValueWrapper build_alloca(const LLVMTypeWrapper &ty,
                                 const std::string &name = "") {
@@ -1158,6 +1215,13 @@ struct LLVMModuleWrapper : NoMoveCopy {
       : m_context_token(std::move(context_token)),
         m_token(std::make_shared<ValidityToken>()), m_ctx_ref(ctx) {
     m_ref = LLVMModuleCreateWithNameInContext(name.c_str(), ctx);
+  }
+
+  // Constructor for wrapping an existing module (from bitcode parsing)
+  LLVMModuleWrapper(LLVMModuleRef mod, LLVMContextRef ctx,
+                    std::shared_ptr<ValidityToken> context_token)
+      : m_ref(mod), m_context_token(std::move(context_token)),
+        m_token(std::make_shared<ValidityToken>()), m_ctx_ref(ctx) {
   }
 
   ~LLVMModuleWrapper() {
@@ -2049,6 +2113,172 @@ void struct_set_body(LLVMTypeWrapper &struct_ty,
 }
 
 // =============================================================================
+// Target Wrapper
+// =============================================================================
+
+struct LLVMTargetWrapper {
+  LLVMTargetRef m_ref = nullptr;
+
+  LLVMTargetWrapper() = default;
+  explicit LLVMTargetWrapper(LLVMTargetRef ref) : m_ref(ref) {}
+
+  void check_valid() const {
+    if (!m_ref)
+      throw LLVMUseAfterFreeError("Target is null");
+  }
+
+  std::string get_name() const {
+    check_valid();
+    const char *name = LLVMGetTargetName(m_ref);
+    return name ? std::string(name) : std::string();
+  }
+
+  std::string get_description() const {
+    check_valid();
+    const char *desc = LLVMGetTargetDescription(m_ref);
+    return desc ? std::string(desc) : std::string();
+  }
+
+  bool has_jit() const {
+    check_valid();
+    return LLVMTargetHasJIT(m_ref);
+  }
+
+  bool has_target_machine() const {
+    check_valid();
+    return LLVMTargetHasTargetMachine(m_ref);
+  }
+
+  bool has_asm_backend() const {
+    check_valid();
+    return LLVMTargetHasAsmBackend(m_ref);
+  }
+
+  std::optional<LLVMTargetWrapper> next() const {
+    check_valid();
+    LLVMTargetRef next_ref = LLVMGetNextTarget(m_ref);
+    if (next_ref)
+      return LLVMTargetWrapper(next_ref);
+    return std::nullopt;
+  }
+};
+
+// Target initialization functions
+void initialize_all_target_infos() { LLVMInitializeAllTargetInfos(); }
+
+void initialize_all_targets() { LLVMInitializeAllTargets(); }
+
+void initialize_all_target_mcs() { LLVMInitializeAllTargetMCs(); }
+
+void initialize_all_asm_printers() { LLVMInitializeAllAsmPrinters(); }
+
+void initialize_all_asm_parsers() { LLVMInitializeAllAsmParsers(); }
+
+void initialize_all_disassemblers() { LLVMInitializeAllDisassemblers(); }
+
+std::optional<LLVMTargetWrapper> get_first_target() {
+  LLVMTargetRef ref = LLVMGetFirstTarget();
+  if (ref)
+    return LLVMTargetWrapper(ref);
+  return std::nullopt;
+}
+
+// =============================================================================
+// Memory Buffer Wrapper
+// =============================================================================
+
+struct LLVMMemoryBufferWrapper : NoMoveCopy {
+  LLVMMemoryBufferRef m_ref = nullptr;
+
+  LLVMMemoryBufferWrapper() = default;
+  explicit LLVMMemoryBufferWrapper(LLVMMemoryBufferRef ref) : m_ref(ref) {}
+
+  ~LLVMMemoryBufferWrapper() {
+    if (m_ref) {
+      LLVMDisposeMemoryBuffer(m_ref);
+      m_ref = nullptr;
+    }
+  }
+
+  void check_valid() const {
+    if (!m_ref)
+      throw LLVMUseAfterFreeError("MemoryBuffer is null");
+  }
+
+  const char *get_buffer_start() const {
+    check_valid();
+    return LLVMGetBufferStart(m_ref);
+  }
+
+  size_t get_buffer_size() const {
+    check_valid();
+    return LLVMGetBufferSize(m_ref);
+  }
+};
+
+// Memory buffer creation functions
+LLVMMemoryBufferWrapper *create_memory_buffer_with_stdin() {
+  LLVMMemoryBufferRef buf;
+  char *error_msg = nullptr;
+  
+  if (LLVMCreateMemoryBufferWithSTDIN(&buf, &error_msg)) {
+    std::string err = error_msg ? error_msg : "Unknown error reading stdin";
+    if (error_msg)
+      LLVMDisposeMessage(error_msg);
+    throw LLVMException(err);
+  }
+  
+  return new LLVMMemoryBufferWrapper(buf);
+}
+
+// =============================================================================
+// BitReader Functions
+// =============================================================================
+
+// Parse bitcode (legacy API with error message)
+LLVMModuleWrapper *parse_bitcode_in_context(LLVMContextWrapper &ctx,
+                                             LLVMMemoryBufferWrapper &membuf,
+                                             bool lazy, bool new_api) {
+  membuf.check_valid();
+  ctx.check_valid();
+  
+  LLVMModuleRef mod;
+  char *error_msg = nullptr;
+  LLVMBool failed;
+  
+  if (new_api) {
+    // New API - uses diagnostic handler instead of error message
+    if (lazy) {
+      failed = LLVMGetBitcodeModuleInContext2(ctx.m_ref, membuf.m_ref, &mod);
+    } else {
+      failed = LLVMParseBitcodeInContext2(ctx.m_ref, membuf.m_ref, &mod);
+    }
+    
+    if (failed) {
+      throw LLVMException("Failed to parse bitcode (new API)");
+    }
+  } else {
+    // Legacy API with error message
+    if (lazy) {
+      failed = LLVMGetBitcodeModuleInContext(ctx.m_ref, membuf.m_ref, &mod,
+                                             &error_msg);
+    } else {
+      failed = LLVMParseBitcodeInContext(ctx.m_ref, membuf.m_ref, &mod,
+                                         &error_msg);
+    }
+    
+    if (failed) {
+      std::string err = error_msg ? error_msg : "Unknown error parsing bitcode";
+      if (error_msg)
+        LLVMDisposeMessage(error_msg);
+      throw LLVMException(err);
+    }
+  }
+  
+  return new LLVMModuleWrapper(mod, ctx.m_ref, ctx.m_token);
+}
+
+// =============================================================================
 // Module Registration
 // =============================================================================
 
@@ -2139,6 +2369,16 @@ NB_MODULE(llvm, m) {
       .value("BFloat", LLVMBFloatTypeKind)
       .export_values();
 
+  nb::enum_<LLVMOpcode>(m, "Opcode")
+      .value("Add", LLVMAdd)
+      .value("Sub", LLVMSub)
+      .value("Mul", LLVMMul)
+      .value("SDiv", LLVMSDiv)
+      .value("And", LLVMAnd)
+      .value("Or", LLVMOr)
+      .value("Xor", LLVMXor)
+      .export_values();
+
   // Type wrapper
   nb::class_<LLVMTypeWrapper>(m, "Type")
       .def_prop_ro("kind", &LLVMTypeWrapper::kind)
@@ -2209,7 +2449,16 @@ NB_MODULE(llvm, m) {
       .def("get_inst_alignment", &instruction_get_alignment)
       // Comparison helpers
       .def("get_icmp_predicate", &instruction_get_icmp_predicate)
-      .def("get_fcmp_predicate", &instruction_get_fcmp_predicate);
+      .def("get_fcmp_predicate", &instruction_get_fcmp_predicate)
+      // Instruction iteration
+      .def_prop_ro("next_instruction", &LLVMValueWrapper::next_instruction)
+      .def_prop_ro("prev_instruction", &LLVMValueWrapper::prev_instruction)
+      // Instruction predicates
+      .def("is_a_call_inst", &LLVMValueWrapper::is_a_call_inst)
+      .def("is_declaration", &LLVMValueWrapper::is_declaration)
+      // Operand access
+      .def("get_num_operands", &LLVMValueWrapper::get_num_operands)
+      .def("get_operand", &LLVMValueWrapper::get_operand, "index"_a);
 
   // BasicBlock wrapper
   nb::class_<LLVMBasicBlockWrapper>(m, "BasicBlock")
@@ -2295,6 +2544,8 @@ NB_MODULE(llvm, m) {
       .def("and_", &LLVMBuilderWrapper::and_, "lhs"_a, "rhs"_a, "name"_a = "")
       .def("or_", &LLVMBuilderWrapper::or_, "lhs"_a, "rhs"_a, "name"_a = "")
       .def("xor_", &LLVMBuilderWrapper::xor_, "lhs"_a, "rhs"_a, "name"_a = "")
+      .def("binop", &LLVMBuilderWrapper::binop, "opcode"_a, "lhs"_a, "rhs"_a,
+           "name"_a = "")
       // Memory
       .def("alloca", &LLVMBuilderWrapper::build_alloca, "ty"_a, "name"_a = "")
       .def("array_alloca", &LLVMBuilderWrapper::build_array_alloca, "ty"_a,
@@ -2488,4 +2739,141 @@ NB_MODULE(llvm, m) {
   m.def("const_int_of_arbitrary_precision", &const_int_of_arbitrary_precision,
         "ty"_a, "words"_a,
         R"(Create an integer constant of arbitrary precision from 64-bit words (little-endian).)");
+
+  // Target wrapper
+  nb::class_<LLVMTargetWrapper>(m, "Target")
+      .def_prop_ro("name", &LLVMTargetWrapper::get_name)
+      .def_prop_ro("description", &LLVMTargetWrapper::get_description)
+      .def_prop_ro("has_jit", &LLVMTargetWrapper::has_jit)
+      .def_prop_ro("has_target_machine", &LLVMTargetWrapper::has_target_machine)
+      .def_prop_ro("has_asm_backend", &LLVMTargetWrapper::has_asm_backend)
+      .def_prop_ro("next", &LLVMTargetWrapper::next);
+
+  // Target functions
+  m.def("initialize_all_target_infos", &initialize_all_target_infos,
+        R"(Initialize all target infos.)");
+  m.def("initialize_all_targets", &initialize_all_targets,
+        R"(Initialize all targets.)");
+  m.def("initialize_all_target_mcs", &initialize_all_target_mcs,
+        R"(Initialize all target MCs.)");
+  m.def("initialize_all_asm_printers", &initialize_all_asm_printers,
+        R"(Initialize all ASM printers.)");
+  m.def("initialize_all_asm_parsers", &initialize_all_asm_parsers,
+        R"(Initialize all ASM parsers.)");
+  m.def("initialize_all_disassemblers", &initialize_all_disassemblers,
+        R"(Initialize all disassemblers.)");
+  m.def("get_first_target", &get_first_target,
+        R"(Get the first registered target (returns None if no targets).)");
+
+  // Memory buffer wrapper
+  nb::class_<LLVMMemoryBufferWrapper>(m, "MemoryBuffer")
+      .def_prop_ro("buffer_start", &LLVMMemoryBufferWrapper::get_buffer_start)
+      .def_prop_ro("buffer_size", &LLVMMemoryBufferWrapper::get_buffer_size);
+
+  // Memory buffer functions
+  m.def("create_memory_buffer_with_stdin", &create_memory_buffer_with_stdin,
+        nb::rv_policy::take_ownership,
+        R"(Read stdin into a memory buffer.)");
+
+  // BitReader functions
+  m.def("parse_bitcode_in_context", &parse_bitcode_in_context, "ctx"_a,
+        "membuf"_a, "lazy"_a = false, "new_api"_a = false,
+        nb::rv_policy::take_ownership,
+        R"(Parse bitcode from memory buffer into a module.)");
+
+  // Attribute index constants
+  m.attr("AttributeReturnIndex") = nb::int_(static_cast<int>(LLVMAttributeReturnIndex));
+  m.attr("AttributeFunctionIndex") = nb::int_(static_cast<int>(LLVMAttributeFunctionIndex));
+
+  // Attribute functions
+  m.def(
+      "get_attribute_count_at_index",
+      [](const LLVMFunctionWrapper &func, int idx) {
+        func.check_valid();
+        return LLVMGetAttributeCountAtIndex(func.m_ref, static_cast<unsigned>(idx));
+      },
+      "func"_a, "idx"_a,
+      R"(Get the number of attributes at the given index.)");
+
+  m.def(
+      "get_callsite_attribute_count",
+      [](const LLVMValueWrapper &call_inst, int idx) {
+        call_inst.check_valid();
+        return LLVMGetCallSiteAttributeCount(call_inst.m_ref, static_cast<unsigned>(idx));
+      },
+      "call_inst"_a, "idx"_a,
+      R"(Get the number of call site attributes at the given index.)");
+
+  // Metadata functions
+  m.def(
+      "md_node",
+      [](const std::vector<LLVMValueWrapper> &vals) {
+        std::vector<LLVMValueRef> refs;
+        refs.reserve(vals.size());
+        for (const auto &v : vals) {
+          v.check_valid();
+          refs.push_back(v.m_ref);
+        }
+        return LLVMValueWrapper(
+            LLVMMDNode(refs.data(), static_cast<unsigned>(refs.size())),
+            vals.empty() ? nullptr : vals[0].m_context_token);
+      },
+      "vals"_a, R"(Create metadata node from values (global context).)");
+
+  m.def(
+      "add_named_metadata_operand",
+      [](LLVMModuleWrapper &mod, const std::string &name,
+         const LLVMValueWrapper &val) {
+        mod.check_valid();
+        val.check_valid();
+        LLVMAddNamedMetadataOperand(mod.m_ref, name.c_str(), val.m_ref);
+      },
+      "mod"_a, "name"_a, "val"_a,
+      R"(Add operand to named metadata.)");
+
+  m.def(
+      "set_metadata",
+      [](LLVMValueWrapper &inst, unsigned kind_id, const LLVMValueWrapper &val) {
+        inst.check_valid();
+        val.check_valid();
+        LLVMSetMetadata(inst.m_ref, kind_id, val.m_ref);
+      },
+      "inst"_a, "kind_id"_a, "val"_a, R"(Set metadata on instruction.)");
+
+  m.def(
+      "get_md_kind_id",
+      [](const std::string &name) {
+        return LLVMGetMDKindID(name.c_str(), static_cast<unsigned>(name.size()));
+      },
+      "name"_a, R"(Get metadata kind ID for name.)");
+
+  m.def(
+      "delete_instruction",
+      [](LLVMValueWrapper &inst) {
+        inst.check_valid();
+        LLVMDeleteInstruction(inst.m_ref);
+        // Invalidate the wrapper after deletion
+        inst.m_ref = nullptr;
+      },
+      "inst"_a, R"(Delete an instruction.)");
+
+  m.def(
+      "get_module_context",
+      [](const LLVMModuleWrapper &mod) -> LLVMContextWrapper * {
+        mod.check_valid();
+        LLVMContextRef ctx = LLVMGetModuleContext(mod.m_ref);
+        // Return a wrapper for the context (note: this doesn't own it)
+        static thread_local LLVMContextWrapper global_ctx_wrapper(true);
+        return &global_ctx_wrapper;
+      },
+      nb::rv_policy::reference, "mod"_a, R"(Get module's context.)");
+
+  m.def(
+      "is_a_value_as_metadata",
+      [](const LLVMValueWrapper &val) {
+        val.check_valid();
+        LLVMValueRef result = LLVMIsAValueAsMetadata(val.m_ref);
+        return result != nullptr;
+      },
+      "val"_a, R"(Check if value is ValueAsMetadata.)");
 }
