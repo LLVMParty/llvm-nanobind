@@ -78,6 +78,52 @@ target_link_libraries(llvm PUBLIC
 	LLVM-C-Wrapper
 )
 
+# Target: llvm-c-test-vendored
+set(llvm-c-test-vendored_SOURCES
+	cmake.toml
+	"llvm-c/llvm-c-test/attributes.c"
+	"llvm-c/llvm-c-test/calc.c"
+	"llvm-c/llvm-c-test/debuginfo.c"
+	"llvm-c/llvm-c-test/diagnostic.c"
+	"llvm-c/llvm-c-test/disassemble.c"
+	"llvm-c/llvm-c-test/echo.cpp"
+	"llvm-c/llvm-c-test/helpers.c"
+	"llvm-c/llvm-c-test/include-all.c"
+	"llvm-c/llvm-c-test/llvm-c-test.h"
+	"llvm-c/llvm-c-test/main.c"
+	"llvm-c/llvm-c-test/metadata.c"
+	"llvm-c/llvm-c-test/module.c"
+	"llvm-c/llvm-c-test/object.c"
+	"llvm-c/llvm-c-test/targets.c"
+)
+
+add_executable(llvm-c-test-vendored)
+
+target_sources(llvm-c-test-vendored PRIVATE ${llvm-c-test-vendored_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${llvm-c-test-vendored_SOURCES})
+
+target_compile_features(llvm-c-test-vendored PRIVATE
+	cxx_std_20
+)
+
+if(NOT TARGET LLVM-C-Wrapper)
+	message(FATAL_ERROR "Target \"LLVM-C-Wrapper\" referenced by \"llvm-c-test-vendored\" does not exist!")
+endif()
+
+target_link_libraries(llvm-c-test-vendored PRIVATE
+	LLVM-C-Wrapper
+)
+
+set_target_properties(llvm-c-test-vendored PROPERTIES
+	OUTPUT_NAME
+		llvm-c-test
+)
+
+get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+if(NOT CMKR_VS_STARTUP_PROJECT)
+	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT llvm-c-test-vendored)
+endif()
+
 # Target: test_context
 set(test_context_SOURCES
 	cmake.toml

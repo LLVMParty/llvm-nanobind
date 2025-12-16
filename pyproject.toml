@@ -15,6 +15,7 @@ Homepage = "https://github.com/LLVMParty/llvm-nanobind"
 
 [dependency-groups]
 dev = [
+    "lit>=18.1.8",
     "pytest",
 ]
 

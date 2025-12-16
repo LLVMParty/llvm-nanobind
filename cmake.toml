@@ -40,6 +40,12 @@ type = "executable"
 compile-features = ["cxx_std_20"]
 link-libraries = ["::LLVM-C-Wrapper"]
 
+[target.llvm-c-test-vendored]
+type = "test"
+sources = ["llvm-c/llvm-c-test/*.c", "llvm-c/llvm-c-test/*.cpp"]
+headers = ["llvm-c/llvm-c-test/*.h"]
+properties = { OUTPUT_NAME = "llvm-c-test" }
+
 # Test targets
 [target.test_context]
 type = "test"
