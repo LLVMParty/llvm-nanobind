@@ -3658,6 +3658,367 @@ NB_MODULE(llvm, m) {
       "dib"_a, "name"_a, "value"_a, "is_unsigned"_a,
       R"(Create enumerator debug info.)");
   
+  m.def(
+      "dibuilder_create_enumerator_of_arbitrary_precision",
+      [](LLVMDIBuilderWrapper &dib, const std::string &name,
+         const std::vector<uint64_t> &value, bool is_unsigned) -> LLVMMetadataWrapper {
+        dib.check_valid();
+        return LLVMMetadataWrapper(
+            LLVMDIBuilderCreateEnumeratorOfArbitraryPrecision(
+                dib.m_ref, name.c_str(), name.size(), value.size() * 64,
+                value.data(), is_unsigned),
+            dib.m_module_token);
+      },
+      "dib"_a, "name"_a, "value"_a, "is_unsigned"_a,
+      R"(Create enumerator with arbitrary precision.)");
+  
+  // Advanced type creation
+  m.def(
+      "dibuilder_create_forward_decl",
+      [](LLVMDIBuilderWrapper &dib, unsigned tag, const std::string &name,
+         const LLVMMetadataWrapper &scope, const LLVMMetadataWrapper &file,
+         unsigned line, unsigned runtime_lang, uint64_t size_in_bits,
+         uint32_t align_in_bits, const std::string &unique_id) -> LLVMMetadataWrapper {
+        dib.check_valid();
+        scope.check_valid();
+        file.check_valid();
+        return LLVMMetadataWrapper(
+            LLVMDIBuilderCreateForwardDecl(
+                dib.m_ref, tag, name.c_str(), name.size(), scope.m_ref,
+                file.m_ref, line, runtime_lang, size_in_bits, align_in_bits,
+                unique_id.c_str(), unique_id.size()),
+            dib.m_module_token);
+      },
+      "dib"_a, "tag"_a, "name"_a, "scope"_a, "file"_a, "line"_a,
+      "runtime_lang"_a, "size_in_bits"_a, "align_in_bits"_a, "unique_id"_a,
+      R"(Create forward declaration.)");
+  
+  m.def(
+      "dibuilder_create_replaceable_composite_type",
+      [](LLVMDIBuilderWrapper &dib, unsigned tag, const std::string &name,
+         const LLVMMetadataWrapper &scope, const LLVMMetadataWrapper &file,
+         unsigned line, unsigned runtime_lang, uint64_t size_in_bits,
+         uint32_t align_in_bits, unsigned flags, const std::string &unique_id)
+          -> LLVMMetadataWrapper {
+        dib.check_valid();
+        scope.check_valid();
+        file.check_valid();
+        return LLVMMetadataWrapper(
+            LLVMDIBuilderCreateReplaceableCompositeType(
+                dib.m_ref, tag, name.c_str(), name.size(), scope.m_ref,
+                file.m_ref, line, runtime_lang, size_in_bits, align_in_bits,
+                (LLVMDIFlags)flags, unique_id.c_str(), unique_id.size()),
+            dib.m_module_token);
+      },
+      "dib"_a, "tag"_a, "name"_a, "scope"_a, "file"_a, "line"_a,
+      "runtime_lang"_a, "size_in_bits"_a, "align_in_bits"_a, "flags"_a, "unique_id"_a,
+      R"(Create replaceable composite type.)");
+  
+  m.def(
+      "dibuilder_create_subrange_type",
+      [](LLVMDIBuilderWrapper &dib, const LLVMMetadataWrapper &scope,
+         const std::string &name, unsigned line, const LLVMMetadataWrapper &file,
+         uint64_t size_in_bits, uint32_t align_in_bits, unsigned flags,
+         const LLVMMetadataWrapper &element_type,
+         const LLVMMetadataWrapper *lower_bound,
+         const LLVMMetadataWrapper *upper_bound,
+         const LLVMMetadataWrapper *stride,
+         const LLVMMetadataWrapper *bias) -> LLVMMetadataWrapper {
+        dib.check_valid();
+        scope.check_valid();
+        file.check_valid();
+        element_type.check_valid();
+        LLVMMetadataRef lb = lower_bound ? lower_bound->m_ref : nullptr;
+        LLVMMetadataRef ub = upper_bound ? upper_bound->m_ref : nullptr;
+        LLVMMetadataRef st = stride ? stride->m_ref : nullptr;
+        LLVMMetadataRef bi = bias ? bias->m_ref : nullptr;
+        return LLVMMetadataWrapper(
+            LLVMDIBuilderCreateSubrangeType(
+                dib.m_ref, scope.m_ref, name.c_str(), name.size(), line,
+                file.m_ref, size_in_bits, align_in_bits, (LLVMDIFlags)flags,
+                element_type.m_ref, lb, ub, st, bi),
+            dib.m_module_token);
+      },
+      "dib"_a, "scope"_a, "name"_a, "line"_a, "file"_a, "size_in_bits"_a,
+      "align_in_bits"_a, "flags"_a, "element_type"_a, "lower_bound"_a,
+      "upper_bound"_a, "stride"_a, "bias"_a,
+      R"(Create subrange type with metadata bounds.)");
+  
+  m.def(
+      "dibuilder_create_set_type",
+      [](LLVMDIBuilderWrapper &dib, const LLVMMetadataWrapper &scope,
+         const std::string &name, const LLVMMetadataWrapper &file, unsigned line,
+         uint64_t size_in_bits, uint32_t align_in_bits,
+         const LLVMMetadataWrapper &base_type) -> LLVMMetadataWrapper {
+        dib.check_valid();
+        scope.check_valid();
+        file.check_valid();
+        base_type.check_valid();
+        return LLVMMetadataWrapper(
+            LLVMDIBuilderCreateSetType(dib.m_ref, scope.m_ref, name.c_str(),
+                                      name.size(), file.m_ref, line,
+                                      size_in_bits, align_in_bits, base_type.m_ref),
+            dib.m_module_token);
+      },
+      "dib"_a, "scope"_a, "name"_a, "file"_a, "line"_a, "size_in_bits"_a,
+      "align_in_bits"_a, "base_type"_a,
+      R"(Create set type.)");
+  
+  m.def(
+      "dibuilder_create_dynamic_array_type",
+      [](LLVMDIBuilderWrapper &dib, const LLVMMetadataWrapper &scope,
+         const std::string &name, unsigned line, const LLVMMetadataWrapper &file,
+         uint64_t size_in_bits, uint32_t align_in_bits,
+         const LLVMMetadataWrapper &element_type,
+         const std::vector<LLVMMetadataWrapper> &subscripts,
+         const LLVMMetadataWrapper &data_location,
+         const LLVMMetadataWrapper *associated,
+         const LLVMMetadataWrapper *allocated,
+         const LLVMMetadataWrapper *rank,
+         const LLVMMetadataWrapper *bit_stride) -> LLVMMetadataWrapper {
+        dib.check_valid();
+        scope.check_valid();
+        file.check_valid();
+        element_type.check_valid();
+        data_location.check_valid();
+        std::vector<LLVMMetadataRef> sub_refs;
+        sub_refs.reserve(subscripts.size());
+        for (const auto &s : subscripts) {
+          s.check_valid();
+          sub_refs.push_back(s.m_ref);
+        }
+        LLVMMetadataRef assoc = associated ? associated->m_ref : nullptr;
+        LLVMMetadataRef alloc = allocated ? allocated->m_ref : nullptr;
+        LLVMMetadataRef rnk = rank ? rank->m_ref : nullptr;
+        LLVMMetadataRef stride = bit_stride ? bit_stride->m_ref : nullptr;
+        return LLVMMetadataWrapper(
+            LLVMDIBuilderCreateDynamicArrayType(
+                dib.m_ref, scope.m_ref, name.c_str(), name.size(), line,
+                file.m_ref, size_in_bits, align_in_bits, element_type.m_ref,
+                sub_refs.data(), sub_refs.size(), data_location.m_ref,
+                assoc, alloc, rnk, stride),
+            dib.m_module_token);
+      },
+      "dib"_a, "scope"_a, "name"_a, "line"_a, "file"_a, "size_in_bits"_a,
+      "align_in_bits"_a, "element_type"_a, "subscripts"_a, "data_location"_a,
+      "associated"_a, "allocated"_a, "rank"_a, "bit_stride"_a,
+      R"(Create dynamic array type.)");
+  
+  // Module imports
+  m.def(
+      "dibuilder_create_imported_module_from_module",
+      [](LLVMDIBuilderWrapper &dib, const LLVMMetadataWrapper &scope,
+         const LLVMMetadataWrapper &import_module, const LLVMMetadataWrapper &file,
+         unsigned line, const std::vector<LLVMMetadataWrapper> &elements)
+          -> LLVMMetadataWrapper {
+        dib.check_valid();
+        scope.check_valid();
+        import_module.check_valid();
+        file.check_valid();
+        std::vector<LLVMMetadataRef> elem_refs;
+        elem_refs.reserve(elements.size());
+        for (const auto &e : elements) {
+          e.check_valid();
+          elem_refs.push_back(e.m_ref);
+        }
+        return LLVMMetadataWrapper(
+            LLVMDIBuilderCreateImportedModuleFromModule(
+                dib.m_ref, scope.m_ref, import_module.m_ref, file.m_ref, line,
+                elem_refs.data(), elem_refs.size()),
+            dib.m_module_token);
+      },
+      "dib"_a, "scope"_a, "import_module"_a, "file"_a, "line"_a, "elements"_a,
+      R"(Create imported module from module.)");
+  
+  m.def(
+      "dibuilder_create_imported_module_from_alias",
+      [](LLVMDIBuilderWrapper &dib, const LLVMMetadataWrapper &scope,
+         const LLVMMetadataWrapper &imported_entity, const LLVMMetadataWrapper &file,
+         unsigned line, const std::vector<LLVMMetadataWrapper> &elements)
+          -> LLVMMetadataWrapper {
+        dib.check_valid();
+        scope.check_valid();
+        imported_entity.check_valid();
+        file.check_valid();
+        std::vector<LLVMMetadataRef> elem_refs;
+        elem_refs.reserve(elements.size());
+        for (const auto &e : elements) {
+          e.check_valid();
+          elem_refs.push_back(e.m_ref);
+        }
+        return LLVMMetadataWrapper(
+            LLVMDIBuilderCreateImportedModuleFromAlias(
+                dib.m_ref, scope.m_ref, imported_entity.m_ref, file.m_ref, line,
+                elem_refs.data(), elem_refs.size()),
+            dib.m_module_token);
+      },
+      "dib"_a, "scope"_a, "imported_entity"_a, "file"_a, "line"_a, "elements"_a,
+      R"(Create imported module from alias.)");
+  
+  // Macros
+  m.def(
+      "dibuilder_create_temp_macro_file",
+      [](LLVMDIBuilderWrapper &dib, const LLVMMetadataWrapper *parent_macro_file,
+         unsigned line, const LLVMMetadataWrapper &file) -> LLVMMetadataWrapper {
+        dib.check_valid();
+        file.check_valid();
+        LLVMMetadataRef parent = parent_macro_file ? parent_macro_file->m_ref : nullptr;
+        return LLVMMetadataWrapper(
+            LLVMDIBuilderCreateTempMacroFile(dib.m_ref, parent, line, file.m_ref),
+            dib.m_module_token);
+      },
+      "dib"_a, "parent_macro_file"_a, "line"_a, "file"_a,
+      R"(Create temporary macro file.)");
+  
+  m.def(
+      "dibuilder_create_macro",
+      [](LLVMDIBuilderWrapper &dib, const LLVMMetadataWrapper &parent_macro_file,
+         unsigned line, unsigned macro_type, const std::string &name,
+         const std::string &value) -> LLVMMetadataWrapper {
+        dib.check_valid();
+        parent_macro_file.check_valid();
+        return LLVMMetadataWrapper(
+            LLVMDIBuilderCreateMacro(dib.m_ref, parent_macro_file.m_ref, line,
+                                    (LLVMDWARFMacinfoRecordType)macro_type,
+                                    name.c_str(), name.size(),
+                                    value.c_str(), value.size()),
+            dib.m_module_token);
+      },
+      "dib"_a, "parent_macro_file"_a, "line"_a, "macro_type"_a, "name"_a, "value"_a,
+      R"(Create macro.)");
+  
+  // Label insertion
+  m.def(
+      "dibuilder_insert_label_before",
+      [](LLVMDIBuilderWrapper &dib, const LLVMMetadataWrapper &label_info,
+         const LLVMMetadataWrapper &debug_loc, LLVMValueWrapper &insert_before) {
+        dib.check_valid();
+        label_info.check_valid();
+        debug_loc.check_valid();
+        insert_before.check_valid();
+        LLVMDIBuilderInsertLabelBefore(dib.m_ref, label_info.m_ref,
+                                      debug_loc.m_ref, insert_before.m_ref);
+      },
+      "dib"_a, "label_info"_a, "debug_loc"_a, "insert_before"_a,
+      R"(Insert label before instruction.)");
+  
+  // Metadata operations
+  m.def(
+      "metadata_replace_all_uses_with",
+      [](LLVMMetadataWrapper &temp_md, const LLVMMetadataWrapper &md) {
+        temp_md.check_valid();
+        md.check_valid();
+        LLVMMetadataReplaceAllUsesWith(temp_md.m_ref, md.m_ref);
+      },
+      "temp_md"_a, "md"_a,
+      R"(Replace all uses of temporary metadata.)");
+  
+  m.def(
+      "di_subprogram_replace_type",
+      [](const LLVMMetadataWrapper &subprogram, const LLVMMetadataWrapper &type) {
+        subprogram.check_valid();
+        type.check_valid();
+        LLVMDISubprogramReplaceType(subprogram.m_ref, type.m_ref);
+      },
+      "subprogram"_a, "type"_a,
+      R"(Replace subprogram type.)");
+  
+  m.def(
+      "replace_arrays",
+      [](LLVMDIBuilderWrapper &dib, std::vector<LLVMMetadataWrapper> &composite_types,
+         std::vector<LLVMMetadataWrapper> &arrays) {
+        dib.check_valid();
+        if (composite_types.size() != 1 || arrays.size() != 1) {
+          throw std::invalid_argument("Currently only supports single composite type and array");
+        }
+        composite_types[0].check_valid();
+        arrays[0].check_valid();
+        LLVMMetadataRef ct_ref = composite_types[0].m_ref;
+        LLVMMetadataRef ar_ref = arrays[0].m_ref;
+        LLVMReplaceArrays(dib.m_ref, &ct_ref, &ar_ref, 1);
+      },
+      "dib"_a, "composite_types"_a, "arrays"_a,
+      R"(Replace arrays in composite type.)");
+  
+  // ==========================================================================
+  // Builder Positioning and Debug Records
+  // ==========================================================================
+  
+  m.def(
+      "set_is_new_dbg_info_format",
+      [](LLVMModuleWrapper &mod, bool use_new_format) {
+        mod.check_valid();
+        LLVMSetIsNewDbgInfoFormat(mod.m_ref, use_new_format);
+      },
+      "mod"_a, "use_new_format"_a,
+      R"(Set whether to use new debug info format.)");
+  
+  m.def(
+      "is_new_dbg_info_format",
+      [](const LLVMModuleWrapper &mod) -> bool {
+        mod.check_valid();
+        return LLVMIsNewDbgInfoFormat(mod.m_ref);
+      },
+      "mod"_a,
+      R"(Check if using new debug info format.)");
+  
+  m.def(
+      "position_builder_before_instr_and_dbg_records",
+      [](LLVMBuilderWrapper &builder, LLVMValueWrapper &instr) {
+        builder.check_valid();
+        instr.check_valid();
+        LLVMPositionBuilderBeforeInstrAndDbgRecords(builder.m_ref, instr.m_ref);
+      },
+      "builder"_a, "instr"_a,
+      R"(Position builder before instruction and debug records.)");
+  
+  m.def(
+      "position_builder_before_dbg_records",
+      [](LLVMBuilderWrapper &builder, LLVMBasicBlockWrapper &block,
+         LLVMValueWrapper &instr) {
+        builder.check_valid();
+        block.check_valid();
+        instr.check_valid();
+        LLVMPositionBuilderBeforeDbgRecords(builder.m_ref, block.m_ref, instr.m_ref);
+      },
+      "builder"_a, "block"_a, "instr"_a,
+      R"(Position builder before debug records.)");
+  
+  // Debug record iteration (opaque DbgRecord type - no wrapper needed)
+  m.def(
+      "get_first_dbg_record",
+      [](const LLVMValueWrapper &instr) -> void * {
+        instr.check_valid();
+        return LLVMGetFirstDbgRecord(instr.m_ref);
+      },
+      "instr"_a,
+      R"(Get first debug record attached to instruction.)");
+  
+  m.def(
+      "get_last_dbg_record",
+      [](const LLVMValueWrapper &instr) -> void * {
+        instr.check_valid();
+        return LLVMGetLastDbgRecord(instr.m_ref);
+      },
+      "instr"_a,
+      R"(Get last debug record attached to instruction.)");
+  
+  m.def(
+      "get_next_dbg_record",
+      [](void *dbg_record) -> void * {
+        return LLVMGetNextDbgRecord((LLVMDbgRecordRef)dbg_record);
+      },
+      "dbg_record"_a,
+      R"(Get next debug record.)");
+  
+  m.def(
+      "get_previous_dbg_record",
+      [](void *dbg_record) -> void * {
+        return LLVMGetPreviousDbgRecord((LLVMDbgRecordRef)dbg_record);
+      },
+      "dbg_record"_a,
+      R"(Get previous debug record.)");
+  
   // Constants for DIFlags
   m.attr("DIFlagZero") = nb::int_((unsigned)LLVMDIFlagZero);
   m.attr("DIFlagPrivate") = nb::int_((unsigned)LLVMDIFlagPrivate);
@@ -3669,4 +4030,5 @@ NB_MODULE(llvm, m) {
   // Constants for DWARF
   m.attr("DWARFSourceLanguageC") = nb::int_((unsigned)LLVMDWARFSourceLanguageC);
   m.attr("DWARFEmissionFull") = nb::int_((unsigned)LLVMDWARFEmissionFull);
+  m.attr("DWARFMacinfoRecordTypeDefine") = nb::int_((unsigned)LLVMDWARFMacinfoRecordTypeDefine);
 }

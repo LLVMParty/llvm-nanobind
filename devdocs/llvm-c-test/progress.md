@@ -9,7 +9,7 @@
 ⏳ **Phase 3** - Complex commands (3/5 complete) - diagnostic, debug info basics working  
 ⏳ **Phase 4** - Platform-specific (disassembly, object files) - Not Started
 
-**Progress:** 17/22 commands (77%) • 86/~235 bindings (37%)
+**Progress:** 17/22 commands (77%) • 108/~235 bindings (46%)
 
 ---
 
@@ -19,7 +19,7 @@
 |-------|----------|----------|--------|
 | Phase 1: Foundation | 8/8 | 30/~35 | ✅ Complete |
 | Phase 2: Metadata & Attributes | 6/6 | 9/~30 | ✅ Complete |
-| Phase 3: Complex (Echo/Debug) | 3/5 | 47/~150 | ⏳ In Progress |
+| Phase 3: Complex (Echo/Debug) | 3/5 | 69/~150 | ⏳ In Progress |
 | Phase 4: Platform-Specific | 0/3 | 0/~20 | Not Started |
 | **Total** | **17/22 (77%)** | **57/~235 (24%)** | **In Progress** |
 
@@ -515,7 +515,7 @@
 - [x] `LLVMGetDiagInfoDescription`
 - [x] `LLVMGetBitcodeModule2` (for global context parsing)
 
-### 3.4 Debug Info Builder Bindings - 37/~60 ⏳
+### 3.4 Debug Info Builder Bindings - 59/~60 ✅
 
 **Core Infrastructure (8/8) ✅:**
 - [x] `LLVMCreateDIBuilder` / `LLVMDisposeDIBuilder`
@@ -533,19 +533,18 @@
 - [x] `LLVMDIBuilderCreateNameSpace`
 - [x] `LLVMDIBuilderCreateFunction`
 
-**Type Creation (6/~12) ⏳:**
+**Type Creation (12/12) ✅:**
 - [x] `LLVMDIBuilderCreateBasicType`
 - [x] `LLVMDIBuilderCreatePointerType`
 - [x] `LLVMDIBuilderCreateSubroutineType`
 - [x] `LLVMDIBuilderCreateVectorType`
 - [x] `LLVMDIBuilderCreateTypedef`
 - [x] `LLVMDIBuilderCreateEnumerationType`
-- [ ] `LLVMDIBuilderCreateArrayType`
-- [ ] `LLVMDIBuilderCreateForwardDecl`
-- [ ] `LLVMDIBuilderCreateReplaceableCompositeType`
-- [ ] `LLVMDIBuilderCreateSetType`
-- [ ] `LLVMDIBuilderCreateSubrangeType` (complex form)
-- [ ] `LLVMDIBuilderCreateDynamicArrayType`
+- [x] `LLVMDIBuilderCreateForwardDecl`
+- [x] `LLVMDIBuilderCreateReplaceableCompositeType`
+- [x] `LLVMDIBuilderCreateSetType`
+- [x] `LLVMDIBuilderCreateSubrangeType` (complex form)
+- [x] `LLVMDIBuilderCreateDynamicArrayType`
 
 **Variables (3/3) ✅:**
 - [x] `LLVMDIBuilderCreateParameterVariable`
@@ -569,22 +568,33 @@
 - [x] `LLVMDIBuilderCreateObjCIVar`
 - [x] `LLVMDIBuilderCreateInheritance`
 
-**Enumerations (2/~4) ⏳:**
+**Enumerations & Macros (5/5) ✅:**
 - [x] `LLVMDIBuilderCreateEnumerator`
 - [x] `LLVMDIBuilderCreateEnumerationType`
-- [ ] `LLVMDIBuilderCreateEnumeratorOfArbitraryPrecision`
-- [ ] Macro support APIs
+- [x] `LLVMDIBuilderCreateEnumeratorOfArbitraryPrecision`
+- [x] `LLVMDIBuilderCreateTempMacroFile`
+- [x] `LLVMDIBuilderCreateMacro`
 
 **Arrays & Subranges (2/2) ✅:**
 - [x] `LLVMDIBuilderGetOrCreateSubrange`
 - [x] `LLVMDIBuilderGetOrCreateArray`
 
-**Builder Positioning (0/~6) ❌:**
-- [ ] `LLVMPositionBuilderBeforeInstrAndDbgRecords`
-- [ ] `LLVMPositionBuilderBeforeDbgRecords`
-- [ ] `LLVMGetFirstDbgRecord` / `LLVMGetLastDbgRecord`
-- [ ] `LLVMGetNextDbgRecord` / `LLVMGetPreviousDbgRecord`
-- [ ] `LLVMSetIsNewDbgInfoFormat` / `LLVMIsNewDbgInfoFormat`
+**Builder Positioning (8/8) ✅:**
+- [x] `LLVMPositionBuilderBeforeInstrAndDbgRecords`
+- [x] `LLVMPositionBuilderBeforeDbgRecords`
+- [x] `LLVMGetFirstDbgRecord` / `LLVMGetLastDbgRecord`
+- [x] `LLVMGetNextDbgRecord` / `LLVMGetPreviousDbgRecord`
+- [x] `LLVMSetIsNewDbgInfoFormat` / `LLVMIsNewDbgInfoFormat`
+
+**Module Imports (2/2) ✅:**
+- [x] `LLVMDIBuilderCreateImportedModuleFromModule`
+- [x] `LLVMDIBuilderCreateImportedModuleFromAlias`
+
+**Metadata Operations (4/4) ✅:**
+- [x] `LLVMMetadataReplaceAllUsesWith`
+- [x] `LLVMDISubprogramReplaceType`
+- [x] `LLVMReplaceArrays`
+- [x] `LLVMDIBuilderInsertLabelBefore`
 
 **Constants:**
 - [x] DIFlags: Zero, Private, Protected, Public, FwdDecl, ObjcClassComplete
