@@ -44,3 +44,43 @@ Run the vendored llvm-c-test integration tests:
 uv run python run_llvm_c_tests.py        # Run all tests
 uv run python run_llvm_c_tests.py -v     # Verbose output
 ```
+
+## Type Checking
+
+Check type correctness of Python code:
+
+```bash
+uvx ty check                              # Check all Python files
+uvx ty check llvm_c_test/                 # Check specific directory
+```
+
+## Code Coverage
+
+Generate code coverage reports:
+
+```bash
+uv run coverage run test_factorial.py     # Run test with coverage
+uv run coverage report                    # Show coverage summary
+uv run coverage html                      # Generate HTML report (htmlcov/)
+```
+
+To combine coverage from multiple test runs:
+
+```bash
+uv run coverage run --data-file=.coverage.test1 test_factorial.py
+uv run coverage run --data-file=.coverage.test2 test_module.py
+uv run coverage combine                   # Combine all .coverage.* files
+uv run coverage report                    # Show combined report
+```
+
+For comprehensive coverage including test runners and all subprocess tests:
+
+```bash
+COVERAGE_RUN=1 uv run coverage run --data-file=.coverage.run_tests run_tests.py
+COVERAGE_RUN=1 uv run coverage run --data-file=.coverage.run_llvm_c_tests run_llvm_c_tests.py
+uv run coverage combine                   # Combine all coverage files
+uv run coverage report                    # Show comprehensive report
+uv run coverage html                      # Generate HTML report
+```
+
+The `COVERAGE_RUN=1` environment variable enables coverage for subprocesses spawned by the test runners.

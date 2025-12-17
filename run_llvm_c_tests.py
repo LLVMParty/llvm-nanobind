@@ -28,6 +28,13 @@ import sys
 from pathlib import Path
 
 
+def coverage_wrap(name: str, args: list[str]) -> list[str]:
+    """Wrap command with coverage if COVERAGE_RUN environment variable is set."""
+    if os.environ.get("COVERAGE_RUN"):
+        return ["-m", "coverage", "run", f"--data-file=.coverage.{name}"] + args
+    return args
+
+
 def get_llvm_prefix_from_brew() -> Path | None:
     """Get the LLVM installation prefix from Homebrew (macOS only)."""
     if sys.platform != "darwin":

@@ -19,6 +19,19 @@ uv run python run_llvm_c_tests.py -v         # Run lit tests with verbose output
 uv run python test_factorial.py              # Run single Python test
 uvx ty check                                  # Type check Python code
 uvx ty check llvm_c_test/                     # Type check specific directory
+
+# Code Coverage
+uv run coverage run test_factorial.py        # Run single test with coverage
+uv run coverage run --data-file=.coverage.test1 test_factorial.py  # Separate coverage file
+uv run coverage combine                      # Combine multiple .coverage.* files
+uv run coverage report                       # Show coverage report
+uv run coverage html                         # Generate HTML coverage report (htmlcov/)
+
+# Comprehensive Coverage (test runners + all tests)
+COVERAGE_RUN=1 uv run coverage run --data-file=.coverage.run_tests run_tests.py
+COVERAGE_RUN=1 uv run coverage run --data-file=.coverage.run_llvm_c_tests run_llvm_c_tests.py
+uv run coverage combine                      # Combine all coverage files
+uv run coverage report                       # Show comprehensive report
 ```
 
 ## Type Checking

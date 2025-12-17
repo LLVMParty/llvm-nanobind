@@ -15,6 +15,7 @@ Homepage = "https://github.com/LLVMParty/llvm-nanobind"
 
 [dependency-groups]
 dev = [
+    "coverage>=7.11.3",
     "lit>=18.1.8",
     "pytest",
 ]
@@ -71,3 +72,24 @@ test-requires = "pytest"
 # Needed for full C++17 support
 [tool.cibuildwheel.macos.environment]
 MACOSX_DEPLOYMENT_TARGET = "10.14"
+
+[tool.coverage.run]
+source = ["llvm_c_test", "."]
+omit = [
+    "tests/*",
+    "build/*",
+    ".venv/*",
+    "llvm-c/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]

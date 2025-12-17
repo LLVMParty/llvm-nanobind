@@ -18,6 +18,14 @@ from pathlib import Path
 BUILD_DIR = Path("build")
 OUTPUT_DIR = Path("tests/output")
 
+
+def coverage_wrap(name: str, args: list[str]) -> list[str]:
+    """Wrap command with coverage if COVERAGE_RUN environment variable is set."""
+    if os.environ.get("COVERAGE_RUN"):
+        return ["-m", "coverage", "run", f"--data-file=.coverage.{name}"] + args
+    return args
+
+
 # List of expected C++ test executables
 TESTS = [
     "test_context",
@@ -88,8 +96,11 @@ def run_python_test(script: Path) -> tuple[str, str, int]:
     if not script.exists():
         return "", f"Python test not found: {script}", -1
 
+    # Build command with optional coverage wrapper
+    cmd = coverage_wrap(script.stem, [str(script)])
+
     result = subprocess.run(
-        [sys.executable, str(script)],
+        [sys.executable] + cmd,
         capture_output=True,
         env={**os.environ, "PYTHONPATH": str(BUILD_DIR)},
     )
