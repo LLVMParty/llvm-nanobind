@@ -108,15 +108,32 @@ Total Discovered Tests: 23
   Passed: 23 (100.00%)
 ```
 
-### Known Limitations
+### Phase 6: Attribute and Metadata Bindings - COMPLETE ✅
 
-The following features are stubbed out due to missing bindings (not critical for lit tests):
+**December 17, 2025**
 
-1. **Attribute copying** - Functions `get_last_enum_attribute_kind`, `get_enum_attribute_at_index`, etc. not bound
-2. **Global metadata copying** - Functions `global_copy_all_metadata`, `global_set_metadata` not bound
-3. **Instruction metadata copying** - Function `instruction_get_all_metadata_other_than_debug_loc` not bound
+Added the remaining bindings for complete attribute and metadata copying:
 
-These can be added later if needed for specific use cases.
+**Attribute Bindings Added:**
+- `get_last_enum_attribute_kind()` - Get highest attribute kind number
+- `create_enum_attribute(ctx, kind_id, val)` - Create enum attribute
+- `get_enum_attribute_at_index(func, idx, kind_id)` - Get function attribute
+- `add_attribute_at_index(func, idx, attr)` - Add attribute to function
+- `get_callsite_enum_attribute(call_inst, idx, kind_id)` - Get call site attribute
+- `add_callsite_attribute(call_inst, idx, attr)` - Add attribute to call site
+- `Attribute` wrapper class with `kind` and `value` properties
+
+**Metadata Bindings Added:**
+- `global_copy_all_metadata(value)` - Get all metadata from global/function
+- `global_set_metadata(global_val, kind, md)` - Set metadata on global
+- `instruction_get_all_metadata_other_than_debug_loc(instr)` - Get instruction metadata
+- `ValueMetadataEntries` wrapper class with `get_kind()` and `get_metadata()` methods
+
+**Echo.py Updated:**
+- `clone_attrs()` now fully implements attribute copying for calls/invokes
+- Global metadata copying implemented in `clone_symbols()`
+- Function metadata copying implemented in `clone_symbols()`
+- Instruction metadata copying implemented in `clone_instruction()`
 
 ---
 
@@ -124,9 +141,7 @@ These can be added later if needed for specific use cases.
 
 ### Potential Enhancements
 
-1. **Add missing attribute bindings** for complete attribute copying
-2. **Add missing metadata bindings** for complete metadata copying
-3. **Improve memory model** - Consider Option 1 from memory-model-issues.md (context tracks modules)
+1. **Improve memory model** - Consider Option 1 from memory-model-issues.md (context tracks modules)
 
 ### Documentation Created
 

@@ -5,8 +5,6 @@ RPN calculator that generates LLVM IR.
 """
 
 import sys
-
-sys.path.insert(0, "build")
 import llvm
 from .helpers import tokenize_stdin
 

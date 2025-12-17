@@ -1052,9 +1052,7 @@ int main() {
 
 ```python
 #!/usr/bin/env python3
-import sys
-sys.path.insert(0, "build")
-import llvm
+import sysimport llvm
 
 def main():
     with llvm.create_context() as ctx:

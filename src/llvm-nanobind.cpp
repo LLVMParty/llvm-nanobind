@@ -139,6 +139,123 @@ struct LLVMOperandBundleWrapper {
 };
 
 // =============================================================================
+// Attribute Wrapper (for function/call site attributes)
+// =============================================================================
+
+struct LLVMAttributeWrapper {
+  LLVMAttributeRef m_ref = nullptr;
+  std::shared_ptr<ValidityToken> m_context_token;
+
+  LLVMAttributeWrapper() = default;
+  LLVMAttributeWrapper(LLVMAttributeRef ref,
+                       std::shared_ptr<ValidityToken> token)
+      : m_ref(ref), m_context_token(std::move(token)) {}
+
+  // Attributes are not owned, so no destructor needed
+
+  void check_valid() const {
+    if (!m_ref)
+      throw LLVMUseAfterFreeError("Attribute is null");
+    if (!m_context_token || !m_context_token->is_valid())
+      throw LLVMUseAfterFreeError(
+          "Attribute used after context was destroyed");
+  }
+
+  bool is_valid() const {
+    return m_ref != nullptr && m_context_token && m_context_token->is_valid();
+  }
+
+  unsigned get_kind() const {
+    check_valid();
+    return LLVMGetEnumAttributeKind(m_ref);
+  }
+
+  uint64_t get_value() const {
+    check_valid();
+    return LLVMGetEnumAttributeValue(m_ref);
+  }
+};
+
+// =============================================================================
+// Value Metadata Entries Wrapper (for global/instruction metadata copying)
+// =============================================================================
+
+struct LLVMValueMetadataEntriesWrapper;
+
+// Forward declaration for metadata wrapper
+struct LLVMMetadataWrapper;
+
+struct LLVMValueMetadataEntriesWrapper {
+  LLVMValueMetadataEntry *m_entries = nullptr;
+  size_t m_count = 0;
+  std::shared_ptr<ValidityToken> m_context_token;
+
+  LLVMValueMetadataEntriesWrapper() = default;
+  LLVMValueMetadataEntriesWrapper(LLVMValueMetadataEntry *entries, size_t count,
+                                  std::shared_ptr<ValidityToken> token)
+      : m_entries(entries), m_count(count),
+        m_context_token(std::move(token)) {}
+
+  ~LLVMValueMetadataEntriesWrapper() {
+    if (m_entries) {
+      LLVMDisposeValueMetadataEntries(m_entries);
+      m_entries = nullptr;
+    }
+  }
+
+  // Move-only to ensure proper ownership
+  LLVMValueMetadataEntriesWrapper(const LLVMValueMetadataEntriesWrapper &) =
+      delete;
+  LLVMValueMetadataEntriesWrapper &
+  operator=(const LLVMValueMetadataEntriesWrapper &) = delete;
+  LLVMValueMetadataEntriesWrapper(
+      LLVMValueMetadataEntriesWrapper &&other) noexcept
+      : m_entries(other.m_entries), m_count(other.m_count),
+        m_context_token(std::move(other.m_context_token)) {
+    other.m_entries = nullptr;
+    other.m_count = 0;
+  }
+  LLVMValueMetadataEntriesWrapper &
+  operator=(LLVMValueMetadataEntriesWrapper &&other) noexcept {
+    if (this != &other) {
+      if (m_entries)
+        LLVMDisposeValueMetadataEntries(m_entries);
+      m_entries = other.m_entries;
+      m_count = other.m_count;
+      m_context_token = std::move(other.m_context_token);
+      other.m_entries = nullptr;
+      other.m_count = 0;
+    }
+    return *this;
+  }
+
+  void check_valid() const {
+    if (!m_entries && m_count > 0)
+      throw LLVMUseAfterFreeError("ValueMetadataEntries is null");
+    if (!m_context_token || !m_context_token->is_valid())
+      throw LLVMUseAfterFreeError(
+          "ValueMetadataEntries used after context was destroyed");
+  }
+
+  size_t size() const { return m_count; }
+
+  unsigned get_kind(unsigned index) const {
+    check_valid();
+    if (index >= m_count)
+      throw std::out_of_range("Index out of range");
+    return LLVMValueMetadataEntriesGetKind(m_entries, index);
+  }
+
+  // get_metadata is implemented later after LLVMMetadataWrapper is defined
+  LLVMMetadataRef get_metadata_ref(unsigned index) const {
+    check_valid();
+    if (index >= m_count)
+      throw std::out_of_range("Index out of range");
+    return LLVMValueMetadataEntriesGetMetadata(m_entries, index);
+  }
+};
+
+// =============================================================================
 // Type Wrapper
 // =============================================================================
 
@@ -630,6 +747,25 @@ struct LLVMValueWrapper {
     check_valid();
     data.check_valid();
     LLVMSetPrologueData(m_ref, data.m_ref);
+  }
+
+  // Global/Instruction metadata copying for echo command
+  LLVMValueMetadataEntriesWrapper global_copy_all_metadata() const {
+    check_valid();
+    size_t num_entries = 0;
+    LLVMValueMetadataEntry *entries =
+        LLVMGlobalCopyAllMetadata(m_ref, &num_entries);
+    return LLVMValueMetadataEntriesWrapper(entries, num_entries,
+                                           m_context_token);
+  }
+
+  LLVMValueMetadataEntriesWrapper instruction_get_all_metadata_other_than_debug_loc() const {
+    check_valid();
+    size_t num_entries = 0;
+    LLVMValueMetadataEntry *entries =
+        LLVMInstructionGetAllMetadataOtherThanDebugLoc(m_ref, &num_entries);
+    return LLVMValueMetadataEntriesWrapper(entries, num_entries,
+                                           m_context_token);
   }
 
   // Instruction iteration
@@ -4328,6 +4464,18 @@ struct LLVMMetadataWrapper {
   }
 };
 
+// Implementation of get_metadata for ValueMetadataEntriesWrapper
+inline LLVMMetadataWrapper
+LLVMValueMetadataEntriesWrapper_get_metadata(
+    const LLVMValueMetadataEntriesWrapper &entries, unsigned index) {
+  entries.check_valid();
+  if (index >= entries.m_count)
+    throw std::out_of_range("Index out of range");
+  return LLVMMetadataWrapper(
+      LLVMValueMetadataEntriesGetMetadata(entries.m_entries, index),
+      entries.m_context_token);
+}
+
 // =============================================================================
 // Diagnostic Handler Support (Thread-Local Storage)
 // =============================================================================
@@ -4883,7 +5031,13 @@ NB_MODULE(llvm, m) {
       .def("add_handler", &LLVMValueWrapper::add_handler, "handler"_a)
       .def("get_handlers", &LLVMValueWrapper::get_handlers)
       .def("get_operand_bundle_at_index", &LLVMValueWrapper::get_operand_bundle_at_index, "index"_a)
-      .def("get_indices", &LLVMValueWrapper::get_indices);
+      .def("get_indices", &LLVMValueWrapper::get_indices)
+      // Global/instruction metadata for echo command
+      .def("global_copy_all_metadata", &LLVMValueWrapper::global_copy_all_metadata,
+           "Copy all metadata from this global value.")
+      .def("instruction_get_all_metadata_other_than_debug_loc",
+           &LLVMValueWrapper::instruction_get_all_metadata_other_than_debug_loc,
+           "Get all metadata from this instruction except debug locations.");
 
   // BasicBlock wrapper
   nb::class_<LLVMBasicBlockWrapper>(m, "BasicBlock")
@@ -5134,6 +5288,23 @@ NB_MODULE(llvm, m) {
       .def_prop_ro("tag", &LLVMOperandBundleWrapper::get_tag)
       .def_prop_ro("num_args", &LLVMOperandBundleWrapper::get_num_args)
       .def("get_arg_at_index", &LLVMOperandBundleWrapper::get_arg_at_index, "index"_a);
+
+  // Attribute wrapper
+  nb::class_<LLVMAttributeWrapper>(m, "Attribute")
+      .def_prop_ro("is_valid", &LLVMAttributeWrapper::is_valid)
+      .def_prop_ro("kind", &LLVMAttributeWrapper::get_kind,
+                   "Get the kind ID of this enum attribute.")
+      .def_prop_ro("value", &LLVMAttributeWrapper::get_value,
+                   "Get the value of this enum attribute (0 if none).");
+
+  // Value metadata entries wrapper (for global/instruction metadata copying)
+  nb::class_<LLVMValueMetadataEntriesWrapper>(m, "ValueMetadataEntries")
+      .def("__len__", &LLVMValueMetadataEntriesWrapper::size)
+      .def("get_kind", &LLVMValueMetadataEntriesWrapper::get_kind, "index"_a,
+           "Get the metadata kind at the given index.")
+      .def("get_metadata",
+           &LLVMValueMetadataEntriesWrapper_get_metadata, "index"_a,
+           "Get the metadata at the given index.");
 
   // Named metadata node wrapper
   nb::class_<LLVMNamedMDNodeWrapper>(m, "NamedMDNode")
@@ -5566,6 +5737,84 @@ NB_MODULE(llvm, m) {
       },
       "call_inst"_a, "idx"_a,
       R"(Get the number of call site attributes at the given index.)");
+
+  // Additional attribute functions for echo command
+  m.def(
+      "get_last_enum_attribute_kind",
+      []() { return LLVMGetLastEnumAttributeKind(); },
+      R"(Get the last enum attribute kind (highest attribute number).)");
+
+  m.def(
+      "create_enum_attribute",
+      [](const LLVMContextWrapper &ctx, unsigned kind_id, uint64_t val) {
+        ctx.check_valid();
+        LLVMAttributeRef ref = LLVMCreateEnumAttribute(ctx.m_ref, kind_id, val);
+        return LLVMAttributeWrapper(ref, ctx.m_token);
+      },
+      "ctx"_a, "kind_id"_a, "val"_a,
+      R"(Create an enum attribute.)");
+
+  m.def(
+      "get_enum_attribute_at_index",
+      [](const LLVMFunctionWrapper &func, int idx, unsigned kind_id)
+          -> std::optional<LLVMAttributeWrapper> {
+        func.check_valid();
+        LLVMAttributeRef ref = LLVMGetEnumAttributeAtIndex(
+            func.m_ref, static_cast<unsigned>(idx), kind_id);
+        if (!ref)
+          return std::nullopt;
+        return LLVMAttributeWrapper(ref, func.m_context_token);
+      },
+      "func"_a, "idx"_a, "kind_id"_a,
+      R"(Get an enum attribute at the given index on a function. Returns None if not found.)");
+
+  m.def(
+      "add_attribute_at_index",
+      [](LLVMFunctionWrapper &func, int idx, const LLVMAttributeWrapper &attr) {
+        func.check_valid();
+        attr.check_valid();
+        LLVMAddAttributeAtIndex(func.m_ref, static_cast<unsigned>(idx),
+                                attr.m_ref);
+      },
+      "func"_a, "idx"_a, "attr"_a,
+      R"(Add an attribute to a function at the given index.)");
+
+  m.def(
+      "get_callsite_enum_attribute",
+      [](const LLVMValueWrapper &call_inst, int idx, unsigned kind_id)
+          -> std::optional<LLVMAttributeWrapper> {
+        call_inst.check_valid();
+        LLVMAttributeRef ref = LLVMGetCallSiteEnumAttribute(
+            call_inst.m_ref, static_cast<unsigned>(idx), kind_id);
+        if (!ref)
+          return std::nullopt;
+        return LLVMAttributeWrapper(ref, call_inst.m_context_token);
+      },
+      "call_inst"_a, "idx"_a, "kind_id"_a,
+      R"(Get an enum attribute at the given call site index. Returns None if not found.)");
+
+  m.def(
+      "add_callsite_attribute",
+      [](LLVMValueWrapper &call_inst, int idx,
+         const LLVMAttributeWrapper &attr) {
+        call_inst.check_valid();
+        attr.check_valid();
+        LLVMAddCallSiteAttribute(call_inst.m_ref, static_cast<unsigned>(idx),
+                                 attr.m_ref);
+      },
+      "call_inst"_a, "idx"_a, "attr"_a,
+      R"(Add an attribute to a call site at the given index.)");
+
+  // Global metadata functions for echo command
+  m.def(
+      "global_set_metadata",
+      [](LLVMValueWrapper &global_val, unsigned kind, const LLVMMetadataWrapper &md) {
+        global_val.check_valid();
+        md.check_valid();
+        LLVMGlobalSetMetadata(global_val.m_ref, kind, md.m_ref);
+      },
+      "global_val"_a, "kind"_a, "md"_a,
+      R"(Set metadata on a global value at the given kind.)");
 
   // Metadata functions
   m.def(

@@ -6,21 +6,14 @@ using the C API, validating that all types, constants, instructions,
 and metadata can be properly read and recreated.
 
 Based on: llvm-c/llvm-c-test/echo.cpp
-
-NOTE: This is a work-in-progress implementation. Some features are not
-yet fully implemented due to missing bindings:
-- Attribute copying (get_last_enum_attribute_kind, etc.)
-- Global metadata copying (global_copy_all_metadata, etc.)
-- Instruction metadata (instruction_get_all_metadata_other_than_debug_loc, etc.)
 """
 
 from __future__ import annotations
 
 import sys
-from typing import Optional
+from typing import Optional, cast
 
 import llvm
-
 
 class TypeCloner:
     """Clone LLVM types from one context to another."""
@@ -65,26 +58,27 @@ class TypeCloner:
             name = src.struct_name
             if name:
                 # Try to find existing struct with this name
-                s = self.ctx.get_type_by_name(name)
-                if s:
-                    return s
+                existing = self.ctx.get_type_by_name(name)
+                if existing:
+                    return existing
                 # Create a new named struct
                 s = self.ctx.named_struct_type(name)
                 if src.is_opaque_struct:
                     return s
-            else:
-                s = None
-
-            elt_count = src.struct_element_count
-            elts = [
-                self.clone(src.get_struct_element_type(i)) for i in range(elt_count)
-            ]
-
-            if name:
+                # Set body for named struct
+                elt_count = src.struct_element_count
+                elts = [
+                    self.clone(src.get_struct_element_type(i)) for i in range(elt_count)
+                ]
                 s.set_body(elts, src.is_packed_struct)
+                return s
             else:
-                s = self.ctx.struct_type(elts, src.is_packed_struct)
-            return s
+                # Anonymous struct
+                elt_count = src.struct_element_count
+                elts = [
+                    self.clone(src.get_struct_element_type(i)) for i in range(elt_count)
+                ]
+                return self.ctx.struct_type(elts, src.is_packed_struct)
         elif kind == llvm.TypeKind.Array:
             return self.ctx.array_type(self.clone(src.element_type), src.array_length)
         elif kind == llvm.TypeKind.Pointer:
@@ -345,8 +339,13 @@ class FunCloner:
         src_last = src.last_param()
         dst_last = dst.last_param()
 
-        src_cur = src_first
-        dst_cur = dst_first
+        if src_first is None or dst_first is None:
+            raise RuntimeError("Expected non-null first params")
+        if src_last is None or dst_last is None:
+            raise RuntimeError("Expected non-null last params")
+
+        src_cur: llvm.Value = src_first
+        dst_cur: llvm.Value = dst_first
         remaining = count
 
         while True:
@@ -413,17 +412,20 @@ class FunCloner:
             return self.clone_instruction(src, builder)
 
     def clone_attrs(self, src: llvm.Value, dst: llvm.Value) -> None:
-        """Clone call/invoke attributes.
+        """Clone call/invoke attributes from src to dst."""
+        ctx = llvm.get_module_context(self.module)
+        last_kind = llvm.get_last_enum_attribute_kind()
 
-        NOTE: Attribute cloning is not yet implemented due to missing bindings:
-        - get_last_enum_attribute_kind
-        - get_callsite_enum_attribute
-        - get_enum_attribute_value
-        - create_enum_attribute
-        - add_callsite_attribute
-        """
-        # TODO: Implement when attribute bindings are added
-        pass
+        # Clone attributes for all indices (return, function, and each param)
+        # Index 0 is return, index -1 (AttributeFunctionIndex) is function
+        # Params start at index 1
+        for idx in range(llvm.AttributeFunctionIndex, src.get_num_arg_operands() + 1):
+            for kind in range(1, last_kind + 1):
+                attr = llvm.get_callsite_enum_attribute(src, idx, kind)
+                if attr is not None:
+                    # Create a copy of the attribute in the destination context
+                    new_attr = llvm.create_enum_attribute(ctx, attr.kind, attr.value)
+                    llvm.add_callsite_attribute(dst, idx, new_attr)
 
     def clone_instruction(self, src: llvm.Value, builder: llvm.Builder) -> llvm.Value:
         """Clone a single instruction."""
@@ -735,7 +737,8 @@ class FunCloner:
             catch_pad = self.clone_value(src.get_operand(0))
             unwind_dest = src.get_unwind_dest()
             unwind = self.declare_bb(unwind_dest) if unwind_dest else None
-            dst = builder.cleanup_ret(catch_pad, unwind)
+            # Note: cleanup_ret accepts None for unwind_bb (stub is incorrect)
+            dst = builder.cleanup_ret(catch_pad, unwind)  # type: ignore[arg-type]
 
         elif op == llvm.Opcode.CatchRet:
             catch_pad = self.clone_value(src.get_operand(0))
@@ -763,7 +766,8 @@ class FunCloner:
             unwind_dest = src.get_unwind_dest()
             unwind_bb = self.declare_bb(unwind_dest) if unwind_dest else None
             num_handlers = src.get_num_handlers()
-            dst = builder.catch_switch(parent_pad, unwind_bb, num_handlers, name)
+            # Note: catch_switch accepts None for unwind_bb (stub is incorrect)
+            dst = builder.catch_switch(parent_pad, unwind_bb, num_handlers, name)  # type: ignore[arg-type]
             if num_handlers > 0:
                 handlers = src.get_handlers()
                 for h in handlers:
@@ -911,20 +915,21 @@ class FunCloner:
             print(f"{op} is not a supported opcode", file=sys.stderr)
             sys.exit(-1)
 
+        # After sys.exit(-1), dst is guaranteed to be non-None
+        # Type narrow for type checkers that don't understand NoReturn
+        assert dst is not None
+
         # Copy fast-math flags on instructions that support them
         if src.can_use_fast_math_flags():
             dst.set_fast_math_flags(src.get_fast_math_flags())
 
         # Copy instruction metadata
-        # TODO: Implement when instruction_get_all_metadata_other_than_debug_loc is bound
-        # all_metadata = llvm.instruction_get_all_metadata_other_than_debug_loc(src)
-        # for kind, md in all_metadata:
-        #     llvm.set_metadata(
-        #         dst,
-        #         kind,
-        #         llvm.metadata_as_value(llvm.get_module_context(self.module), md),
-        #     )
-        # builder.add_metadata_to_inst(dst)
+        ctx = llvm.get_module_context(self.module)
+        all_metadata = src.instruction_get_all_metadata_other_than_debug_loc()
+        for i in range(len(all_metadata)):
+            kind = all_metadata.get_kind(i)
+            md = all_metadata.get_metadata(i)
+            llvm.set_metadata(dst, kind, llvm.metadata_as_value(ctx, md))
 
         check_value_kind(dst, llvm.ValueKind.Instruction)
         self.vmap[id(src)] = dst
@@ -1002,7 +1007,10 @@ class FunCloner:
         first = src.first_basic_block
         last = src.last_basic_block
 
-        cur = first
+        if first is None or last is None:
+            raise RuntimeError("Expected non-null first/last basic blocks")
+
+        cur: llvm.BasicBlock = first
         remaining = count
         while True:
             self.clone_bb(cur)
@@ -1175,10 +1183,11 @@ def clone_symbols(src: llvm.Module, m: llvm.Module) -> None:
                 g.set_initializer(clone_constant(init, m))
 
             # Copy global metadata
-            # TODO: Implement when global_copy_all_metadata is bound
-            # all_metadata = llvm.global_copy_all_metadata(cur)
-            # for kind, md in all_metadata:
-            #     llvm.global_set_metadata(g, kind, md)
+            all_metadata = cur.global_copy_all_metadata()
+            for i in range(len(all_metadata)):
+                kind = all_metadata.get_kind(i)
+                md = all_metadata.get_metadata(i)
+                llvm.global_set_metadata(global_val=g, kind=kind, md=md)
 
             g.set_constant(cur.is_global_constant())
             g.set_thread_local(cur.is_thread_local())
@@ -1215,24 +1224,31 @@ def clone_symbols(src: llvm.Module, m: llvm.Module) -> None:
                 raise RuntimeError("Function must have been declared already")
 
             if cur.has_personality_fn():
-                p_name = cur.get_personality_fn().name
+                personality_fn = cur.get_personality_fn()
+                assert personality_fn is not None  # Guaranteed by has_personality_fn
+                p_name = personality_fn.name
                 p = m.get_function(p_name)
                 if not p:
                     raise RuntimeError("Could not find personality function")
                 fun.set_personality_fn(p)
 
             # Copy function metadata
-            # TODO: Implement when global_copy_all_metadata is bound
-            # all_metadata = llvm.global_copy_all_metadata(cur)
-            # for kind, md in all_metadata:
-            #     llvm.global_set_metadata(fun, kind, md)
+            all_metadata = cur.global_copy_all_metadata()
+            for i in range(len(all_metadata)):
+                kind = all_metadata.get_kind(i)
+                md = all_metadata.get_metadata(i)
+                llvm.global_set_metadata(global_val=fun, kind=kind, md=md)
 
             # Copy prefix and prologue data
             if cur.has_prefix_data():
-                fun.set_prefix_data(clone_constant(cur.get_prefix_data(), m))
+                prefix_data = cur.get_prefix_data()
+                assert prefix_data is not None  # Guaranteed by has_prefix_data
+                fun.set_prefix_data(clone_constant(prefix_data, m))
 
             if cur.has_prologue_data():
-                fun.set_prologue_data(clone_constant(cur.get_prologue_data(), m))
+                prologue_data = cur.get_prologue_data()
+                assert prologue_data is not None  # Guaranteed by has_prologue_data
+                fun.set_prologue_data(clone_constant(prologue_data, m))
 
             fc = FunCloner(cur, fun, m)
             fc.clone_bbs(cur)

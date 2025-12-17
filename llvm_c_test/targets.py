@@ -5,8 +5,6 @@ Lists all registered LLVM targets.
 """
 
 import sys
-
-sys.path.insert(0, "build")
 import llvm
 
 

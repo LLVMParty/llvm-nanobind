@@ -8,8 +8,6 @@ Includes:
 """
 
 import sys
-
-sys.path.insert(0, "build")
 import llvm
 
 
