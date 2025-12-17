@@ -3,17 +3,18 @@
 Minimal reproduction - closer to echo.py behavior.
 
 This uses the actual function parameter like echo.py does.
-
-Run with:
-    cat test_syncscope_crash.bc | uv run test_syncscope_minimal2.py
+Demonstrates cloning atomic instructions with custom syncscopes.
 """
 
 import sys
 import llvm
+from pathlib import Path
 
 with llvm.create_context() as ctx:
-    # Load source module from stdin
-    bitcode = sys.stdin.buffer.read()
+    # Load source module from file
+    bitcode_path = Path(__file__).parent / "syncscope.bc"
+    with open(bitcode_path, "rb") as f:
+        bitcode = f.read()
     with ctx.parse_bitcode_from_bytes(bitcode) as src:
         print("Source module loaded", file=sys.stderr)
 

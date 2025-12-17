@@ -2,16 +2,19 @@
 """
 Test: Does calling first_param() on a bitcode-loaded function work?
 
-Run with:
-    cat test_syncscope_crash.bc | uv run test_bitcode_param_crash.py
+This test verifies that getting parameters from a function loaded from
+bitcode works correctly without crashing.
 """
 
 import llvm
-import sys
+from pathlib import Path
 
-print("Loading bitcode from stdin...")
+print("Loading bitcode from file...")
+bitcode_path = Path(__file__).parent / "syncscope.bc"
+with open(bitcode_path, "rb") as f:
+    bitcode = f.read()
+
 with llvm.create_context() as ctx:
-    bitcode = sys.stdin.buffer.read()
     with ctx.parse_bitcode_from_bytes(bitcode) as mod:
         print("Bitcode loaded successfully")
 

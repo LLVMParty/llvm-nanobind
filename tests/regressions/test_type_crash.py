@@ -2,16 +2,19 @@
 """
 Test: Does using func.type from a bitcode-loaded function cause issues?
 
-Run with:
-    cat test_syncscope_crash.bc | uv run test_type_crash.py
+This test demonstrates a potential issue where using the wrong type attribute
+can lead to crashes when cloning functions.
 """
 
 import llvm
-import sys
+from pathlib import Path
 
 print("Loading bitcode...")
+bitcode_path = Path(__file__).parent / "syncscope.bc"
+with open(bitcode_path, "rb") as f:
+    bitcode = f.read()
+
 with llvm.create_context() as ctx:
-    bitcode = sys.stdin.buffer.read()
     with ctx.parse_bitcode_from_bytes(bitcode) as src_mod:
         src_func = src_mod.get_function("test")
         assert src_func is not None, "Function 'test' not found"
