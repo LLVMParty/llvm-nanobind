@@ -1,95 +1,211 @@
 # Plan: Fix Python Implementation Test Failures
 
-## Current Status
+## Overview
 
-When running lit tests with `--use-python`, 10 out of 23 tests fail:
+When running lit tests with `--use-python`, 11 out of 23 tests fail. This plan documents the root causes and fixes for each category of failure.
+
+## Current Test Status
 
 ```
-Failed Tests (10):
-  llvm-c-test :: atomics.ll
-  llvm-c-test :: debug_info_new_format.ll
-  llvm-c-test :: echo.ll
-  llvm-c-test :: empty.ll
-  llvm-c-test :: float_ops.ll
-  llvm-c-test :: freeze.ll
-  llvm-c-test :: functions.ll
-  llvm-c-test :: invalid-bitcode.test
-  llvm-c-test :: invoke.ll
-  llvm-c-test :: memops.ll
+Passed: 12 (52%)
+Failed: 11 (48%)
 ```
 
-## Analysis
+## Root Cause Analysis
 
-### Root Cause Categories
+### Category 1: Echo vmap Key Issue (6 tests)
 
-1. **Echo command failures** (atomics.ll, echo.ll, float_ops.ll, freeze.ll, invoke.ll, memops.ll)
-   - Error: `RuntimeError: Expected an instruction` in `clone_value`
-   - Likely cause: Operand handling for certain instruction types (fence, atomics, etc.)
-   - The `clone_value` function expects instructions but receives other value types
+**Tests Affected:**
+- `atomics.ll`
+- `echo.ll`
+- `float_ops.ll`
+- `freeze.ll`
+- `invoke.ll`
+- `memops.ll`
 
-2. **Diagnostic handler crash** (empty.ll)
-   - Error: `Trace/BPT trap: 5` when running `--test-diagnostic-handler`
-   - Likely cause: Issue with the diagnostic handler implementation
+**Root Cause:**
+The `clone_value` function in `echo.py` uses `id(src)` as a key to the `vmap` dictionary. Since nanobind returns new Python wrapper objects each time (even for the same underlying LLVM value), `id()` returns different values. However, the Value class correctly implements `__hash__` and `__eq__` based on the underlying LLVM pointer.
 
-3. **Module list functions** (functions.ll)
-   - Needs investigation
+**Evidence:**
+```python
+# Testing shows id() differs but hash() and == work correctly:
+param1 = fn.first_param()
+param2 = fn.first_param()
+id(param1) != id(param2)      # True - different wrapper objects
+hash(param1) == hash(param2)  # True - same underlying pointer
+param1 == param2              # True - equality works
+d = {param1: 'value'}
+d[param2]                     # 'value' - dict lookup works!
+```
 
-4. **Invalid bitcode handling** (invalid-bitcode.test)
-   - Needs investigation - may be error message format difference
+**Fix:**
+Change dictionary keys from `id(src)` to `src` directly.
 
-5. **Debug info** (debug_info_new_format.ll)
-   - Complex test that exercises DIBuilder extensively
+### Category 2: Memory Management Crashes (3 tests)
 
-## Approach
+**Tests Affected:**
+- `empty.ll` - diagnostic handler crash
+- `functions.ll` - lazy-module-dump crash
+- `objectfile.ll` - potential crash
 
-### Phase 1: Investigate and categorize failures
+**Root Cause:**
+Memory corruption (double-free/use-after-free) in the bindings. The crash signatures show `free_medium_botch` errors. Per the memory model documentation, objects need to check validity tokens before accessing LLVM APIs.
 
-For each failing test:
-1. Run the test manually to capture exact error
-2. Compare Python output with C output
-3. Identify the specific issue
+**Specific Issues:**
 
-### Phase 2: Fix echo command issues
+1. **Diagnostic Handler (`empty.ll`):**
+   - `context_set_diagnostic_handler` stores a callback that may be invoked after the associated objects are freed
+   - Need to investigate callback lifetime management
 
-The echo command has the most failures. Key areas to investigate:
+2. **Lazy Module Dump (`functions.ll`):**
+   - `parse_bitcode_in_context(ctx, membuf, lazy=True)` crashes on module disposal
+   - The lazy-loaded module may have different lifetime requirements
 
-1. **clone_value function** (`echo.py:405`)
-   - Check if it handles all value types correctly
-   - May need to handle constants, arguments, and other non-instruction values
+3. **Object File (`objectfile.ll`):**
+   - Test with null/empty input may trigger edge cases
+   - May need better error handling
 
-2. **Instruction opcode handlers**
-   - Verify all opcodes are handled
-   - Check for missing opcodes between Python and C enum values
+**Fix Strategy:**
+- Investigate each crash individually
+- Ensure validity tokens are checked before LLVM API calls
+- May require C++ binding fixes for proper lifetime management
 
-3. **Operand handling**
-   - Some instructions (like fence) have no operands
-   - Some operands are not instructions (constants, arguments)
+### Category 3: Error Message Format (1 test)
 
-### Phase 3: Fix other command issues
+**Tests Affected:**
+- `invalid-bitcode.test`
 
-1. **Diagnostic handler** - Check thread-local storage and callback handling
-2. **Module operations** - Compare output format
-3. **Invalid bitcode** - Check error message format
+**Root Cause:**
+Error message format differs between Python and C implementations.
+
+**Expected (C version):**
+```
+Error parsing bitcode: Unknown attribute kind (255)
+```
+
+**Actual (Python version):**
+```
+Error: Unknown attribute kind (255)
+```
+
+**Fix:**
+Update error message format in `module_ops.py` to match C version.
+
+### Category 4: Debug Info (1 test)
+
+**Tests Affected:**
+- `debug_info_new_format.ll`
+
+**Root Cause:**
+Complex DIBuilder test - needs investigation to determine specific failure.
+
+**Fix Strategy:**
+Run test in isolation and analyze the specific failure point.
+
+---
+
+## Implementation Phases
+
+### Phase 1: Fix Echo vmap Key Issue
+
+**Priority:** High (fixes 6 tests, straightforward fix)
+**Effort:** Low
+**Risk:** Low
+
+**File:** `llvm_c_test/echo.py`
+
+**Changes:**
+1. Update type annotations for `vmap` and `bb_map` dictionaries
+2. Replace all `id(src)` dictionary keys with `src` directly
+3. Same for `bb_map` with BasicBlock keys
+
+**Lines to modify:**
+- Line 322: `self.vmap: dict[int, llvm.Value]` → `self.vmap: dict[llvm.Value, llvm.Value]`
+- Line 323: `self.bb_map: dict[int, llvm.BasicBlock]` → `self.bb_map: dict[llvm.BasicBlock, llvm.BasicBlock]`
+- Line 354: `self.vmap[id(src_cur)]` → `self.vmap[src_cur]`
+- Line 397-398: `if id(src) in self.vmap` → `if src in self.vmap`
+- Line 439, 441: Same pattern
+- Line 691: `self.vmap[id(src)]` → `self.vmap[src]`
+- Line 935: `self.vmap[id(src)]` → `self.vmap[src]`
+- Lines 950-951, 960: `bb_map` changes
+
+### Phase 2: Fix Error Message Format
+
+**Priority:** Medium (fixes 1 test, easy fix)
+**Effort:** Low
+**Risk:** Low
+
+**File:** `llvm_c_test/module_ops.py`
+
+**Changes:**
+Update error message format to match C version:
+- "Error parsing bitcode: ..." for bitcode errors
+- "Error with new bitcode parser: ..." for new API errors
+
+### Phase 3: Investigate Memory Crashes
+
+**Priority:** High (3 tests, requires investigation)
+**Effort:** Medium-High
+**Risk:** Medium
+
+**Strategy:**
+1. Run each crashing test in isolation with debugging
+2. Identify the specific API causing the crash
+3. Check if validity tokens are being used correctly
+4. May need C++ binding modifications
+
+**Sub-tasks:**
+- [ ] Investigate diagnostic handler crash
+- [ ] Investigate lazy-module-dump crash
+- [ ] Investigate objectfile test requirements
+
+### Phase 4: Fix Debug Info Test
+
+**Priority:** Low (1 test, complex)
+**Effort:** Unknown
+**Risk:** Unknown
+
+**Strategy:**
+1. Run `--test-dibuilder` in isolation
+2. Capture full error output
+3. Compare with C version output
+4. Identify specific DIBuilder API issues
+
+---
 
 ## Testing Strategy
 
 ```bash
-# Run specific test with verbose output
-uv run python run_llvm_c_tests.py --use-python -v atomics.ll
+# Run all tests with Python implementation
+uv run python run_llvm_c_tests.py --use-python
 
-# Test individual command manually
+# Run specific test
 cat llvm-c/llvm-c-test/inputs/atomics.ll | $(brew --prefix llvm)/bin/llvm-as | \
-  uv run python llvm-c-test-wrapper.py --echo
+  uv run python -m llvm_c_test --echo
 
 # Compare with C version
 cat llvm-c/llvm-c-test/inputs/atomics.ll | $(brew --prefix llvm)/bin/llvm-as | \
   ./build/llvm-c-test --echo
 ```
 
+---
+
 ## Success Criteria
 
 All 23 lit tests pass with `--use-python`:
 ```bash
 uv run python run_llvm_c_tests.py --use-python
-# Expected: 23 tests passed
+# Expected: 23 tests passed, 0 failed
 ```
+
+---
+
+## Summary Statistics
+
+| Phase | Tests Fixed | Effort | Status |
+|-------|-------------|--------|--------|
+| Phase 1: vmap keys | 6 | Low | Pending |
+| Phase 2: Error messages | 1 | Low | Pending |
+| Phase 3: Memory crashes | 3 | Medium | Pending |
+| Phase 4: Debug info | 1 | Unknown | Pending |
+| **Total** | **11** | | |

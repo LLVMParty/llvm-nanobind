@@ -1382,7 +1382,7 @@ struct LLVMValueWrapper {
   // BasicBlock properties - forward declared
   LLVMBasicBlockWrapper get_instruction_parent() const;
   LLVMBasicBlockWrapper get_normal_dest() const;
-  LLVMBasicBlockWrapper get_unwind_dest() const;
+  std::optional<LLVMBasicBlockWrapper> get_unwind_dest() const;
   LLVMBasicBlockWrapper get_successor(unsigned index) const;
   LLVMBasicBlockWrapper get_callbr_default_dest() const;
   unsigned get_callbr_num_indirect_dests() const;
@@ -1682,12 +1682,13 @@ inline LLVMBasicBlockWrapper LLVMValueWrapper::get_normal_dest() const {
   return LLVMBasicBlockWrapper(bb, m_context_token);
 }
 
-inline LLVMBasicBlockWrapper LLVMValueWrapper::get_unwind_dest() const {
+inline std::optional<LLVMBasicBlockWrapper>
+LLVMValueWrapper::get_unwind_dest() const {
   check_valid();
   LLVMBasicBlockRef bb = LLVMGetUnwindDest(m_ref);
-  // Unwind dest can be null for cleanupret
+  // Unwind dest can be null for cleanupret and catchswitch
   if (!bb)
-    throw LLVMInvalidOperationError("Instruction has no unwind dest");
+    return std::nullopt;
   return LLVMBasicBlockWrapper(bb, m_context_token);
 }
 
@@ -2565,11 +2566,13 @@ struct LLVMBuilderWrapper : NoMoveCopy {
   }
 
   // Cleanup return
-  LLVMValueWrapper cleanup_ret(const LLVMValueWrapper &catch_pad,
-                               const LLVMBasicBlockWrapper *unwind_bb = nullptr) {
+  LLVMValueWrapper
+  cleanup_ret(const LLVMValueWrapper &catch_pad,
+              std::optional<LLVMBasicBlockWrapper> unwind_bb = std::nullopt) {
     check_valid();
     catch_pad.check_valid();
-    LLVMBasicBlockRef unwind_ref = unwind_bb ? unwind_bb->m_ref : nullptr;
+    LLVMBasicBlockRef unwind_ref =
+        unwind_bb.has_value() ? unwind_bb->m_ref : nullptr;
     return LLVMValueWrapper(
         LLVMBuildCleanupRet(m_ref, catch_pad.m_ref, unwind_ref),
         m_context_token);
@@ -2626,13 +2629,14 @@ struct LLVMBuilderWrapper : NoMoveCopy {
   }
 
   // Catch switch
-  LLVMValueWrapper catch_switch(const LLVMValueWrapper &parent_pad,
-                                const LLVMBasicBlockWrapper *unwind_bb,
-                                unsigned num_handlers,
-                                const std::string &name = "") {
+  LLVMValueWrapper
+  catch_switch(const LLVMValueWrapper &parent_pad,
+               std::optional<LLVMBasicBlockWrapper> unwind_bb, unsigned num_handlers,
+               const std::string &name = "") {
     check_valid();
     parent_pad.check_valid();
-    LLVMBasicBlockRef unwind_ref = unwind_bb ? unwind_bb->m_ref : nullptr;
+    LLVMBasicBlockRef unwind_ref =
+        unwind_bb.has_value() ? unwind_bb->m_ref : nullptr;
     return LLVMValueWrapper(
         LLVMBuildCatchSwitch(m_ref, parent_pad.m_ref, unwind_ref, num_handlers,
                              name.c_str()),
@@ -3421,11 +3425,11 @@ struct LLVMContextWrapper : NoMoveCopy {
         m_token);
   }
 
-  LLVMTypeWrapper get_type_by_name(const std::string &name) {
+  std::optional<LLVMTypeWrapper> get_type_by_name(const std::string &name) {
     check_valid();
     LLVMTypeRef ty = LLVMGetTypeByName2(m_ref, name.c_str());
     if (!ty)
-      return LLVMTypeWrapper(); // Return null wrapper
+      return std::nullopt; // Return None to Python
     return LLVMTypeWrapper(ty, m_token);
   }
 
@@ -4611,6 +4615,10 @@ NB_MODULE(llvm, m) {
       .value("FMin", LLVMAtomicRMWBinOpFMin)
       .value("UIncWrap", LLVMAtomicRMWBinOpUIncWrap)
       .value("UDecWrap", LLVMAtomicRMWBinOpUDecWrap)
+      .value("USubCond", LLVMAtomicRMWBinOpUSubCond)
+      .value("USubSat", LLVMAtomicRMWBinOpUSubSat)
+      .value("FMaximum", LLVMAtomicRMWBinOpFMaximum)
+      .value("FMinimum", LLVMAtomicRMWBinOpFMinimum)
       .export_values();
 
   // Tail call kind
@@ -5279,9 +5287,9 @@ NB_MODULE(llvm, m) {
              "fn_ty"_a, "fn"_a, "default_dest"_a, "indirect_dests"_a, "args"_a,
              "bundles"_a, "name"_a = "")
         .def("catch_switch", &LLVMBuilderWrapper::catch_switch, "parent_pad"_a,
-             "unwind_bb"_a, "num_handlers"_a, "name"_a = "")
+             "unwind_bb"_a = nb::none(), "num_handlers"_a = 0, "name"_a = "")
         .def("cleanup_ret", &LLVMBuilderWrapper::cleanup_ret, "catch_pad"_a,
-             "bb"_a);
+             "bb"_a = nb::none());
 
   // Operand Bundle wrapper
   nb::class_<LLVMOperandBundleWrapper>(m, "OperandBundle")

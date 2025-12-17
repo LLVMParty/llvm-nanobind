@@ -15,6 +15,7 @@ from typing import Optional, cast
 
 import llvm
 
+
 class TypeCloner:
     """Clone LLVM types from one context to another."""
 
@@ -319,8 +320,10 @@ class FunCloner:
     def __init__(self, src: llvm.Function, dst: llvm.Function, module: llvm.Module):
         self.fun = dst
         self.module = module  # NOTE: get_global_parent not bound, pass module directly
-        self.vmap: dict[int, llvm.Value] = {}  # Map src value id -> dst value
-        self.bb_map: dict[int, llvm.BasicBlock] = {}  # Map src bb id -> dst bb
+        # Use Value/BasicBlock objects directly as keys since __hash__ and __eq__
+        # are implemented based on the underlying LLVM pointer, not Python object id
+        self.vmap: dict[llvm.Value, llvm.Value] = {}  # Map src value -> dst value
+        self.bb_map: dict[llvm.BasicBlock, llvm.BasicBlock] = {}  # Map src bb -> dst bb
 
         # Clone parameters
         self._clone_params(src, dst)
@@ -351,7 +354,7 @@ class FunCloner:
         while True:
             name = src_cur.name
             dst_cur.name = name
-            self.vmap[id(src_cur)] = dst_cur
+            self.vmap[src_cur] = dst_cur
 
             remaining -= 1
             src_next = src_cur.next_param
@@ -394,8 +397,8 @@ class FunCloner:
             return clone_constant(src, self.module)
 
         # Function argument should always be in the map
-        if id(src) in self.vmap:
-            return self.vmap[id(src)]
+        if src in self.vmap:
+            return self.vmap[src]
 
         # Inline assembly is a Value, but not an Instruction
         if src.is_a_inline_asm():
@@ -436,9 +439,9 @@ class FunCloner:
         name = src.name
 
         # Check if already cloned
-        if id(src) in self.vmap:
+        if src in self.vmap:
             # Instruction was generated as a dependency, reorder it
-            instr = self.vmap[id(src)]
+            instr = self.vmap[src]
             instr.remove_from_parent()
             builder.insert_into_builder_with_name(instr, name)
             return instr
@@ -688,7 +691,7 @@ class FunCloner:
 
         elif op == llvm.Opcode.PHI:
             # We need to aggressively set things here because of loops
-            self.vmap[id(src)] = dst = builder.phi(self.clone_type(src), name)
+            self.vmap[src] = dst = builder.phi(self.clone_type(src), name)
             incoming_count = src.count_incoming()
             for i in range(incoming_count):
                 block = self.declare_bb(src.get_incoming_block(i))
@@ -932,7 +935,7 @@ class FunCloner:
             llvm.set_metadata(dst, kind, llvm.metadata_as_value(ctx, md))
 
         check_value_kind(dst, llvm.ValueKind.Instruction)
-        self.vmap[id(src)] = dst
+        self.vmap[src] = dst
         return dst
 
     def clone_ob(self, src: llvm.OperandBundle) -> llvm.OperandBundle:
@@ -947,8 +950,8 @@ class FunCloner:
 
     def declare_bb(self, src: llvm.BasicBlock) -> llvm.BasicBlock:
         """Declare a basic block, creating if necessary."""
-        if id(src) in self.bb_map:
-            return self.bb_map[id(src)]
+        if src in self.bb_map:
+            return self.bb_map[src]
 
         # Verify it's a valid basic block
         v = src.as_value()
@@ -957,7 +960,7 @@ class FunCloner:
 
         name = src.name
         bb = self.fun.append_basic_block(name, llvm.get_module_context(self.module))
-        self.bb_map[id(src)] = bb
+        self.bb_map[src] = bb
         return bb
 
     def clone_bb(self, src: llvm.BasicBlock) -> llvm.BasicBlock:

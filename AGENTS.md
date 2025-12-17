@@ -7,7 +7,6 @@ cmake -B build -G Ninja                      # Configure (first time only)
 cmake --build build                          # Build
 
 # uv builds (recommended for Python development)
-uv sync --reinstall                          # Full rebuild with uv
 uv run <command>                             # Auto-rebuilds the extension if needed
 
 # Testing
