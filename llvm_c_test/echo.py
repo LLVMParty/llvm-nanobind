@@ -1077,14 +1077,14 @@ def declare_symbols(src: llvm.Module, m: llvm.Module) -> None:
         f = m.add_function(name, ty)
 
         # Copy attributes
-        # TODO: Implement when attribute bindings are added
-        # for i in range(llvm.AttributeFunctionIndex, f.param_count + 1):
-        #     for k in range(llvm.get_last_enum_attribute_kind()):
-        #         src_a = llvm.get_enum_attribute_at_index(cur, i, k)
-        #         if src_a:
-        #             val = llvm.get_enum_attribute_value(src_a)
-        #             dst_a = llvm.create_enum_attribute(ctx, k, val)
-        #             llvm.add_attribute_at_index(f, i, dst_a)
+        last_kind = llvm.get_last_enum_attribute_kind()
+        for i in range(llvm.AttributeFunctionIndex, cur.param_count + 1):
+            for k in range(1, last_kind + 1):
+                src_a = llvm.get_enum_attribute_at_index(cur, i, k)
+                if src_a:
+                    val = src_a.value
+                    dst_a = llvm.create_enum_attribute(ctx, k, val)
+                    llvm.add_attribute_at_index(f, i, dst_a)
 
         cur = cur.next_function
 

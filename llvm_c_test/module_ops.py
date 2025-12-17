@@ -25,6 +25,11 @@ def module_dump(lazy=False, new=False):
 
         # Parse bitcode
         ctx = llvm.global_context()
+
+        # Set diagnostic handler if using new API
+        if new:
+            llvm.context_set_diagnostic_handler(ctx)
+
         mod = llvm.parse_bitcode_in_context(ctx, membuf, lazy=lazy, new_api=new)
 
         # Print module IR
@@ -32,7 +37,16 @@ def module_dump(lazy=False, new=False):
 
         return 0
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        # Format error message to match C version
+        if new:
+            # Check if diagnostic handler was called
+            if llvm.diagnostic_was_called():
+                desc = llvm.get_diagnostic_description()
+                print(f"Error with new bitcode parser: {desc}", file=sys.stderr)
+            else:
+                print(f"Error with new bitcode parser: {e}", file=sys.stderr)
+        else:
+            print(f"Error parsing bitcode: {e}", file=sys.stderr)
         return 1
 
 
