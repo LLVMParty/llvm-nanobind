@@ -13,6 +13,7 @@
 #include <llvm-c/Core.h>
 #include <llvm-c/DebugInfo.h>
 #include <llvm-c/Disassembler.h>
+#include <llvm-c/IRReader.h>
 #include <llvm-c/Object.h>
 #include <llvm-c/Target.h>
 #include <llvm-c/TargetMachine.h>
@@ -38,6 +39,42 @@ struct LLVMInvalidOperationError : LLVMException {
 
 struct LLVMVerificationError : LLVMException {
   using LLVMException::LLVMException;
+};
+
+// =============================================================================
+// Diagnostic Information
+// =============================================================================
+
+struct Diagnostic {
+  std::string severity;
+  std::string message;
+  std::optional<int> line;
+  std::optional<int> column;
+};
+
+struct LLVMParseError : LLVMException {
+  std::vector<Diagnostic> m_diagnostics;
+  
+  explicit LLVMParseError(const std::vector<Diagnostic>& diags)
+    : LLVMException(format_diagnostics(diags)),
+      m_diagnostics(diags) {}
+  
+  std::vector<Diagnostic> get_diagnostics() const {
+    return m_diagnostics;
+  }
+  
+private:
+  static std::string format_diagnostics(const std::vector<Diagnostic>& diags) {
+    if (diags.empty()) {
+      return "Failed to parse LLVM IR (no diagnostic information available)";
+    }
+    
+    std::string result = "Failed to parse LLVM IR:\n";
+    for (const auto& diag : diags) {
+      result += "  " + diag.severity + ": " + diag.message + "\n";
+    }
+    return result;
+  }
 };
 
 // =============================================================================
@@ -3199,6 +3236,7 @@ struct LLVMContextWrapper : NoMoveCopy {
   LLVMContextRef m_ref = nullptr;
   std::shared_ptr<ValidityToken> m_token;
   bool m_global = false;
+  std::vector<Diagnostic> m_diagnostics;
 
   explicit LLVMContextWrapper(bool global = false)
       : m_token(std::make_shared<ValidityToken>()), m_global(global) {
@@ -3207,6 +3245,15 @@ struct LLVMContextWrapper : NoMoveCopy {
     } else {
       m_ref = LLVMContextCreate();
     }
+    
+    // Install diagnostic handler
+    LLVMContextSetDiagnosticHandler(
+      m_ref,
+      [](LLVMDiagnosticInfoRef info, void* ctx_ptr) {
+        static_cast<LLVMContextWrapper*>(ctx_ptr)->diagnostic_handler(info);
+      },
+      this
+    );
   }
 
   ~LLVMContextWrapper() {
@@ -3234,6 +3281,40 @@ struct LLVMContextWrapper : NoMoveCopy {
     if (m_token) {
       m_token->invalidate();
     }
+  }
+
+  // Diagnostic handler
+  void diagnostic_handler(LLVMDiagnosticInfoRef info) {
+    auto severity = LLVMGetDiagInfoSeverity(info);
+    char* desc = LLVMGetDiagInfoDescription(info);
+    
+    std::string severity_str;
+    switch (severity) {
+      case LLVMDSError: severity_str = "error"; break;
+      case LLVMDSWarning: severity_str = "warning"; break;
+      case LLVMDSRemark: severity_str = "remark"; break;
+      case LLVMDSNote: severity_str = "note"; break;
+      default: severity_str = "unknown"; break;
+    }
+    
+    m_diagnostics.push_back({
+      severity_str,
+      desc ? std::string(desc) : "",
+      std::nullopt,  // line
+      std::nullopt   // column
+    });
+    
+    if (desc) {
+      LLVMDisposeMessage(desc);
+    }
+  }
+  
+  std::vector<Diagnostic> get_diagnostics() const {
+    return m_diagnostics;
+  }
+  
+  void clear_diagnostics() {
+    m_diagnostics.clear();
   }
 
   // Properties
@@ -3445,6 +3526,12 @@ struct LLVMContextWrapper : NoMoveCopy {
 
   // Builder creation (returns context manager) - defined after LLVMBuilderManager
   LLVMBuilderManager *create_builder();
+
+  // Parsing methods - defined after LLVMModuleManager
+  LLVMModuleManager *parse_bitcode_from_file(const std::string &filename,
+                                              bool lazy = false);
+  LLVMModuleManager *parse_bitcode_from_bytes(nb::bytes data);
+  LLVMModuleManager *parse_ir(const std::string &source);
 };
 
 // =============================================================================
@@ -3590,6 +3677,109 @@ LLVMModuleManager *LLVMContextWrapper::create_module(const std::string &name) {
 LLVMBuilderManager *LLVMContextWrapper::create_builder() {
   check_valid();
   return new LLVMBuilderManager(this);
+}
+
+LLVMModuleManager *LLVMContextWrapper::parse_bitcode_from_file(
+    const std::string &filename, bool lazy) {
+  check_valid();
+  clear_diagnostics();
+
+  // Create memory buffer from file
+  LLVMMemoryBufferRef buf;
+  char *error_msg = nullptr;
+  if (LLVMCreateMemoryBufferWithContentsOfFile(filename.c_str(), &buf,
+                                                 &error_msg)) {
+    std::string err = error_msg ? error_msg : "Unknown error";
+    if (error_msg)
+      LLVMDisposeMessage(error_msg);
+    throw LLVMException("Failed to read file: " + err);
+  }
+
+  // Parse bitcode
+  LLVMModuleRef mod_ref;
+  LLVMBool failed;
+  if (lazy) {
+    failed = LLVMGetBitcodeModuleInContext2(m_ref, buf, &mod_ref);
+  } else {
+    failed = LLVMParseBitcodeInContext2(m_ref, buf, &mod_ref);
+  }
+
+  if (failed) {
+    LLVMDisposeMemoryBuffer(buf); // Dispose on failure!
+    throw LLVMParseError(get_diagnostics());
+  }
+
+  // Create module wrapper
+  auto mod = std::make_unique<LLVMModuleWrapper>(mod_ref, m_ref, m_token);
+
+  // For lazy loading, LLVM's Module takes ownership and stores the buffer internally
+  // For eager loading, LLVM consumed the buffer during parsing, so we dispose it
+  if (!lazy) {
+    LLVMDisposeMemoryBuffer(buf);
+  }
+  // Note: We do NOT store buf in m_memory_buffer for lazy modules because
+  // LLVM's Module already owns it. Storing it would cause a double-free.
+
+  return new LLVMModuleManager(std::move(mod));
+}
+
+LLVMModuleManager *LLVMContextWrapper::parse_bitcode_from_bytes(nb::bytes data) {
+  check_valid();
+  clear_diagnostics();
+
+  // Create memory buffer with a copy (LLVM will own it on success)
+  auto buf = LLVMCreateMemoryBufferWithMemoryRangeCopy(
+      data.c_str(), data.size(), "<bytes>"
+  );
+
+  // Parse eagerly (always)
+  LLVMModuleRef mod_ref;
+  auto failed = LLVMParseBitcodeInContext2(m_ref, buf, &mod_ref);
+
+  if (failed) {
+    // On failure, we must dispose the buffer ourselves
+    LLVMDisposeMemoryBuffer(buf);
+    throw LLVMParseError(get_diagnostics());
+  }
+
+  // On success, LLVM took ownership of buf, don't dispose it
+  // Create module wrapper (no buffer ownership - LLVM internals own it)
+  auto mod = std::make_unique<LLVMModuleWrapper>(mod_ref, m_ref, m_token);
+  return new LLVMModuleManager(std::move(mod));
+}
+
+LLVMModuleManager *LLVMContextWrapper::parse_ir(const std::string &source) {
+  check_valid();
+  clear_diagnostics();
+
+  // Create memory buffer with a copy
+  auto buf = LLVMCreateMemoryBufferWithMemoryRangeCopy(
+      source.c_str(), source.size(), "<source>"
+  );
+
+  // Parse IR (always eager)
+  LLVMModuleRef mod_ref;
+  char *error_msg = nullptr;
+  auto failed = LLVMParseIRInContext(m_ref, buf, &mod_ref, &error_msg);
+
+  if (failed) {
+    // On failure, dispose buffer ourselves
+    LLVMDisposeMemoryBuffer(buf);
+    
+    std::string err = error_msg ? error_msg : "Unknown error";
+    if (error_msg)
+      LLVMDisposeMessage(error_msg);
+    // LLVMParseIRInContext doesn't use diagnostic handler, so we create
+    // a diagnostic manually
+    if (!err.empty()) {
+      m_diagnostics.push_back({"error", err, std::nullopt, std::nullopt});
+    }
+    throw LLVMParseError(get_diagnostics());
+  }
+
+  // On success, LLVM took ownership of buf, don't dispose it
+  auto mod = std::make_unique<LLVMModuleWrapper>(mod_ref, m_ref, m_token);
+  return new LLVMModuleManager(std::move(mod));
 }
 
 // =============================================================================
@@ -4128,7 +4318,7 @@ struct LLVMMemoryBufferWrapper : NoMoveCopy {
   }
 };
 
-// Memory buffer creation functions
+// Memory buffer creation functions (for object file API)
 LLVMMemoryBufferWrapper *create_memory_buffer_with_stdin() {
   LLVMMemoryBufferRef buf;
   char *error_msg = nullptr;
@@ -4373,48 +4563,6 @@ void move_to_containing_section(LLVMSectionIteratorWrapper &sect,
 // =============================================================================
 
 // Parse bitcode (legacy API with error message)
-LLVMModuleWrapper *parse_bitcode_in_context(LLVMContextWrapper &ctx,
-                                             LLVMMemoryBufferWrapper &membuf,
-                                             bool lazy, bool new_api) {
-  membuf.check_valid();
-  ctx.check_valid();
-  
-  LLVMModuleRef mod;
-  char *error_msg = nullptr;
-  LLVMBool failed;
-  
-  if (new_api) {
-    // New API - uses diagnostic handler instead of error message
-    if (lazy) {
-      failed = LLVMGetBitcodeModuleInContext2(ctx.m_ref, membuf.m_ref, &mod);
-    } else {
-      failed = LLVMParseBitcodeInContext2(ctx.m_ref, membuf.m_ref, &mod);
-    }
-    
-    if (failed) {
-      throw LLVMException("Failed to parse bitcode (new API)");
-    }
-  } else {
-    // Legacy API with error message
-    if (lazy) {
-      failed = LLVMGetBitcodeModuleInContext(ctx.m_ref, membuf.m_ref, &mod,
-                                             &error_msg);
-    } else {
-      failed = LLVMParseBitcodeInContext(ctx.m_ref, membuf.m_ref, &mod,
-                                         &error_msg);
-    }
-    
-    if (failed) {
-      std::string err = error_msg ? error_msg : "Unknown error parsing bitcode";
-      if (error_msg)
-        LLVMDisposeMessage(error_msg);
-      throw LLVMException(err);
-    }
-  }
-  
-  return new LLVMModuleWrapper(mod, ctx.m_ref, ctx.m_token);
-}
-
 // =============================================================================
 // DIBuilder Wrapper
 // =============================================================================
@@ -4481,34 +4629,6 @@ LLVMValueMetadataEntriesWrapper_get_metadata(
 }
 
 // =============================================================================
-// Diagnostic Handler Support (Thread-Local Storage)
-// =============================================================================
-
-// Thread-local storage for diagnostic info
-struct DiagnosticInfo {
-  std::string description;
-  LLVMDiagnosticSeverity severity = LLVMDSError;
-  bool was_called = false;
-};
-
-static thread_local DiagnosticInfo g_diagnostic_info;
-
-// Global diagnostic handler callback
-static void diagnostic_handler_callback(LLVMDiagnosticInfoRef di, void *context) {
-  g_diagnostic_info.was_called = true;
-  
-  // Get severity
-  g_diagnostic_info.severity = LLVMGetDiagInfoSeverity(di);
-  
-  // Get description
-  char *desc = LLVMGetDiagInfoDescription(di);
-  if (desc) {
-    g_diagnostic_info.description = std::string(desc);
-    LLVMDisposeMessage(desc);
-  }
-}
-
-// =============================================================================
 // Module Registration
 // =============================================================================
 
@@ -4518,6 +4638,14 @@ NB_MODULE(llvm, m) {
   nb::exception<LLVMUseAfterFreeError>(m, "LLVMUseAfterFreeError");
   nb::exception<LLVMInvalidOperationError>(m, "LLVMInvalidOperationError");
   nb::exception<LLVMVerificationError>(m, "LLVMVerificationError");
+  nb::exception<LLVMParseError>(m, "LLVMParseError");
+
+  // Diagnostic class
+  nb::class_<Diagnostic>(m, "Diagnostic")
+      .def_ro("severity", &Diagnostic::severity)
+      .def_ro("message", &Diagnostic::message)
+      .def_ro("line", &Diagnostic::line)
+      .def_ro("column", &Diagnostic::column);
 
   // Enums
   nb::enum_<LLVMLinkage>(m, "Linkage")
@@ -5440,7 +5568,20 @@ NB_MODULE(llvm, m) {
       .def("create_builder", &LLVMContextWrapper::create_builder,
            nb::rv_policy::take_ownership)
       .def("create_basic_block", &LLVMContextWrapper::create_basic_block,
-           "name"_a);
+           "name"_a)
+      // Parsing methods
+      .def("parse_bitcode_from_file",
+           &LLVMContextWrapper::parse_bitcode_from_file, "filename"_a,
+           "lazy"_a = false, nb::rv_policy::take_ownership,
+           "Parse LLVM bitcode from file")
+      .def("parse_bitcode_from_bytes",
+           &LLVMContextWrapper::parse_bitcode_from_bytes, "data"_a,
+           nb::rv_policy::take_ownership, "Parse LLVM bitcode from bytes")
+      .def("parse_ir", &LLVMContextWrapper::parse_ir, "source"_a,
+           nb::rv_policy::take_ownership, "Parse LLVM IR from string")
+      // Diagnostics
+      .def("get_diagnostics", &LLVMContextWrapper::get_diagnostics)
+      .def("clear_diagnostics", &LLVMContextWrapper::clear_diagnostics);
 
   // Context manager
   nb::class_<LLVMContextManager>(m, "ContextManager")
@@ -5591,15 +5732,14 @@ NB_MODULE(llvm, m) {
         R"(Get the first registered target (returns None if no targets).)");
 
   // Memory buffer wrapper
-  nb::class_<LLVMMemoryBufferWrapper>(m, "MemoryBuffer")
-      .def_prop_ro("buffer_start", &LLVMMemoryBufferWrapper::get_buffer_start)
-      .def_prop_ro("buffer_size", &LLVMMemoryBufferWrapper::get_buffer_size);
-
-  // Memory buffer functions
+  // LLVMMemoryBufferWrapper is kept internal, not exposed to Python
+  // But we need create_memory_buffer_with_stdin for object file API
   m.def("create_memory_buffer_with_stdin", &create_memory_buffer_with_stdin,
         nb::rv_policy::take_ownership,
-        R"(Read stdin into a memory buffer.)");
+        R"(Read stdin into a memory buffer (for object file API).)");
 
+  // =============================================================================
+  // Disassembler Bindings
   // =============================================================================
   // Disassembler Bindings
   // =============================================================================
@@ -5718,10 +5858,7 @@ NB_MODULE(llvm, m) {
         R"(Move section iterator to the section containing the symbol.)");
 
   // BitReader functions
-  m.def("parse_bitcode_in_context", &parse_bitcode_in_context, "ctx"_a,
-        "membuf"_a, "lazy"_a = false, "new_api"_a = false,
-        nb::rv_policy::take_ownership,
-        R"(Parse bitcode from memory buffer into a module.)");
+
 
   // Attribute index constants
   m.attr("AttributeReturnIndex") = nb::int_(static_cast<int>(LLVMAttributeReturnIndex));
@@ -5907,35 +6044,6 @@ NB_MODULE(llvm, m) {
       .value("Remark", LLVMDSRemark)
       .value("Note", LLVMDSNote);
   
-  m.def(
-      "context_set_diagnostic_handler",
-      [](LLVMContextWrapper &ctx) {
-        ctx.check_valid();
-        g_diagnostic_info = DiagnosticInfo(); // Reset
-        LLVMContextSetDiagnosticHandler(ctx.m_ref, diagnostic_handler_callback, nullptr);
-      },
-      "ctx"_a, R"(Set diagnostic handler for context (stores info in thread-local storage).)");
-  
-  m.def(
-      "diagnostic_was_called",
-      []() { return g_diagnostic_info.was_called; },
-      R"(Check if diagnostic handler was called since last reset.)");
-  
-  m.def(
-      "get_diagnostic_severity",
-      []() { return g_diagnostic_info.severity; },
-      R"(Get severity of last diagnostic.)");
-  
-  m.def(
-      "get_diagnostic_description",
-      []() { return g_diagnostic_info.description; },
-      R"(Get description of last diagnostic.)");
-  
-  m.def(
-      "reset_diagnostic_info",
-      []() { g_diagnostic_info = DiagnosticInfo(); },
-      R"(Reset diagnostic info.)");
-
   // Bitcode parsing API that uses LLVMGetBitcodeModule2 (global context)
   m.def(
       "get_bitcode_module_2",

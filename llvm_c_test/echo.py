@@ -496,7 +496,11 @@ class FunCloner:
             fn_ty = self.clone_type(src.get_called_function_type())
             fn = self.clone_value(src.get_called_value())
             then = self.declare_bb(src.get_normal_dest())
-            unwind = self.declare_bb(src.get_unwind_dest())
+            unwind_bb = src.get_unwind_dest()
+            assert unwind_bb is not None, (
+                "Invoke instruction must have unwind destination"
+            )
+            unwind = self.declare_bb(unwind_bb)
             dst = builder.invoke_with_operand_bundles(
                 fn_ty, fn, args, then, unwind, bundles, name
             )
@@ -1374,31 +1378,28 @@ def echo() -> int:
 
     with llvm.create_context() as ctx:
         # Load the source module from stdin
-        buf = llvm.create_memory_buffer_with_stdin()
-        src = llvm.parse_bitcode_in_context(ctx, buf)
+        bitcode = sys.stdin.buffer.read()
 
-        source_filename = src.source_filename
-        module_name = src.name
+        with ctx.parse_bitcode_from_bytes(bitcode) as src:
+            source_filename = src.source_filename
+            module_name = src.name
 
-        # Create destination module
-        with ctx.create_module(module_name) as m:
-            m.source_filename = source_filename
-            m.name = module_name
-            m.target_triple = src.target_triple
-            m.data_layout = src.data_layout
+            # Create destination module
+            with ctx.create_module(module_name) as m:
+                m.source_filename = source_filename
+                m.name = module_name
+                m.target_triple = src.target_triple
+                m.data_layout = src.data_layout
 
-            if m.data_layout != src.data_layout:
-                raise RuntimeError("Inconsistent DataLayout string representation")
+                if m.data_layout != src.data_layout:
+                    raise RuntimeError("Inconsistent DataLayout string representation")
 
-            m.inline_asm = src.inline_asm
+                m.inline_asm = src.inline_asm
 
-            declare_symbols(src, m)
-            clone_symbols(src, m)
+                declare_symbols(src, m)
+                clone_symbols(src, m)
 
-            output = str(m)
-
-        # Explicitly delete src before context exits to ensure proper cleanup order
-        del src
+                output = str(m)
 
     print(output, end="")
     return 0

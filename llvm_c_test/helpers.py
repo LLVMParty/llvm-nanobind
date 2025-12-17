@@ -3,17 +3,6 @@ Helper utilities for llvm-c-test Python port.
 """
 
 import sys
-import llvm
-
-
-def create_memory_buffer_with_stdin():
-    """
-    Create a memory buffer from stdin.
-
-    Returns:
-        LLVMMemoryBufferWrapper containing stdin data
-    """
-    return llvm.create_memory_buffer_with_stdin()
 
 
 def tokenize_stdin(callback):

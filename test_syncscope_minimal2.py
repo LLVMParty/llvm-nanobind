@@ -13,32 +13,42 @@ import llvm
 
 with llvm.create_context() as ctx:
     # Load source module from stdin
-    buf = llvm.create_memory_buffer_with_stdin()
-    src = llvm.parse_bitcode_in_context(ctx, buf)
+    bitcode = sys.stdin.buffer.read()
+    with ctx.parse_bitcode_from_bytes(bitcode) as src:
+        print("Source module loaded", file=sys.stderr)
 
-    print("Source module loaded", file=sys.stderr)
+        # Get the syncscope ID from source
+        src_func = src.get_function("test")
+        assert src_func is not None, "Function 'test' not found"
+        src_bb = src_func.first_basic_block
+        assert src_bb is not None, "Function must have at least one basic block"
+        src_inst = src_bb.first_instruction
+        assert src_inst is not None, "Basic block must have at least one instruction"
+        sync_scope_id = src_inst.get_atomic_sync_scope_id()
 
-    # Get the syncscope ID from source
-    src_func = src.get_function("test")
-    src_bb = src_func.first_basic_block
-    src_inst = src_bb.first_instruction
-    sync_scope_id = src_inst.get_atomic_sync_scope_id()
+        print(f"Source sync_scope_id={sync_scope_id}", file=sys.stderr)
 
-    print(f"Source sync_scope_id={sync_scope_id}", file=sys.stderr)
+        # Print source module (should work)
+        print("Source module:", file=sys.stderr)
+        print(str(src)[:200], file=sys.stderr)
 
-    # Print source module (should work)
-    print("Source module:", file=sys.stderr)
-    print(str(src)[:200], file=sys.stderr)
+        # Get references we need before src closes
+        module_name = src.name
+        source_filename = src.source_filename
+        target_triple = src.target_triple
+        data_layout = src.data_layout
+        func_ty = src_func.type
+        src_param = src_func.first_param()
+        assert src_param is not None, "Function must have at least one parameter"
 
     # Create destination module in same context
-    with ctx.create_module(src.name) as dst:
+    with ctx.create_module(module_name) as dst:
         # Copy module properties
-        dst.source_filename = src.source_filename
-        dst.target_triple = src.target_triple
-        dst.data_layout = src.data_layout
+        dst.source_filename = source_filename
+        dst.target_triple = target_triple
+        dst.data_layout = data_layout
 
         # Clone the function
-        func_ty = src_func.type
         dst_func = dst.add_function("test", func_ty)
 
         # Clone the basic block and instruction
@@ -46,9 +56,9 @@ with llvm.create_context() as ctx:
             bb = dst_func.append_basic_block("", ctx)
             builder.position_at_end(bb)
 
-            # Get parameters from BOTH functions
-            src_param = src_func.first_param()
+            # Get destination parameter
             dst_param = dst_func.first_param()
+            assert dst_param is not None, "Function must have at least one parameter"
 
             print(f"src_param={src_param}, dst_param={dst_param}", file=sys.stderr)
 

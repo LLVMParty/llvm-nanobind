@@ -7,21 +7,22 @@ Run with:
 """
 
 import llvm
+import sys
 
 print("Loading bitcode...")
 with llvm.create_context() as ctx:
-    buf = llvm.create_memory_buffer_with_stdin()
-    src_mod = llvm.parse_bitcode_in_context(ctx, buf)
+    bitcode = sys.stdin.buffer.read()
+    with ctx.parse_bitcode_from_bytes(bitcode) as src_mod:
+        src_func = src_mod.get_function("test")
+        assert src_func is not None, "Function 'test' not found"
+        print(f"Source function: {src_func}")
 
-    src_func = src_mod.get_function("test")
-    print(f"Source function: {src_func}")
+        # WRONG: func.type returns the pointer type
+        print(f"\nfunc.type (WRONG): {src_func.type}")
 
-    # WRONG: func.type returns the pointer type
-    print(f"\nfunc.type (WRONG): {src_func.type}")
-
-    # CORRECT: global_get_value_type returns the actual function type
-    func_type = src_func.global_get_value_type()
-    print(f"global_get_value_type() (CORRECT): {func_type}")
+        # CORRECT: global_get_value_type returns the actual function type
+        func_type = src_func.global_get_value_type()
+        print(f"global_get_value_type() (CORRECT): {func_type}")
 
     # Create a new module in the SAME context
     with ctx.create_module("dest") as dst_mod:

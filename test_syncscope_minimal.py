@@ -18,19 +18,21 @@ import llvm
 
 with llvm.create_context() as ctx:
     # Load source module from stdin
-    buf = llvm.create_memory_buffer_with_stdin()
-    src = llvm.parse_bitcode_in_context(ctx, buf)
+    bitcode = sys.stdin.buffer.read()
+    with ctx.parse_bitcode_from_bytes(bitcode) as src:
+        print("Source module loaded", file=sys.stderr)
 
-    print("Source module loaded", file=sys.stderr)
+        # Get the syncscope ID from the source atomic instruction
+        src_func = src.get_function("test")
+        assert src_func is not None, "Function 'test' not found"
+        src_bb = src_func.first_basic_block
+        assert src_bb is not None, "Function must have at least one basic block"
+        src_inst = src_bb.first_instruction
+        assert src_inst is not None, "Basic block must have at least one instruction"
 
-    # Get the syncscope ID from the source atomic instruction
-    src_func = src.get_function("test")
-    src_bb = src_func.first_basic_block
-    src_inst = src_bb.first_instruction
-
-    # Extract syncscope ID
-    sync_scope_id = src_inst.get_atomic_sync_scope_id()
-    print(f"Source atomic has sync_scope_id={sync_scope_id}", file=sys.stderr)
+        # Extract syncscope ID
+        sync_scope_id = src_inst.get_atomic_sync_scope_id()
+        print(f"Source atomic has sync_scope_id={sync_scope_id}", file=sys.stderr)
 
     # Create a NEW module in the SAME context
     with ctx.create_module("dest") as dst:

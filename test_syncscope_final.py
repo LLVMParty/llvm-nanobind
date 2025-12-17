@@ -13,23 +13,28 @@ Run with:
 """
 
 import llvm
+import sys
 
 with llvm.create_context() as ctx:
-    buf = llvm.create_memory_buffer_with_stdin()
-    src = llvm.parse_bitcode_in_context(ctx, buf)
+    bitcode = sys.stdin.buffer.read()
+    with ctx.parse_bitcode_from_bytes(bitcode) as src:
+        src_func = src.get_function("test")
+        assert src_func is not None, "Function 'test' not found"
+        src_bb = src_func.first_basic_block
+        assert src_bb is not None, "Function must have at least one basic block"
+        src_inst = src_bb.first_instruction
+        assert src_inst is not None, "Basic block must have at least one instruction"
 
-    src_func = src.get_function("test")
-    src_bb = src_func.first_basic_block
-    src_inst = src_bb.first_instruction
+        # Get syncscope ID from source
+        scope_id = src_inst.get_atomic_sync_scope_id()
+        print(f"Source syncscope ID: {scope_id}")
 
-    # Get syncscope ID from source
-    scope_id = src_inst.get_atomic_sync_scope_id()
-    print(f"Source syncscope ID: {scope_id}")
+        # Get function type before src closes
+        func_ty = src_func.global_get_value_type()
 
     # Create destination module in same context
     with ctx.create_module("dest") as dst:
         # Use global_get_value_type() instead of .type (BUG #1 FIX)
-        func_ty = src_func.global_get_value_type()
         dst_func = dst.add_function("test", func_ty)
 
         with ctx.create_builder() as builder:

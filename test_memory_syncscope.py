@@ -25,7 +25,6 @@ APIS INVOLVED:
 """
 
 
-
 def test_custom_syncscope_crash_pure_python():
     """Custom sync scope 'agent' causes crash - pure Python reproduction.
 
