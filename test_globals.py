@@ -156,7 +156,10 @@ def main():
                 f";   is constant: {'yes' if global_const.is_global_constant() else 'no'}"
             )
             print(f";   has initializer: {'yes' if init else 'no'}")
-            print(f";   initializer value: {llvm.const_int_get_zext_value(init)}")
+            if init:
+                print(f";   initializer value: {llvm.const_int_get_zext_value(init)}")
+            else:
+                print(";   initializer value: None")
             print(";")
             print("; aligned_var:")
             print(f";   alignment: {global_aligned.get_alignment()}")

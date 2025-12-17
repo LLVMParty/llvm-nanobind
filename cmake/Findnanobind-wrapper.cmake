@@ -80,6 +80,7 @@ function(nanobind_add_typed_module name)
         PYTHON_PATH $<TARGET_FILE_DIR:${name}>
         MARKER_FILE py.typed
         DEPENDS ${name}
+        INCLUDE_PRIVATE  # Include methods ending with _ (like and_, or_, xor_, not_, switch_)
     )
 
     # Install the extension module as a package (${name}/__init__.abi3.so)

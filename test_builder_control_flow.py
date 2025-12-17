@@ -129,6 +129,7 @@ def main():
 
                 # Check insert block
                 current_block = builder.insert_block
+                assert current_block is not None
 
             # Verify module
             if not mod.verify():

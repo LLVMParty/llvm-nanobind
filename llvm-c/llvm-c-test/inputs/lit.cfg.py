@@ -1,3 +1,4 @@
+# type: ignore  # config object is injected by lit at runtime
 # -*- Python -*-
 """
 lit configuration for llvm-c-test integration tests.

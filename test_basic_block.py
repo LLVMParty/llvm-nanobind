@@ -49,6 +49,7 @@ def main():
 
             # Get entry basic block
             func_entry = func.entry_block
+            assert func_entry is not None
 
             # Count basic blocks
             bb_count = func.basic_block_count
@@ -132,6 +133,7 @@ def main():
 
             # Get last block
             last_bb = func.last_basic_block
+            assert last_bb is not None
             print(";")
             print(f"; Last block: {last_bb.name}")
 
