@@ -257,7 +257,7 @@ class Module:
 ### 1. Unit Tests for Each Crash
 
 Each `test_memory_*.py` file should:
-- Be runnable standalone: `uv run python test_memory_xyz.py`
+- Be runnable standalone: `uv run test_memory_xyz.py`
 - Have clear pass/fail criteria
 - Include comments about current status (known to crash, fixed, etc.)
 

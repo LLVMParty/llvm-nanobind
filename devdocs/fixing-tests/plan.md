@@ -177,7 +177,7 @@ Update error message format to match C version:
 
 ```bash
 # Run all tests with Python implementation
-uv run python run_llvm_c_tests.py --use-python
+uv run run_llvm_c_tests.py --use-python
 
 # Run specific test
 cat llvm-c/llvm-c-test/inputs/atomics.ll | ./llvm-bin llvm-as | \
@@ -194,7 +194,7 @@ cat llvm-c/llvm-c-test/inputs/atomics.ll | ./llvm-bin llvm-as | \
 
 All 23 lit tests pass with `--use-python`:
 ```bash
-uv run python run_llvm_c_tests.py --use-python
+uv run run_llvm_c_tests.py --use-python
 # Expected: 23 tests passed, 0 failed
 ```
 

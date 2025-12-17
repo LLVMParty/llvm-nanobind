@@ -9,7 +9,7 @@ With the TypeCloner fix (using global_get_value_type), we can now:
 4. But CRASH when trying to print the module ✗
 
 Run with:
-    cat test_syncscope_crash.bc | uv run python test_syncscope_final.py
+    cat test_syncscope_crash.bc | uv run test_syncscope_final.py
 """
 
 import llvm

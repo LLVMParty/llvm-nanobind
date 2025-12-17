@@ -10,7 +10,7 @@ This script does the bare minimum:
 5. Try to print the module -> CRASH
 
 Run with:
-    cat test_syncscope_crash.bc | uv run python test_syncscope_minimal.py
+    cat test_syncscope_crash.bc | uv run test_syncscope_minimal.py
 """
 
 import sys

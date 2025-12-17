@@ -712,10 +712,10 @@ Running tests:
 
 ```bash
 # Run with C version
-uv run python run_llvm_c_tests.py
+uv run run_llvm_c_tests.py
 
 # Run with Python version
-USE_PYTHON_LLVM_C_TEST=1 uv run python run_llvm_c_tests.py
+USE_PYTHON_LLVM_C_TEST=1 uv run run_llvm_c_tests.py
 ```
 
 ### Test Categories

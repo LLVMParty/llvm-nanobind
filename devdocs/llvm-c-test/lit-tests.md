@@ -10,19 +10,19 @@ The lit test suite verifies that the Python implementation (`llvm_c_test`) produ
 
 ```bash
 # Run all lit tests with C binary (default)
-uv run python run_llvm_c_tests.py
+uv run run_llvm_c_tests.py
 
 # Run all lit tests with Python implementation
-uv run python run_llvm_c_tests.py --use-python
+uv run run_llvm_c_tests.py --use-python
 
 # Run with verbose output
-uv run python run_llvm_c_tests.py -v
+uv run run_llvm_c_tests.py -v
 
 # Run with Python implementation and coverage collection
 uv run coverage run run_llvm_c_tests.py --use-python
 
 # Enable command logging for debugging
-LLVM_C_TEST_LOG=commands.log uv run python run_llvm_c_tests.py --use-python
+LLVM_C_TEST_LOG=commands.log uv run run_llvm_c_tests.py --use-python
 ```
 
 ## Test Directory Structure
@@ -224,7 +224,7 @@ The wrapper script is used only for command logging. It:
 1. Create a `.ll` or `.test` file in `llvm-c/llvm-c-test/inputs/`
 2. Add RUN line with the command to test
 3. Add CHECK lines for expected output (if applicable)
-4. Run `uv run python run_llvm_c_tests.py` to verify
+4. Run `uv run run_llvm_c_tests.py` to verify
 
 Example test file:
 ```llvm

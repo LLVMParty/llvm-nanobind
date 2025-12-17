@@ -183,13 +183,13 @@ Added the remaining bindings for complete attribute and metadata copying:
 
 ```bash
 # Run all lit tests
-uv run python run_llvm_c_tests.py
+uv run run_llvm_c_tests.py
 
 # Run with verbose output
-uv run python run_llvm_c_tests.py -v
+uv run run_llvm_c_tests.py -v
 
 # Run memory safety tests
-uv run python test_memory_safety.py
+uv run test_memory_safety.py
 
 # Test echo command directly
 echo 'define i32 @main() { ret i32 0 }' | ./llvm-bin llvm-as | \

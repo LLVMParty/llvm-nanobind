@@ -8,7 +8,7 @@ This has NOTHING to do with syncscope! The crash happens when you:
 3. Before the function body is fully set up
 
 Run:
-    uv run python test_function_param_crash.py
+    uv run test_function_param_crash.py
 """
 
 import llvm

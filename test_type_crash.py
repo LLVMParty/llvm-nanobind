@@ -3,7 +3,7 @@
 Test: Does using func.type from a bitcode-loaded function cause issues?
 
 Run with:
-    cat test_syncscope_crash.bc | uv run python test_type_crash.py
+    cat test_syncscope_crash.bc | uv run test_type_crash.py
 """
 
 import llvm

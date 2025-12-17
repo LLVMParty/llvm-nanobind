@@ -5,7 +5,7 @@ Minimal reproduction - closer to echo.py behavior.
 This uses the actual function parameter like echo.py does.
 
 Run with:
-    cat test_syncscope_crash.bc | uv run python test_syncscope_minimal2.py
+    cat test_syncscope_crash.bc | uv run test_syncscope_minimal2.py
 """
 
 import sys

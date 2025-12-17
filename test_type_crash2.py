@@ -3,7 +3,7 @@
 Test: What does func.type actually return?
 
 Run with:
-    cat test_syncscope_crash.bc | uv run python test_type_crash2.py
+    cat test_syncscope_crash.bc | uv run test_type_crash2.py
 """
 
 import llvm

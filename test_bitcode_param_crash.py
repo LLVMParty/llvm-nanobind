@@ -3,7 +3,7 @@
 Test: Does calling first_param() on a bitcode-loaded function work?
 
 Run with:
-    cat test_syncscope_crash.bc | uv run python test_bitcode_param_crash.py
+    cat test_syncscope_crash.bc | uv run test_bitcode_param_crash.py
 """
 
 import llvm

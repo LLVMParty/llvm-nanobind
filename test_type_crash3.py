@@ -3,7 +3,7 @@
 Test: Does using global_get_value_type() fix the crash?
 
 Run with:
-    cat test_syncscope_crash.bc | uv run python test_type_crash3.py
+    cat test_syncscope_crash.bc | uv run test_type_crash3.py
 """
 
 import llvm

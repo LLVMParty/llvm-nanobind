@@ -155,7 +155,7 @@ From `devdocs/memory-model.md`:
 
 ```bash
 # Run all Python tests
-uv run python run_llvm_c_tests.py --use-python
+uv run run_llvm_c_tests.py --use-python
 
 # Test specific command
 cat llvm-c/llvm-c-test/inputs/atomics.ll | ./llvm-bin llvm-as | \
