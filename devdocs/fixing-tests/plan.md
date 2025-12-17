@@ -181,7 +181,7 @@ uv run run_llvm_c_tests.py --use-python
 
 # Run specific test
 cat llvm-c/llvm-c-test/inputs/atomics.ll | ./llvm-bin llvm-as | \
-  uv run python -m llvm_c_test --echo
+  uv run llvm-c-test --echo
 
 # Compare with C version
 cat llvm-c/llvm-c-test/inputs/atomics.ll | ./llvm-bin llvm-as | \

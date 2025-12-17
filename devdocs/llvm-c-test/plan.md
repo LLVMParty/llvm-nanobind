@@ -35,9 +35,9 @@ The Python port will mirror the exact CLI of `llvm-c-test`:
 ./build/llvm-c-test --targets-list
 
 # Python version (drop-in replacement)
-python -m llvm_c_test --module-dump < input.bc
-python -m llvm_c_test --calc < calc.test
-python -m llvm_c_test --targets-list
+llvm-c-test --module-dump < input.bc
+llvm-c-test --calc < calc.test
+llvm-c-test --targets-list
 ```
 
 ### Lit Integration
@@ -57,7 +57,7 @@ The lit configuration can then substitute:
 ```python
 # lit.cfg.py
 if os.environ.get("USE_PYTHON_LLVM_C_TEST"):
-    config.substitutions.append(("llvm-c-test", "python -m llvm_c_test"))
+    config.substitutions.append(("llvm-c-test", "llvm-c-test"))
 else:
     config.substitutions.append(("llvm-c-test", llvm_c_test_exe))
 ```
@@ -690,7 +690,7 @@ The Python port is validated by comparing its output to the C `llvm-c-test`:
 ./build/llvm-c-test --module-list-globals < input.bc > expected.txt
 
 # Python version must match exactly
-python -m llvm_c_test --module-list-globals < input.bc > actual.txt
+llvm-c-test --module-list-globals < input.bc > actual.txt
 
 # Comparison
 diff expected.txt actual.txt
@@ -703,7 +703,7 @@ The existing lit test suite can be used with minimal modifications:
 ```python
 # lit.cfg.py modification
 if os.environ.get("USE_PYTHON_LLVM_C_TEST"):
-    config.substitutions.append(("llvm-c-test", "python -m llvm_c_test"))
+    config.substitutions.append(("llvm-c-test", "llvm-c-test"))
 else:
     config.substitutions.append(("llvm-c-test", llvm_c_test_exe))
 ```

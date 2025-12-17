@@ -47,7 +47,7 @@ def test_custom_syncscope_crash_pure_python():
     print()
     print("To reproduce: cat llvm-c/llvm-c-test/inputs/echo.ll | \\")
     print("  ./llvm-bin llvm-as | \\")
-    print("  uv run python -m llvm_c_test --echo")
+    print("  uv run llvm-c-test --echo")
     print()
     print("The issue is at echo.py lines 633, 643, 660, 673, 831:")
     print("  dst.set_atomic_sync_scope_id(src.get_atomic_sync_scope_id())")

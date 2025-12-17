@@ -193,5 +193,5 @@ uv run test_memory_safety.py
 
 # Test echo command directly
 echo 'define i32 @main() { ret i32 0 }' | ./llvm-bin llvm-as | \
-  uv run python -m llvm_c_test --echo
+  uv run llvm-c-test --echo
 ```

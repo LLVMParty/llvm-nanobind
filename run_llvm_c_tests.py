@@ -129,9 +129,18 @@ def build_llvm_c_test_cmd(
     extra_env: dict[str, str] = {}
 
     if use_python:
-        # PYTHONPATH must be embedded in the command since lit runs shell commands
-        # that don't inherit the environment from subprocess.run()
-        pythonpath_prefix = f"PYTHONPATH={project_root}"
+        # Use the llvm-c-test script installed by pip (via project.scripts in pyproject.toml)
+        # This is installed in .venv/bin/llvm-c-test by uv pip install -e .
+        llvm_c_test_script = project_root / ".venv" / "bin" / "llvm-c-test"
+
+        # Verify the script exists
+        if not llvm_c_test_script.exists():
+            print(
+                f"Error: llvm-c-test script not found: {llvm_c_test_script}",
+                file=sys.stderr,
+            )
+            print("Run: uv pip install -e .", file=sys.stderr)
+            sys.exit(1)
 
         # Check if we should enable coverage or logging
         coverage_run = os.environ.get("COVERAGE_RUN")
@@ -142,15 +151,15 @@ def build_llvm_c_test_cmd(
             # a unique data file that can be combined later with `coverage combine`
             # Specify --data-file to write coverage to project root regardless of cwd
             coverage_file = project_root / ".coverage.llvm_c_test"
-            cmd = f"{pythonpath_prefix} {sys.executable} -m coverage run --parallel-mode --data-file={coverage_file} -m llvm_c_test"
+            cmd = f"{sys.executable} -m coverage run --parallel-mode --data-file={coverage_file} -m llvm_c_test"
         elif log_file:
             # Use wrapper script for command logging
             wrapper_script = project_root / "llvm-c-test-wrapper.py"
             extra_env["LLVM_C_TEST_LOG"] = log_file
-            cmd = f"{pythonpath_prefix} {sys.executable} {wrapper_script}"
+            cmd = f"{sys.executable} {wrapper_script}"
         else:
-            # Direct invocation without coverage or logging
-            cmd = f"{pythonpath_prefix} {sys.executable} -m llvm_c_test"
+            # Direct invocation using the installed script
+            cmd = str(llvm_c_test_script)
 
         return cmd, extra_env
     else:

@@ -28,11 +28,11 @@
 **Test Results:**
 ```bash
 # All tests passing ✅
-uv run python -m llvm_c_test --targets-list
-uv run python -m llvm_c_test --calc < calc.test
-llvm-as < globals.ll | uv run python -m llvm_c_test --module-list-globals
-llvm-as < functions.ll | uv run python -m llvm_c_test --module-list-functions
-llvm-as < empty.ll | uv run python -m llvm_c_test --module-dump
+uv run llvm-c-test --targets-list
+uv run llvm-c-test --calc < calc.test
+llvm-as < globals.ll | uv run llvm-c-test --module-list-globals
+llvm-as < functions.ll | uv run llvm-c-test --module-list-functions
+llvm-as < empty.ll | uv run llvm-c-test --module-dump
 ```
 
 ### ✅ Phase 2: Metadata & Attributes (6 commands)
@@ -54,11 +54,11 @@ llvm-as < empty.ll | uv run python -m llvm_c_test --module-dump
 **Test Results:**
 ```bash
 # All tests passing ✅ (silent tests - no output expected)
-llvm-as < function_attributes.ll | uv run python -m llvm_c_test --test-function-attributes
-llvm-as < callsite_attributes.ll | uv run python -m llvm_c_test --test-callsite-attributes
-uv run python -m llvm_c_test --add-named-metadata-operand
-uv run python -m llvm_c_test --set-metadata
-uv run python -m llvm_c_test --is-a-value-as-metadata
+llvm-as < function_attributes.ll | uv run llvm-c-test --test-function-attributes
+llvm-as < callsite_attributes.ll | uv run llvm-c-test --test-callsite-attributes
+uv run llvm-c-test --add-named-metadata-operand
+uv run llvm-c-test --set-metadata
+uv run llvm-c-test --is-a-value-as-metadata
 ```
 
 ## Project Structure
@@ -108,7 +108,7 @@ llvm-nanobind/
 uv sync
 
 # Run tests
-uv run python -m llvm_c_test <command>
+uv run llvm-c-test <command>
 ```
 
 ## Remaining Work

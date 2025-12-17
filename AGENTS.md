@@ -10,13 +10,16 @@ cmake --build build                          # Build
 uv run <command>                             # Auto-rebuilds the extension if needed
 
 # Testing
-uv run run_tests.py                   # Run all C++ tests + Python comparison
-uv run run_llvm_c_tests.py            # Run vendored llvm-c-test lit tests
-uv run run_llvm_c_tests.py -v         # Run lit tests with verbose output
+uv run run_tests.py                          # Run all C++ tests + Python comparison
+uv run run_llvm_c_tests.py                   # Run vendored llvm-c-test lit tests (C binary)
+uv run run_llvm_c_tests.py --use-python      # Run lit tests with Python implementation
+uv run run_llvm_c_tests.py -v                # Run lit tests with verbose output
 ./build/test_factorial                       # Run single C++ test
-uv run test_factorial.py              # Run single Python test
-uvx ty check                                  # Type check Python code
-uvx ty check llvm_c_test/                     # Type check specific directory
+uv run test_factorial.py                     # Run single Python test
+uv run llvm-c-test --targets-list            # Run llvm-c-test directly (dev-only tool)
+./llvm-c-test --echo < input.bc              # Can also invoke directly (auto-finds venv)
+uvx ty check                                 # Type check Python code
+uvx ty check llvm_c_test/                    # Type check specific directory
 
 # Code Coverage
 uv run coverage run test_factorial.py        # Run single test with coverage

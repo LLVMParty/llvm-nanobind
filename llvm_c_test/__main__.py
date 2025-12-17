@@ -2,9 +2,9 @@
 CLI entry point for llvm-c-test Python port.
 
 Usage:
-    python -m llvm_c_test --targets-list
-    python -m llvm_c_test --calc < calc.test
-    python -m llvm_c_test --module-dump < input.bc
+    uv run llvm-c-test --targets-list
+    uv run llvm-c-test --calc < calc.test
+    uv run llvm-c-test --module-dump < input.bc
 """
 
 import sys
