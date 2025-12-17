@@ -124,6 +124,19 @@ def main():
         from .debuginfo import test_dibuilder
 
         return test_dibuilder()
+    # Phase 4 commands
+    elif command == "--disassemble":
+        from .disassemble import disassemble
+
+        return disassemble()
+    elif command == "--object-list-sections":
+        from .object_file import object_list_sections
+
+        return object_list_sections()
+    elif command == "--object-list-symbols":
+        from .object_file import object_list_symbols
+
+        return object_list_symbols()
     else:
         print(f"Unknown command: {command}", file=sys.stderr)
         print_usage()

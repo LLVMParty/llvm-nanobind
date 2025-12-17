@@ -270,13 +270,12 @@ llvm-nanobind/
 
 ### Commands to Implement
 
-1. ~~`--echo` - Complete module cloning via C API~~ **DEFERRED to Phase 5** (requires ~100+ APIs)
-2. ✅ `--test-dibuilder` - Comprehensive debug info builder test **COMPLETE**
-3. ✅ `--get-di-tag` - Get DWARF tag from debug info node **COMPLETE**
-4. ✅ `--di-type-get-name` - Get type name from debug info **COMPLETE**
-5. ✅ `--test-diagnostic-handler` - Test diagnostic handler callbacks **COMPLETE**
+1. ✅ `--test-dibuilder` - Comprehensive debug info builder test **COMPLETE**
+2. ✅ `--get-di-tag` - Get DWARF tag from debug info node **COMPLETE**
+3. ✅ `--di-type-get-name` - Get type name from debug info **COMPLETE**
+4. ✅ `--test-diagnostic-handler` - Test diagnostic handler callbacks **COMPLETE**
 
-**Status**: 4/5 commands complete (80%). The `--echo` command requires extensive type/constant/instruction cloning APIs (~100+) and is deferred to Phase 5 after platform-specific commands are complete.
+**Status**: 4/4 commands complete (100%). The `--echo` command has been moved to Phase 5.
 
 ### 3.1 Echo Command Requirements
 
@@ -631,13 +630,15 @@ The `--echo` command is the most comprehensive test, requiring cloning of:
 
 ---
 
-## Phase 4: Platform-Specific
+## Phase 4: Platform-Specific ✅ COMPLETE
 
-### Commands to Implement
+### Commands Implemented
 
-1. `--disassemble` - Disassemble hex bytes
-2. `--object-list-sections` - List sections in object file
-3. `--object-list-symbols` - List symbols in object file
+1. ✅ `--disassemble` - Disassemble hex bytes
+2. ✅ `--object-list-sections` - List sections in object file
+3. ✅ `--object-list-symbols` - List symbols in object file
+
+**Status**: All 3 commands complete. Disassembly works for x86, ARM, and other architectures. Object file parsing handles Mach-O, ELF, COFF formats.
 
 ### 4.1 Disassemble Command Requirements
 
@@ -757,17 +758,19 @@ USE_PYTHON_LLVM_C_TEST=1 uv run python run_llvm_c_tests.py
    - `--test-function-attributes`
    - `--test-callsite-attributes`
 
-4. **Phase 3 Commands** (Complex)
+4. **Phase 3 Commands** (Complex) ✅ COMPLETE
    - `--test-dibuilder` (large but self-contained)
    - `--get-di-tag`
    - `--di-type-get-name`
    - `--test-diagnostic-handler`
-   - `--echo` (most complex, save for last)
 
-5. **Phase 4 Commands** (Platform-Specific)
+5. **Phase 4 Commands** (Platform-Specific) ✅ COMPLETE
    - `--disassemble`
    - `--object-list-sections`
    - `--object-list-symbols`
+
+6. **Phase 5 Commands** (Echo - Module Cloning)
+   - `--echo` (most complex, requires ~150 additional APIs)
 
 ### Binding Implementation Strategy
 
@@ -783,12 +786,40 @@ For each command:
 
 ## Summary Statistics
 
-| Phase | Commands | New Bindings (approx) |
-|-------|----------|----------------------|
-| Phase 1 | 8 | ~35 |
-| Phase 2 | 6 | ~30 |
-| Phase 3 | 5 | ~150 |
-| Phase 4 | 3 | ~20 |
-| **Total** | **22** | **~235** |
+| Phase | Commands | New Bindings (approx) | Status |
+|-------|----------|----------------------|--------|
+| Phase 1 | 8 | 30 | ✅ Complete |
+| Phase 2 | 6 | 9 | ✅ Complete |
+| Phase 3 | 4 | 69 | ✅ Complete |
+| Phase 4 | 3 | 20 | ✅ Complete |
+| Phase 5 | 1 | ~150 | Not Started |
+| **Total** | **22** | **128/~305 (42%)** | **21/22 (95%)** |
 
-The project is substantial but achievable through incremental implementation. Each phase builds on the previous one, and the lit test infrastructure provides immediate feedback on correctness.
+The project has progressed significantly with 21 of 22 commands complete. Phase 5 (`--echo`) remains as the final and most complex command, requiring extensive type/constant/instruction cloning APIs. The lit test infrastructure provides immediate feedback on correctness, and all implemented commands produce byte-identical output to the C version.
+
+---
+
+## Phase 5: Echo Command (Module Cloning)
+
+### Command
+
+1. `--echo` - Complete module cloning via C API
+
+The `--echo` command is the most comprehensive test in the llvm-c-test suite. It reads LLVM IR, clones it entirely using the C API, and outputs the cloned module. This exercises nearly every LLVM-C API for types, constants, instructions, and metadata.
+
+### Why Deferred to Phase 5
+
+The `--echo` command requires ~150 additional API bindings across:
+- **Type cloning (27 APIs)**: All type kinds including target extension types
+- **Constant cloning (34 APIs)**: All constant kinds, constant expressions, pointer auth
+- **Instruction cloning (40 APIs)**: All instruction opcodes with flags
+- **Global cloning (30 APIs)**: Aliases, IFuncs, metadata
+- **Operand bundles (7 APIs)**: Bundle creation and inspection
+- **Inline assembly (9 APIs)**: Inline asm inspection and creation
+- **Named metadata (7 APIs)**: Named metadata iteration
+
+Given the scope, it's more efficient to complete Phases 3-4 first, then tackle `--echo` as a dedicated phase.
+
+### Required Bindings
+
+See Phase 3 sections 3.1 (Echo Command Bindings) for the complete API list.

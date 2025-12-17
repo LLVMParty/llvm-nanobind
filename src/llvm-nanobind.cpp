@@ -1,5 +1,6 @@
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/optional.h>
+#include <nanobind/stl/pair.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
 
@@ -11,6 +12,8 @@
 #include <llvm-c/BitReader.h>
 #include <llvm-c/Core.h>
 #include <llvm-c/DebugInfo.h>
+#include <llvm-c/Disassembler.h>
+#include <llvm-c/Object.h>
 #include <llvm-c/Target.h>
 #include <llvm-c/TargetMachine.h>
 
@@ -2233,6 +2236,231 @@ LLVMMemoryBufferWrapper *create_memory_buffer_with_stdin() {
 }
 
 // =============================================================================
+// Disassembler Wrapper
+// =============================================================================
+
+struct LLVMDisasmContextWrapper : NoMoveCopy {
+  LLVMDisasmContextRef m_ref = nullptr;
+
+  LLVMDisasmContextWrapper() = default;
+  explicit LLVMDisasmContextWrapper(LLVMDisasmContextRef ref) : m_ref(ref) {}
+
+  ~LLVMDisasmContextWrapper() {
+    if (m_ref) {
+      LLVMDisasmDispose(m_ref);
+      m_ref = nullptr;
+    }
+  }
+
+  bool is_valid() const { return m_ref != nullptr; }
+
+  void check_valid() const {
+    if (!m_ref)
+      throw LLVMUseAfterFreeError("DisasmContext is null or invalid");
+  }
+
+  // Disassemble a single instruction
+  // Returns (bytes_consumed, disassembly_string)
+  std::pair<size_t, std::string> disasm_instruction(const std::vector<uint8_t> &bytes,
+                                                     size_t offset, uint64_t pc) {
+    check_valid();
+    if (offset >= bytes.size())
+      return {0, ""};
+
+    char outline[1024];
+    size_t consumed = LLVMDisasmInstruction(
+        m_ref, const_cast<uint8_t *>(bytes.data() + offset),
+        bytes.size() - offset, pc, outline, sizeof(outline));
+
+    return {consumed, std::string(outline)};
+  }
+};
+
+// Create disassembler with triple, cpu, and features
+LLVMDisasmContextWrapper *create_disasm_cpu_features(const std::string &triple,
+                                                      const std::string &cpu,
+                                                      const std::string &features) {
+  LLVMDisasmContextRef ref = LLVMCreateDisasmCPUFeatures(
+      triple.c_str(), cpu.c_str(), features.c_str(), nullptr, 0, nullptr, nullptr);
+
+  return new LLVMDisasmContextWrapper(ref);
+}
+
+// =============================================================================
+// Object File Wrappers
+// =============================================================================
+
+// Forward declarations
+struct LLVMBinaryWrapper;
+struct LLVMSectionIteratorWrapper;
+struct LLVMSymbolIteratorWrapper;
+
+struct LLVMBinaryWrapper : NoMoveCopy {
+  LLVMBinaryRef m_ref = nullptr;
+
+  LLVMBinaryWrapper() = default;
+  explicit LLVMBinaryWrapper(LLVMBinaryRef ref) : m_ref(ref) {}
+
+  ~LLVMBinaryWrapper() {
+    if (m_ref) {
+      LLVMDisposeBinary(m_ref);
+      m_ref = nullptr;
+    }
+  }
+
+  bool is_valid() const { return m_ref != nullptr; }
+
+  void check_valid() const {
+    if (!m_ref)
+      throw LLVMUseAfterFreeError("Binary is null or invalid");
+  }
+};
+
+struct LLVMSectionIteratorWrapper : NoMoveCopy {
+  LLVMSectionIteratorRef m_ref = nullptr;
+  LLVMBinaryWrapper *m_binary = nullptr; // Non-owning reference
+
+  LLVMSectionIteratorWrapper() = default;
+  LLVMSectionIteratorWrapper(LLVMSectionIteratorRef ref, LLVMBinaryWrapper *binary)
+      : m_ref(ref), m_binary(binary) {}
+
+  ~LLVMSectionIteratorWrapper() {
+    if (m_ref) {
+      LLVMDisposeSectionIterator(m_ref);
+      m_ref = nullptr;
+    }
+  }
+
+  bool is_valid() const { return m_ref != nullptr; }
+
+  void check_valid() const {
+    if (!m_ref)
+      throw LLVMUseAfterFreeError("SectionIterator is null or invalid");
+    if (!m_binary || !m_binary->is_valid())
+      throw LLVMUseAfterFreeError("Binary associated with iterator is invalid");
+  }
+
+  bool is_at_end() const {
+    check_valid();
+    return LLVMObjectFileIsSectionIteratorAtEnd(m_binary->m_ref, m_ref);
+  }
+
+  void move_next() {
+    check_valid();
+    LLVMMoveToNextSection(m_ref);
+  }
+
+  std::string get_name() const {
+    check_valid();
+    const char *name = LLVMGetSectionName(m_ref);
+    return name ? std::string(name) : std::string();
+  }
+
+  uint64_t get_address() const {
+    check_valid();
+    return LLVMGetSectionAddress(m_ref);
+  }
+
+  uint64_t get_size() const {
+    check_valid();
+    return LLVMGetSectionSize(m_ref);
+  }
+};
+
+struct LLVMSymbolIteratorWrapper : NoMoveCopy {
+  LLVMSymbolIteratorRef m_ref = nullptr;
+  LLVMBinaryWrapper *m_binary = nullptr; // Non-owning reference
+
+  LLVMSymbolIteratorWrapper() = default;
+  LLVMSymbolIteratorWrapper(LLVMSymbolIteratorRef ref, LLVMBinaryWrapper *binary)
+      : m_ref(ref), m_binary(binary) {}
+
+  ~LLVMSymbolIteratorWrapper() {
+    if (m_ref) {
+      LLVMDisposeSymbolIterator(m_ref);
+      m_ref = nullptr;
+    }
+  }
+
+  bool is_valid() const { return m_ref != nullptr; }
+
+  void check_valid() const {
+    if (!m_ref)
+      throw LLVMUseAfterFreeError("SymbolIterator is null or invalid");
+    if (!m_binary || !m_binary->is_valid())
+      throw LLVMUseAfterFreeError("Binary associated with iterator is invalid");
+  }
+
+  bool is_at_end() const {
+    check_valid();
+    return LLVMObjectFileIsSymbolIteratorAtEnd(m_binary->m_ref, m_ref);
+  }
+
+  void move_next() {
+    check_valid();
+    LLVMMoveToNextSymbol(m_ref);
+  }
+
+  std::string get_name() const {
+    check_valid();
+    const char *name = LLVMGetSymbolName(m_ref);
+    return name ? std::string(name) : std::string();
+  }
+
+  uint64_t get_address() const {
+    check_valid();
+    return LLVMGetSymbolAddress(m_ref);
+  }
+
+  uint64_t get_size() const {
+    check_valid();
+    return LLVMGetSymbolSize(m_ref);
+  }
+};
+
+// Create binary from memory buffer
+// Returns (binary_wrapper, error_message)
+// If binary_wrapper is null, error_message contains the error
+std::pair<LLVMBinaryWrapper *, std::string>
+create_binary(LLVMMemoryBufferWrapper &membuf) {
+  membuf.check_valid();
+
+  char *error_msg = nullptr;
+  LLVMBinaryRef ref = LLVMCreateBinary(membuf.m_ref, LLVMGetGlobalContext(), &error_msg);
+
+  if (!ref || error_msg) {
+    std::string err = error_msg ? std::string(error_msg) : "Unknown error creating binary";
+    if (error_msg)
+      LLVMDisposeMessage(error_msg);
+    return {nullptr, err};
+  }
+
+  return {new LLVMBinaryWrapper(ref), ""};
+}
+
+// Create section iterator from binary
+LLVMSectionIteratorWrapper *copy_section_iterator(LLVMBinaryWrapper &binary) {
+  binary.check_valid();
+  LLVMSectionIteratorRef ref = LLVMObjectFileCopySectionIterator(binary.m_ref);
+  return new LLVMSectionIteratorWrapper(ref, &binary);
+}
+
+// Create symbol iterator from binary
+LLVMSymbolIteratorWrapper *copy_symbol_iterator(LLVMBinaryWrapper &binary) {
+  binary.check_valid();
+  LLVMSymbolIteratorRef ref = LLVMObjectFileCopySymbolIterator(binary.m_ref);
+  return new LLVMSymbolIteratorWrapper(ref, &binary);
+}
+
+// Move section iterator to containing section of symbol
+void move_to_containing_section(LLVMSectionIteratorWrapper &sect,
+                                 LLVMSymbolIteratorWrapper &sym) {
+  sect.check_valid();
+  sym.check_valid();
+  LLVMMoveToContainingSection(sect.m_ref, sym.m_ref);
+}
+
+// =============================================================================
 // BitReader Functions
 // =============================================================================
 
@@ -2856,6 +3084,123 @@ NB_MODULE(llvm, m) {
   m.def("create_memory_buffer_with_stdin", &create_memory_buffer_with_stdin,
         nb::rv_policy::take_ownership,
         R"(Read stdin into a memory buffer.)");
+
+  // =============================================================================
+  // Disassembler Bindings
+  // =============================================================================
+
+  nb::class_<LLVMDisasmContextWrapper>(m, "DisasmContext")
+      .def_prop_ro("is_valid", &LLVMDisasmContextWrapper::is_valid,
+                   R"(Check if disassembler context is valid.)")
+      .def("disasm_instruction", &LLVMDisasmContextWrapper::disasm_instruction,
+           "bytes"_a, "offset"_a, "pc"_a,
+           R"(Disassemble a single instruction.
+           
+           Args:
+               bytes: The byte array containing machine code
+               offset: Offset into bytes to start disassembling
+               pc: Program counter value for the instruction
+               
+           Returns:
+               Tuple of (bytes_consumed, disassembly_string)
+               If bytes_consumed is 0, disassembly failed.)");
+
+  m.def("create_disasm_cpu_features", &create_disasm_cpu_features,
+        "triple"_a, "cpu"_a = "", "features"_a = "",
+        nb::rv_policy::take_ownership,
+        R"(Create a disassembler for the given triple, CPU, and features.
+        
+        Args:
+            triple: Target triple string (e.g., "x86_64-linux-unknown")
+            cpu: CPU name (can be empty)
+            features: Feature string (can be empty or "NULL")
+            
+        Returns:
+            DisasmContext, or one with is_valid=False if creation failed.)");
+
+  // =============================================================================
+  // Object File Bindings
+  // =============================================================================
+
+  nb::class_<LLVMBinaryWrapper>(m, "Binary")
+      .def_prop_ro("is_valid", &LLVMBinaryWrapper::is_valid,
+                   R"(Check if binary is valid.)");
+
+  nb::class_<LLVMSectionIteratorWrapper>(m, "SectionIterator")
+      .def_prop_ro("is_valid", &LLVMSectionIteratorWrapper::is_valid,
+                   R"(Check if section iterator is valid.)")
+      .def("is_at_end", &LLVMSectionIteratorWrapper::is_at_end,
+           R"(Check if iterator is at end.)")
+      .def("move_next", &LLVMSectionIteratorWrapper::move_next,
+           R"(Move to next section.)")
+      .def_prop_ro("name", &LLVMSectionIteratorWrapper::get_name,
+                   R"(Get section name.)")
+      .def_prop_ro("address", &LLVMSectionIteratorWrapper::get_address,
+                   R"(Get section address.)")
+      .def_prop_ro("size", &LLVMSectionIteratorWrapper::get_size,
+                   R"(Get section size.)");
+
+  nb::class_<LLVMSymbolIteratorWrapper>(m, "SymbolIterator")
+      .def_prop_ro("is_valid", &LLVMSymbolIteratorWrapper::is_valid,
+                   R"(Check if symbol iterator is valid.)")
+      .def("is_at_end", &LLVMSymbolIteratorWrapper::is_at_end,
+           R"(Check if iterator is at end.)")
+      .def("move_next", &LLVMSymbolIteratorWrapper::move_next,
+           R"(Move to next symbol.)")
+      .def_prop_ro("name", &LLVMSymbolIteratorWrapper::get_name,
+                   R"(Get symbol name.)")
+      .def_prop_ro("address", &LLVMSymbolIteratorWrapper::get_address,
+                   R"(Get symbol address.)")
+      .def_prop_ro("size", &LLVMSymbolIteratorWrapper::get_size,
+                   R"(Get symbol size.)");
+
+  m.def(
+      "create_binary",
+      [](LLVMMemoryBufferWrapper &membuf) -> LLVMBinaryWrapper * {
+        auto [binary, error] = create_binary(membuf);
+        if (!binary) {
+          throw LLVMException("Error creating binary: " + error);
+        }
+        return binary;
+      },
+      "membuf"_a, nb::rv_policy::take_ownership,
+      R"(Create a binary from a memory buffer.
+      
+      Args:
+          membuf: Memory buffer containing the binary data
+          
+      Returns:
+          Binary object
+          
+      Raises:
+          LLVMException if binary creation fails.)");
+
+  m.def(
+      "create_binary_or_error",
+      [](LLVMMemoryBufferWrapper &membuf) -> std::pair<LLVMBinaryWrapper *, std::string> {
+        return create_binary(membuf);
+      },
+      "membuf"_a, nb::rv_policy::take_ownership,
+      R"(Create a binary from a memory buffer, returning error as string.
+      
+      Args:
+          membuf: Memory buffer containing the binary data
+          
+      Returns:
+          Tuple of (Binary or None, error_message)
+          If Binary is None, error_message contains the error.)");
+
+  m.def("copy_section_iterator", &copy_section_iterator,
+        "binary"_a, nb::rv_policy::take_ownership,
+        R"(Create a section iterator for the binary.)");
+
+  m.def("copy_symbol_iterator", &copy_symbol_iterator,
+        "binary"_a, nb::rv_policy::take_ownership,
+        R"(Create a symbol iterator for the binary.)");
+
+  m.def("move_to_containing_section", &move_to_containing_section,
+        "section_iter"_a, "symbol_iter"_a,
+        R"(Move section iterator to the section containing the symbol.)");
 
   // BitReader functions
   m.def("parse_bitcode_in_context", &parse_bitcode_in_context, "ctx"_a,

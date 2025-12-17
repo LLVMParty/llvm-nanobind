@@ -560,6 +560,7 @@ def test_dibuilder():
 
             # Insert phi before ret using new positioning
             insert_pos = foo_var_block.first_instruction
+            assert insert_pos is not None, "Expected at least one instruction in block"
             llvm.position_builder_before_instr_and_dbg_records(builder, insert_pos)
             phi1 = builder.phi(i64_type, "p1")
             phi1.add_incoming(zero_val, foo_entry_block)
