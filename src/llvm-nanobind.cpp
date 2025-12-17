@@ -27,20 +27,16 @@ using namespace nb::literals;
 // Exceptions
 // =============================================================================
 
-struct LLVMException : std::runtime_error {
+struct LLVMError : std::runtime_error {
   using std::runtime_error::runtime_error;
 };
 
-struct LLVMUseAfterFreeError : LLVMException {
-  using LLVMException::LLVMException;
+struct LLVMMemoryError : std::runtime_error {
+  using std::runtime_error::runtime_error;
 };
 
-struct LLVMInvalidOperationError : LLVMException {
-  using LLVMException::LLVMException;
-};
-
-struct LLVMVerificationError : LLVMException {
-  using LLVMException::LLVMException;
+struct LLVMAssertionError : std::runtime_error {
+  using std::runtime_error::runtime_error;
 };
 
 // =============================================================================
@@ -54,11 +50,11 @@ struct Diagnostic {
   std::optional<int> column;
 };
 
-struct LLVMParseError : LLVMException {
+struct LLVMParseError : LLVMError {
   std::vector<Diagnostic> m_diagnostics;
 
   explicit LLVMParseError(const std::vector<Diagnostic> &diags)
-      : LLVMException(format_diagnostics(diags)), m_diagnostics(diags) {}
+      : LLVMError(format_diagnostics(diags)), m_diagnostics(diags) {}
 
   std::vector<Diagnostic> get_diagnostics() const { return m_diagnostics; }
 
@@ -155,10 +151,9 @@ struct LLVMOperandBundleWrapper {
 
   void check_valid() const {
     if (!m_ref)
-      throw LLVMUseAfterFreeError("OperandBundle is null");
+      throw LLVMMemoryError("OperandBundle is null");
     if (!m_context_token || !m_context_token->is_valid())
-      throw LLVMUseAfterFreeError(
-          "OperandBundle used after context was destroyed");
+      throw LLVMMemoryError("OperandBundle used after context was destroyed");
   }
 
   std::string get_tag() const {
@@ -193,9 +188,9 @@ struct LLVMAttributeWrapper {
 
   void check_valid() const {
     if (!m_ref)
-      throw LLVMUseAfterFreeError("Attribute is null");
+      throw LLVMMemoryError("Attribute is null");
     if (!m_context_token || !m_context_token->is_valid())
-      throw LLVMUseAfterFreeError("Attribute used after context was destroyed");
+      throw LLVMMemoryError("Attribute used after context was destroyed");
   }
 
   bool is_valid() const {
@@ -267,9 +262,9 @@ struct LLVMValueMetadataEntriesWrapper {
 
   void check_valid() const {
     if (!m_entries && m_count > 0)
-      throw LLVMUseAfterFreeError("ValueMetadataEntries is null");
+      throw LLVMMemoryError("ValueMetadataEntries is null");
     if (!m_context_token || !m_context_token->is_valid())
-      throw LLVMUseAfterFreeError(
+      throw LLVMMemoryError(
           "ValueMetadataEntries used after context was destroyed");
   }
 
@@ -312,9 +307,9 @@ struct LLVMTypeWrapper {
 
   void check_valid() const {
     if (!m_ref)
-      throw LLVMUseAfterFreeError("Type is null");
+      throw LLVMMemoryError("Type is null");
     if (!m_context_token || !m_context_token->is_valid())
-      throw LLVMUseAfterFreeError("Type used after context was destroyed");
+      throw LLVMMemoryError("Type used after context was destroyed");
   }
 
   LLVMTypeKind kind() const {
@@ -349,7 +344,7 @@ struct LLVMTypeWrapper {
   unsigned get_int_width() const {
     check_valid();
     if (!is_integer())
-      throw LLVMInvalidOperationError("Type is not an integer type");
+      throw LLVMAssertionError("Type is not an integer type");
     return LLVMGetIntTypeWidth(m_ref);
   }
 
@@ -361,21 +356,21 @@ struct LLVMTypeWrapper {
   bool is_packed_struct() const {
     check_valid();
     if (!is_struct())
-      throw LLVMInvalidOperationError("Type is not a struct type");
+      throw LLVMAssertionError("Type is not a struct type");
     return LLVMIsPackedStruct(m_ref);
   }
 
   bool is_opaque_struct() const {
     check_valid();
     if (!is_struct())
-      throw LLVMInvalidOperationError("Type is not a struct type");
+      throw LLVMAssertionError("Type is not a struct type");
     return LLVMIsOpaqueStruct(m_ref);
   }
 
   std::optional<std::string> get_struct_name() const {
     check_valid();
     if (!is_struct())
-      throw LLVMInvalidOperationError("Type is not a struct type");
+      throw LLVMAssertionError("Type is not a struct type");
     const char *name = LLVMGetStructName(m_ref);
     if (!name)
       return std::nullopt;
@@ -385,7 +380,7 @@ struct LLVMTypeWrapper {
   bool is_vararg_function() const {
     check_valid();
     if (!is_function())
-      throw LLVMInvalidOperationError("Type is not a function type");
+      throw LLVMAssertionError("Type is not a function type");
     return LLVMIsFunctionVarArg(m_ref);
   }
 
@@ -393,7 +388,7 @@ struct LLVMTypeWrapper {
   LLVMTypeWrapper get_struct_element_type(unsigned index) const {
     check_valid();
     if (!is_struct())
-      throw LLVMInvalidOperationError("Type is not a struct type");
+      throw LLVMAssertionError("Type is not a struct type");
     return LLVMTypeWrapper(LLVMStructGetTypeAtIndex(m_ref, index),
                            m_context_token);
   }
@@ -401,7 +396,7 @@ struct LLVMTypeWrapper {
   bool is_opaque_pointer() const {
     check_valid();
     if (!is_pointer())
-      throw LLVMInvalidOperationError("Type is not a pointer type");
+      throw LLVMAssertionError("Type is not a pointer type");
     return LLVMPointerTypeIsOpaque(m_ref);
   }
 
@@ -410,7 +405,7 @@ struct LLVMTypeWrapper {
     auto k = kind();
     if (k != LLVMPointerTypeKind && k != LLVMVectorTypeKind &&
         k != LLVMScalableVectorTypeKind && k != LLVMArrayTypeKind)
-      throw LLVMInvalidOperationError(
+      throw LLVMAssertionError(
           "Type does not have an element type (not pointer/vector/array)");
     return LLVMTypeWrapper(LLVMGetElementType(m_ref), m_context_token);
   }
@@ -418,42 +413,42 @@ struct LLVMTypeWrapper {
   uint64_t get_array_length() const {
     check_valid();
     if (!is_array())
-      throw LLVMInvalidOperationError("Type is not an array type");
+      throw LLVMAssertionError("Type is not an array type");
     return LLVMGetArrayLength2(m_ref);
   }
 
   unsigned get_vector_size() const {
     check_valid();
     if (!is_vector())
-      throw LLVMInvalidOperationError("Type is not a vector type");
+      throw LLVMAssertionError("Type is not a vector type");
     return LLVMGetVectorSize(m_ref);
   }
 
   unsigned get_pointer_address_space() const {
     check_valid();
     if (!is_pointer())
-      throw LLVMInvalidOperationError("Type is not a pointer type");
+      throw LLVMAssertionError("Type is not a pointer type");
     return LLVMGetPointerAddressSpace(m_ref);
   }
 
   LLVMTypeWrapper get_return_type() const {
     check_valid();
     if (!is_function())
-      throw LLVMInvalidOperationError("Type is not a function type");
+      throw LLVMAssertionError("Type is not a function type");
     return LLVMTypeWrapper(LLVMGetReturnType(m_ref), m_context_token);
   }
 
   unsigned count_param_types() const {
     check_valid();
     if (!is_function())
-      throw LLVMInvalidOperationError("Type is not a function type");
+      throw LLVMAssertionError("Type is not a function type");
     return LLVMCountParamTypes(m_ref);
   }
 
   std::vector<LLVMTypeWrapper> get_param_types() const {
     check_valid();
     if (!is_function())
-      throw LLVMInvalidOperationError("Type is not a function type");
+      throw LLVMAssertionError("Type is not a function type");
     unsigned count = LLVMCountParamTypes(m_ref);
     if (count == 0)
       return {};
@@ -469,7 +464,7 @@ struct LLVMTypeWrapper {
   unsigned count_struct_element_types() const {
     check_valid();
     if (!is_struct())
-      throw LLVMInvalidOperationError("Type is not a struct type");
+      throw LLVMAssertionError("Type is not a struct type");
     return LLVMCountStructElementTypes(m_ref);
   }
 
@@ -477,28 +472,28 @@ struct LLVMTypeWrapper {
   std::string get_target_ext_type_name() const {
     check_valid();
     if (kind() != LLVMTargetExtTypeKind)
-      throw LLVMInvalidOperationError("Type is not a target extension type");
+      throw LLVMAssertionError("Type is not a target extension type");
     return std::string(LLVMGetTargetExtTypeName(m_ref));
   }
 
   unsigned get_target_ext_type_num_type_params() const {
     check_valid();
     if (kind() != LLVMTargetExtTypeKind)
-      throw LLVMInvalidOperationError("Type is not a target extension type");
+      throw LLVMAssertionError("Type is not a target extension type");
     return LLVMGetTargetExtTypeNumTypeParams(m_ref);
   }
 
   unsigned get_target_ext_type_num_int_params() const {
     check_valid();
     if (kind() != LLVMTargetExtTypeKind)
-      throw LLVMInvalidOperationError("Type is not a target extension type");
+      throw LLVMAssertionError("Type is not a target extension type");
     return LLVMGetTargetExtTypeNumIntParams(m_ref);
   }
 
   LLVMTypeWrapper get_target_ext_type_type_param(unsigned index) const {
     check_valid();
     if (kind() != LLVMTargetExtTypeKind)
-      throw LLVMInvalidOperationError("Type is not a target extension type");
+      throw LLVMAssertionError("Type is not a target extension type");
     return LLVMTypeWrapper(LLVMGetTargetExtTypeTypeParam(m_ref, index),
                            m_context_token);
   }
@@ -506,7 +501,7 @@ struct LLVMTypeWrapper {
   unsigned get_target_ext_type_int_param(unsigned index) const {
     check_valid();
     if (kind() != LLVMTargetExtTypeKind)
-      throw LLVMInvalidOperationError("Type is not a target extension type");
+      throw LLVMAssertionError("Type is not a target extension type");
     return LLVMGetTargetExtTypeIntParam(m_ref, index);
   }
 };
@@ -533,10 +528,9 @@ struct LLVMNamedMDNodeWrapper {
 
   void check_valid() const {
     if (!m_ref)
-      throw LLVMUseAfterFreeError("NamedMDNode is null");
+      throw LLVMMemoryError("NamedMDNode is null");
     if (!m_context_token || !m_context_token->is_valid())
-      throw LLVMUseAfterFreeError(
-          "NamedMDNode used after context was destroyed");
+      throw LLVMMemoryError("NamedMDNode used after context was destroyed");
   }
 
   std::string get_name() const {
@@ -584,9 +578,9 @@ struct LLVMValueWrapper {
 
   void check_valid() const {
     if (!m_ref)
-      throw LLVMUseAfterFreeError("Value is null");
+      throw LLVMMemoryError("Value is null");
     if (!m_context_token || !m_context_token->is_valid())
-      throw LLVMUseAfterFreeError("Value used after context was destroyed");
+      throw LLVMMemoryError("Value used after context was destroyed");
   }
 
   LLVMTypeWrapper type() const {
@@ -860,7 +854,7 @@ struct LLVMValueWrapper {
     check_valid();
     LLVMValueRef op = LLVMGetOperand(m_ref, index);
     if (!op)
-      throw LLVMInvalidOperationError("Invalid operand index");
+      throw LLVMAssertionError("Invalid operand index");
     return LLVMValueWrapper(op, m_context_token);
   }
 
@@ -955,7 +949,7 @@ struct LLVMValueWrapper {
   std::pair<size_t, std::string> get_raw_data_values() const {
     check_valid();
     if (!is_a_constant_data_array())
-      throw LLVMInvalidOperationError("Value is not a constant data array");
+      throw LLVMAssertionError("Value is not a constant data array");
     size_t size;
     const char *data = LLVMGetRawDataValues(m_ref, &size);
     return {size, std::string(data, size)};
@@ -965,7 +959,7 @@ struct LLVMValueWrapper {
     check_valid();
     LLVMValueRef elem = LLVMGetAggregateElement(m_ref, index);
     if (!elem)
-      throw LLVMInvalidOperationError("Invalid aggregate element index");
+      throw LLVMAssertionError("Invalid aggregate element index");
     return LLVMValueWrapper(elem, m_context_token);
   }
 
@@ -973,7 +967,7 @@ struct LLVMValueWrapper {
   LLVMOpcode get_const_opcode() const {
     check_valid();
     if (!is_a_constant_expr())
-      throw LLVMInvalidOperationError("Value is not a constant expression");
+      throw LLVMAssertionError("Value is not a constant expression");
     return LLVMGetConstOpcode(m_ref);
   }
 
@@ -996,7 +990,7 @@ struct LLVMValueWrapper {
   LLVMValueWrapper get_constant_ptr_auth_pointer() const {
     check_valid();
     if (!is_a_constant_ptr_auth())
-      throw LLVMInvalidOperationError("Value is not a pointer auth constant");
+      throw LLVMAssertionError("Value is not a pointer auth constant");
     return LLVMValueWrapper(LLVMGetConstantPtrAuthPointer(m_ref),
                             m_context_token);
   }
@@ -1004,14 +998,14 @@ struct LLVMValueWrapper {
   LLVMValueWrapper get_constant_ptr_auth_key() const {
     check_valid();
     if (!is_a_constant_ptr_auth())
-      throw LLVMInvalidOperationError("Value is not a pointer auth constant");
+      throw LLVMAssertionError("Value is not a pointer auth constant");
     return LLVMValueWrapper(LLVMGetConstantPtrAuthKey(m_ref), m_context_token);
   }
 
   LLVMValueWrapper get_constant_ptr_auth_discriminator() const {
     check_valid();
     if (!is_a_constant_ptr_auth())
-      throw LLVMInvalidOperationError("Value is not a pointer auth constant");
+      throw LLVMAssertionError("Value is not a pointer auth constant");
     return LLVMValueWrapper(LLVMGetConstantPtrAuthDiscriminator(m_ref),
                             m_context_token);
   }
@@ -1019,7 +1013,7 @@ struct LLVMValueWrapper {
   LLVMValueWrapper get_constant_ptr_auth_addr_discriminator() const {
     check_valid();
     if (!is_a_constant_ptr_auth())
-      throw LLVMInvalidOperationError("Value is not a pointer auth constant");
+      throw LLVMAssertionError("Value is not a pointer auth constant");
     return LLVMValueWrapper(LLVMGetConstantPtrAuthAddrDiscriminator(m_ref),
                             m_context_token);
   }
@@ -1130,7 +1124,7 @@ struct LLVMValueWrapper {
   std::string get_inline_asm_asm_string() const {
     check_valid();
     if (!is_a_inline_asm())
-      throw LLVMInvalidOperationError("Value is not inline assembly");
+      throw LLVMAssertionError("Value is not inline assembly");
     size_t len = 0;
     const char *str = LLVMGetInlineAsmAsmString(m_ref, &len);
     return std::string(str, len);
@@ -1139,7 +1133,7 @@ struct LLVMValueWrapper {
   std::string get_inline_asm_constraint_string() const {
     check_valid();
     if (!is_a_inline_asm())
-      throw LLVMInvalidOperationError("Value is not inline assembly");
+      throw LLVMAssertionError("Value is not inline assembly");
     size_t len = 0;
     const char *str = LLVMGetInlineAsmConstraintString(m_ref, &len);
     return std::string(str, len);
@@ -1148,14 +1142,14 @@ struct LLVMValueWrapper {
   LLVMInlineAsmDialect get_inline_asm_dialect() const {
     check_valid();
     if (!is_a_inline_asm())
-      throw LLVMInvalidOperationError("Value is not inline assembly");
+      throw LLVMAssertionError("Value is not inline assembly");
     return LLVMGetInlineAsmDialect(m_ref);
   }
 
   LLVMTypeWrapper get_inline_asm_function_type() const {
     check_valid();
     if (!is_a_inline_asm())
-      throw LLVMInvalidOperationError("Value is not inline assembly");
+      throw LLVMAssertionError("Value is not inline assembly");
     return LLVMTypeWrapper(LLVMGetInlineAsmFunctionType(m_ref),
                            m_context_token);
   }
@@ -1163,21 +1157,21 @@ struct LLVMValueWrapper {
   bool get_inline_asm_has_side_effects() const {
     check_valid();
     if (!is_a_inline_asm())
-      throw LLVMInvalidOperationError("Value is not inline assembly");
+      throw LLVMAssertionError("Value is not inline assembly");
     return LLVMGetInlineAsmHasSideEffects(m_ref);
   }
 
   bool get_inline_asm_needs_aligned_stack() const {
     check_valid();
     if (!is_a_inline_asm())
-      throw LLVMInvalidOperationError("Value is not inline assembly");
+      throw LLVMAssertionError("Value is not inline assembly");
     return LLVMGetInlineAsmNeedsAlignedStack(m_ref);
   }
 
   bool get_inline_asm_can_unwind() const {
     check_valid();
     if (!is_a_inline_asm())
-      throw LLVMInvalidOperationError("Value is not inline assembly");
+      throw LLVMAssertionError("Value is not inline assembly");
     return LLVMGetInlineAsmCanUnwind(m_ref);
   }
 
@@ -1460,10 +1454,9 @@ struct LLVMBasicBlockWrapper {
 
   void check_valid() const {
     if (!m_ref)
-      throw LLVMUseAfterFreeError("BasicBlock is null");
+      throw LLVMMemoryError("BasicBlock is null");
     if (!m_context_token || !m_context_token->is_valid())
-      throw LLVMUseAfterFreeError(
-          "BasicBlock used after context was destroyed");
+      throw LLVMMemoryError("BasicBlock used after context was destroyed");
   }
 
   std::string get_name() const {
@@ -1550,7 +1543,7 @@ struct LLVMFunctionWrapper : LLVMValueWrapper {
   LLVMValueWrapper get_param(unsigned index) const {
     check_valid();
     if (index >= param_count())
-      throw LLVMInvalidOperationError("Parameter index out of range");
+      throw LLVMAssertionError("Parameter index out of range");
     return LLVMValueWrapper(LLVMGetParam(m_ref, index), m_context_token);
   }
 
@@ -1686,7 +1679,7 @@ inline LLVMFunctionWrapper LLVMBasicBlockWrapper::parent() const {
   check_valid();
   LLVMValueRef parent_fn = LLVMGetBasicBlockParent(m_ref);
   if (!parent_fn)
-    throw LLVMInvalidOperationError("BasicBlock has no parent function");
+    throw LLVMAssertionError("BasicBlock has no parent function");
   return LLVMFunctionWrapper(parent_fn, m_context_token);
 }
 
@@ -1706,7 +1699,7 @@ LLVMOperandBundleWrapper::get_arg_at_index(unsigned index) const {
   check_valid();
   LLVMValueRef arg = LLVMGetOperandBundleArgAtIndex(m_ref, index);
   if (!arg)
-    throw LLVMInvalidOperationError("Invalid operand bundle argument index");
+    throw LLVMAssertionError("Invalid operand bundle argument index");
   return LLVMValueWrapper(arg, m_context_token);
 }
 
@@ -1716,7 +1709,7 @@ inline LLVMBasicBlockWrapper LLVMValueWrapper::get_instruction_parent() const {
   check_valid();
   LLVMBasicBlockRef bb = LLVMGetInstructionParent(m_ref);
   if (!bb)
-    throw LLVMInvalidOperationError("Instruction has no parent basic block");
+    throw LLVMAssertionError("Instruction has no parent basic block");
   return LLVMBasicBlockWrapper(bb, m_context_token);
 }
 
@@ -1724,7 +1717,7 @@ inline LLVMBasicBlockWrapper LLVMValueWrapper::get_normal_dest() const {
   check_valid();
   LLVMBasicBlockRef bb = LLVMGetNormalDest(m_ref);
   if (!bb)
-    throw LLVMInvalidOperationError("Invoke instruction has no normal dest");
+    throw LLVMAssertionError("Invoke instruction has no normal dest");
   return LLVMBasicBlockWrapper(bb, m_context_token);
 }
 
@@ -1743,7 +1736,7 @@ LLVMValueWrapper::get_successor(unsigned index) const {
   check_valid();
   LLVMBasicBlockRef bb = LLVMGetSuccessor(m_ref, index);
   if (!bb)
-    throw LLVMInvalidOperationError("Invalid successor index");
+    throw LLVMAssertionError("Invalid successor index");
   return LLVMBasicBlockWrapper(bb, m_context_token);
 }
 
@@ -1751,7 +1744,7 @@ inline LLVMBasicBlockWrapper LLVMValueWrapper::get_callbr_default_dest() const {
   check_valid();
   LLVMBasicBlockRef bb = LLVMGetCallBrDefaultDest(m_ref);
   if (!bb)
-    throw LLVMInvalidOperationError("CallBr has no default dest");
+    throw LLVMAssertionError("CallBr has no default dest");
   return LLVMBasicBlockWrapper(bb, m_context_token);
 }
 
@@ -1765,14 +1758,14 @@ LLVMValueWrapper::get_callbr_indirect_dest(unsigned index) const {
   check_valid();
   LLVMBasicBlockRef bb = LLVMGetCallBrIndirectDest(m_ref, index);
   if (!bb)
-    throw LLVMInvalidOperationError("Invalid callbr indirect dest index");
+    throw LLVMAssertionError("Invalid callbr indirect dest index");
   return LLVMBasicBlockWrapper(bb, m_context_token);
 }
 
 inline LLVMBasicBlockWrapper LLVMValueWrapper::value_as_basic_block() const {
   check_valid();
   if (!value_is_basic_block())
-    throw LLVMInvalidOperationError("Value is not a basic block");
+    throw LLVMAssertionError("Value is not a basic block");
   LLVMBasicBlockRef bb = LLVMValueAsBasicBlock(m_ref);
   return LLVMBasicBlockWrapper(bb, m_context_token);
 }
@@ -1827,9 +1820,9 @@ struct LLVMBuilderWrapper : NoMoveCopy {
 
   void check_valid() const {
     if (!m_ref)
-      throw LLVMUseAfterFreeError("Builder has been disposed");
+      throw LLVMMemoryError("Builder has been disposed");
     if (!m_context_token || !m_context_token->is_valid())
-      throw LLVMUseAfterFreeError("Builder used after context was destroyed");
+      throw LLVMMemoryError("Builder used after context was destroyed");
   }
 
   void dispose() {
@@ -2915,9 +2908,9 @@ struct LLVMModuleWrapper : NoMoveCopy {
 
   void check_valid() const {
     if (!m_ref)
-      throw LLVMUseAfterFreeError("Module has been disposed");
+      throw LLVMMemoryError("Module has been disposed");
     if (!m_context_token || !m_context_token->is_valid())
-      throw LLVMUseAfterFreeError("Module used after context was destroyed");
+      throw LLVMMemoryError("Module used after context was destroyed");
   }
 
   void dispose() {
@@ -3300,9 +3293,9 @@ struct LLVMContextWrapper : NoMoveCopy {
 
   void check_valid() const {
     if (!m_ref)
-      throw LLVMUseAfterFreeError("Context has been disposed");
+      throw LLVMMemoryError("Context has been disposed");
     if (!m_token || !m_token->is_valid())
-      throw LLVMUseAfterFreeError("Context is no longer valid");
+      throw LLVMMemoryError("Context is no longer valid");
   }
 
   void dispose() {
@@ -3582,14 +3575,14 @@ struct LLVMContextManager : NoMoveCopy {
 
   LLVMContextWrapper &enter() {
     if (m_context)
-      throw LLVMException("Context manager already entered");
+      throw LLVMMemoryError("Context manager already entered");
     m_context = std::make_unique<LLVMContextWrapper>();
     return *m_context;
   }
 
   void exit(const nb::object &, const nb::object &, const nb::object &) {
     if (!m_context)
-      throw LLVMException("Context manager not entered");
+      throw LLVMMemoryError("Context manager not entered");
     m_context.reset();
   }
 };
@@ -3601,6 +3594,7 @@ struct LLVMContextManager : NoMoveCopy {
 struct LLVMModuleManager : NoMoveCopy {
   std::string m_name;
   LLVMContextWrapper *m_context = nullptr;
+  std::shared_ptr<ValidityToken> m_context_token;
   std::unique_ptr<LLVMModuleWrapper> m_module;
   bool m_entered = false;
   bool m_disposed = false;
@@ -3608,7 +3602,8 @@ struct LLVMModuleManager : NoMoveCopy {
 
   // Constructor for ctx.create_module("name")
   LLVMModuleManager(std::string name, LLVMContextWrapper *context)
-      : m_name(std::move(name)), m_context(context) {}
+      : m_name(std::move(name)), m_context(context),
+        m_context_token(context ? context->m_token : nullptr) {}
 
   // Constructor for mod.clone() - takes ownership of pre-created module
   explicit LLVMModuleManager(std::unique_ptr<LLVMModuleWrapper> cloned_module)
@@ -3616,9 +3611,9 @@ struct LLVMModuleManager : NoMoveCopy {
 
   LLVMModuleWrapper &enter() {
     if (m_disposed)
-      throw LLVMException("Module has been disposed");
+      throw LLVMMemoryError("Module has been disposed");
     if (m_entered)
-      throw LLVMException("Module manager already entered");
+      throw LLVMMemoryError("Module manager already entered");
 
     m_entered = true;
 
@@ -3630,7 +3625,10 @@ struct LLVMModuleManager : NoMoveCopy {
 
     // Create new module
     if (!m_context)
-      throw LLVMException("No context provided");
+      throw LLVMMemoryError("No context provided");
+    // Check context token validity before dereferencing m_context
+    if (!m_context_token || !m_context_token->is_valid())
+      throw LLVMMemoryError("Module's context has been destroyed");
     m_context->check_valid();
     m_module = std::make_unique<LLVMModuleWrapper>(m_name, m_context->m_ref,
                                                    m_context->m_token);
@@ -3639,21 +3637,22 @@ struct LLVMModuleManager : NoMoveCopy {
 
   void exit(const nb::object &, const nb::object &, const nb::object &) {
     if (m_disposed)
-      throw LLVMException("Module has already been disposed");
+      throw LLVMMemoryError("Module has already been disposed");
     if (!m_entered)
-      throw LLVMException("Module manager was not entered");
+      throw LLVMMemoryError("Module manager was not entered");
     m_module.reset();
     m_disposed = true;
   }
 
   void dispose() {
     if (m_disposed)
-      throw LLVMException("Module has already been disposed");
+      throw LLVMMemoryError("Module has already been disposed");
     if (m_entered)
-      throw LLVMException("Cannot call dispose() after __enter__; use __exit__ "
-                          "or 'with' statement");
+      throw LLVMMemoryError(
+          "Cannot call dispose() after __enter__; use __exit__ "
+          "or 'with' statement");
     if (!m_from_clone && !m_module)
-      throw LLVMException("Module has not been created");
+      throw LLVMMemoryError("Module has not been created");
     m_module.reset();
     m_disposed = true;
   }
@@ -3665,20 +3664,25 @@ struct LLVMModuleManager : NoMoveCopy {
 
 struct LLVMBuilderManager : NoMoveCopy {
   LLVMContextWrapper *m_context = nullptr;
+  std::shared_ptr<ValidityToken> m_context_token;
   std::unique_ptr<LLVMBuilderWrapper> m_builder;
   bool m_entered = false;
   bool m_disposed = false;
 
   explicit LLVMBuilderManager(LLVMContextWrapper *context)
-      : m_context(context) {}
+      : m_context(context),
+        m_context_token(context ? context->m_token : nullptr) {}
 
   LLVMBuilderWrapper &enter() {
     if (m_disposed)
-      throw LLVMException("Builder has been disposed");
+      throw LLVMMemoryError("Builder has been disposed");
     if (m_entered)
-      throw LLVMException("Builder manager already entered");
+      throw LLVMMemoryError("Builder manager already entered");
     if (!m_context)
-      throw LLVMException("No context provided");
+      throw LLVMMemoryError("No context provided");
+    // Check context token validity before dereferencing m_context
+    if (!m_context_token || !m_context_token->is_valid())
+      throw LLVMMemoryError("Builder's context has been destroyed");
     m_context->check_valid();
     m_builder = std::make_unique<LLVMBuilderWrapper>(m_context->m_ref,
                                                      m_context->m_token);
@@ -3688,19 +3692,20 @@ struct LLVMBuilderManager : NoMoveCopy {
 
   void exit(const nb::object &, const nb::object &, const nb::object &) {
     if (m_disposed)
-      throw LLVMException("Builder has already been disposed");
+      throw LLVMMemoryError("Builder has already been disposed");
     if (!m_entered)
-      throw LLVMException("Builder manager was not entered");
+      throw LLVMMemoryError("Builder manager was not entered");
     m_builder.reset();
     m_disposed = true;
   }
 
   void dispose() {
     if (m_disposed)
-      throw LLVMException("Builder has already been disposed");
+      throw LLVMMemoryError("Builder has already been disposed");
     if (m_entered)
-      throw LLVMException("Cannot call dispose() after __enter__; use __exit__ "
-                          "or 'with' statement");
+      throw LLVMMemoryError(
+          "Cannot call dispose() after __enter__; use __exit__ "
+          "or 'with' statement");
     // For builder, there's nothing to dispose if not entered
     m_disposed = true;
   }
@@ -3734,7 +3739,7 @@ LLVMContextWrapper::parse_bitcode_from_file(const fs::path &filename,
     std::string err = error_msg ? error_msg : "Unknown error";
     if (error_msg)
       LLVMDisposeMessage(error_msg);
-    throw LLVMException("Failed to read file: " + err);
+    throw LLVMError("Failed to read file: " + err);
   }
 
   // Parse bitcode
@@ -3910,7 +3915,7 @@ LLVMValueWrapper const_struct(const std::vector<LLVMValueWrapper> &vals,
 
 LLVMValueWrapper const_vector(const std::vector<LLVMValueWrapper> &vals) {
   if (vals.empty())
-    throw LLVMInvalidOperationError("Cannot create empty vector constant");
+    throw LLVMAssertionError("Cannot create empty vector constant");
   vals[0].check_valid();
   std::vector<LLVMValueRef> refs;
   refs.reserve(vals.size());
@@ -4268,7 +4273,7 @@ struct LLVMTargetWrapper {
 
   void check_valid() const {
     if (!m_ref)
-      throw LLVMUseAfterFreeError("Target is null");
+      throw LLVMMemoryError("Target is null");
   }
 
   std::string get_name() const {
@@ -4346,7 +4351,7 @@ struct LLVMMemoryBufferWrapper : NoMoveCopy {
 
   void check_valid() const {
     if (!m_ref)
-      throw LLVMUseAfterFreeError("MemoryBuffer is null");
+      throw LLVMMemoryError("MemoryBuffer is null");
   }
 
   const char *get_buffer_start() const {
@@ -4369,7 +4374,7 @@ LLVMMemoryBufferWrapper *create_memory_buffer_with_stdin() {
     std::string err = error_msg ? error_msg : "Unknown error reading stdin";
     if (error_msg)
       LLVMDisposeMessage(error_msg);
-    throw LLVMException(err);
+    throw LLVMError(err);
   }
 
   return new LLVMMemoryBufferWrapper(buf);
@@ -4396,7 +4401,7 @@ struct LLVMDisasmContextWrapper : NoMoveCopy {
 
   void check_valid() const {
     if (!m_ref)
-      throw LLVMUseAfterFreeError("DisasmContext is null or invalid");
+      throw LLVMMemoryError("DisasmContext is null or invalid");
   }
 
   // Disassemble a single instruction
@@ -4454,7 +4459,7 @@ struct LLVMBinaryWrapper : NoMoveCopy {
 
   void check_valid() const {
     if (!m_ref)
-      throw LLVMUseAfterFreeError("Binary is null or invalid");
+      throw LLVMMemoryError("Binary is null or invalid");
   }
 };
 
@@ -4478,9 +4483,9 @@ struct LLVMSectionIteratorWrapper : NoMoveCopy {
 
   void check_valid() const {
     if (!m_ref)
-      throw LLVMUseAfterFreeError("SectionIterator is null or invalid");
+      throw LLVMMemoryError("SectionIterator is null or invalid");
     if (!m_binary || !m_binary->is_valid())
-      throw LLVMUseAfterFreeError("Binary associated with iterator is invalid");
+      throw LLVMMemoryError("Binary associated with iterator is invalid");
   }
 
   bool is_at_end() const {
@@ -4530,9 +4535,9 @@ struct LLVMSymbolIteratorWrapper : NoMoveCopy {
 
   void check_valid() const {
     if (!m_ref)
-      throw LLVMUseAfterFreeError("SymbolIterator is null or invalid");
+      throw LLVMMemoryError("SymbolIterator is null or invalid");
     if (!m_binary || !m_binary->is_valid())
-      throw LLVMUseAfterFreeError("Binary associated with iterator is invalid");
+      throw LLVMMemoryError("Binary associated with iterator is invalid");
   }
 
   bool is_at_end() const {
@@ -4634,9 +4639,9 @@ struct LLVMDIBuilderWrapper : NoMoveCopy {
 
   void check_valid() const {
     if (!m_ref)
-      throw LLVMUseAfterFreeError("DIBuilder is null");
+      throw LLVMMemoryError("DIBuilder is null");
     if (!m_module_token || !m_module_token->is_valid())
-      throw LLVMUseAfterFreeError("DIBuilder used after module was destroyed");
+      throw LLVMMemoryError("DIBuilder used after module was destroyed");
   }
 
   void finalize() {
@@ -4659,9 +4664,9 @@ struct LLVMMetadataWrapper {
 
   void check_valid() const {
     if (!m_ref)
-      throw LLVMUseAfterFreeError("Metadata is null");
+      throw LLVMMemoryError("Metadata is null");
     if (!m_context_token || !m_context_token->is_valid())
-      throw LLVMUseAfterFreeError("Metadata used after context was destroyed");
+      throw LLVMMemoryError("Metadata used after context was destroyed");
   }
 };
 
@@ -4682,11 +4687,52 @@ inline LLVMMetadataWrapper LLVMValueMetadataEntriesWrapper_get_metadata(
 
 NB_MODULE(llvm, m) {
   // Register exceptions
-  nb::exception<LLVMException>(m, "LLVMError");
-  nb::exception<LLVMUseAfterFreeError>(m, "LLVMUseAfterFreeError");
-  nb::exception<LLVMInvalidOperationError>(m, "LLVMInvalidOperationError");
-  nb::exception<LLVMVerificationError>(m, "LLVMVerificationError");
-  nb::exception<LLVMParseError>(m, "LLVMParseError");
+  auto exc_error = nb::exception<LLVMError>(m, "LLVMError");
+  auto exc_memory =
+      nb::exception<LLVMMemoryError>(m, "LLVMMemoryError", PyExc_SystemExit);
+  auto exc_assertion = nb::exception<LLVMAssertionError>(
+      m, "LLVMAssertionError", PyExc_AssertionError);
+  auto exc_parse = nb::exception<LLVMParseError>(m, "LLVMParseError");
+
+  // Set docstrings on exception classes
+  exc_error.attr("__doc__") =
+      "Recoverable LLVM error.\n\n"
+      "Raised for runtime errors that can be caught and handled, such as:\n"
+      "- I/O errors when reading files\n"
+      "- Bitcode/IR parsing failures\n"
+      "- Binary creation errors\n\n"
+      "These errors derive from Exception and can be caught normally.";
+
+  exc_memory.attr("__doc__") =
+      "Memory/lifetime error - derives from SystemExit.\n\n"
+      "Raised for memory safety violations and lifetime issues:\n"
+      "- Accessing objects after context was destroyed\n"
+      "- Using disposed modules or builders\n"
+      "- Context manager state errors\n\n"
+      "WARNING: Derives from SystemExit, NOT Exception.\n"
+      "Cannot be caught with 'except Exception'. Use 'except SystemExit' "
+      "or 'except LLVMMemoryError' explicitly.\n\n"
+      "This design prevents accidental continuation after memory safety "
+      "violations.";
+
+  exc_assertion.attr("__doc__") =
+      "Programming error - derives from AssertionError.\n\n"
+      "Raised for logic errors unrelated to object lifetimes:\n"
+      "- Type mismatches: calling int_width on a float type\n"
+      "- Invalid indices: parameter index out of range\n"
+      "- Invalid operations: value is not inline assembly\n\n"
+      "These indicate bugs in your code but are recoverable.";
+
+  exc_parse.attr("__doc__") =
+      "LLVM IR/bitcode parsing error with diagnostics.\n\n"
+      "Raised when parsing LLVM IR or bitcode fails. Provides detailed\n"
+      "diagnostic information via the get_diagnostics() method.\n\n"
+      "Example:\n"
+      "    try:\n"
+      "        mod = ctx.parse_ir('invalid')\n"
+      "    except LLVMParseError as e:\n"
+      "        for diag in e.get_diagnostics():\n"
+      "            print(f'{diag.severity}: {diag.message}')";
 
   // Diagnostic class
   nb::class_<Diagnostic>(m, "Diagnostic")
@@ -5886,7 +5932,7 @@ NB_MODULE(llvm, m) {
       [](LLVMMemoryBufferWrapper &membuf) -> LLVMBinaryWrapper * {
         auto [binary, error] = create_binary(membuf);
         if (!binary) {
-          throw LLVMException("Error creating binary: " + error);
+          throw LLVMError("Error creating binary: " + error);
         }
         return binary;
       },
@@ -5900,7 +5946,7 @@ NB_MODULE(llvm, m) {
           Binary object
           
       Raises:
-          LLVMException if binary creation fails.)");
+          LLVMError if binary creation fails.)");
 
   m.def(
       "create_binary_or_error",
@@ -6128,7 +6174,7 @@ NB_MODULE(llvm, m) {
         LLVMModuleRef mod = nullptr;
 
         if (LLVMGetBitcodeModule2(membuf.m_ref, &mod)) {
-          throw LLVMException("Failed to parse bitcode");
+          throw LLVMError("Failed to parse bitcode");
         }
 
         // Get global context and create wrapper

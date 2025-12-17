@@ -9,7 +9,7 @@ from pathlib import Path
 def print_functions(*, lazy: bool):
     print(f"[{lazy=}] Loading module...")
     with llvm.global_context().parse_bitcode_from_file(
-        Path(__file__).parent / "test_factorial.bc", lazy=lazy
+        Path(__file__).parent / "factorial.bc", lazy=lazy
     ) as mod:
         for func in mod.functions:
             print(f" - {func.name}")

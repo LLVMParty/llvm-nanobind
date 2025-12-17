@@ -76,7 +76,7 @@ def test_module_outlives_context_no_crash():
     try:
         # This should fail because context is dead
         _ = escaped_module.__enter__()  # Try to enter the manager
-    except (llvm.LLVMError, AttributeError):
+    except llvm.LLVMMemoryError:
         exception_raised = True
 
     # Clean up - this also should not crash
@@ -136,7 +136,7 @@ def test_value_outlives_context():
     exception_raised = False
     try:
         _ = escaped_value.is_constant
-    except llvm.LLVMUseAfterFreeError:
+    except llvm.LLVMMemoryError:
         exception_raised = True
 
     assert exception_raised, (
@@ -160,7 +160,7 @@ def test_type_outlives_context():
     exception_raised = False
     try:
         _ = escaped_type.is_integer
-    except llvm.LLVMUseAfterFreeError:
+    except llvm.LLVMMemoryError:
         exception_raised = True
 
     assert exception_raised, (
@@ -184,7 +184,7 @@ def test_builder_outlives_context():
     try:
         # Try to use the builder
         _ = escaped_builder.__enter__()
-    except (llvm.LLVMError, AttributeError):
+    except llvm.LLVMMemoryError:
         exception_raised = True
 
     del escaped_builder
@@ -212,7 +212,7 @@ def test_function_outlives_module():
     exception_raised = False
     try:
         _ = escaped_fn.name
-    except llvm.LLVMUseAfterFreeError:
+    except llvm.LLVMMemoryError:
         exception_raised = True
 
     assert exception_raised, (
@@ -239,7 +239,7 @@ def test_basic_block_outlives_function():
     exception_raised = False
     try:
         _ = escaped_bb.name
-    except llvm.LLVMError:
+    except llvm.LLVMMemoryError:
         exception_raised = True
 
     assert exception_raised, (
