@@ -43,7 +43,8 @@
 ; CHECK-NEXT: !7 = !{!8, !9, !10}
 ; CHECK-NEXT: !8 = !DIEnumerator(name: "Test_A", value: 0, isUnsigned: true)
 ; CHECK-NEXT: !9 = !DIEnumerator(name: "Test_B", value: 1, isUnsigned: true)
-; CHECK-NEXT: !10 = !DIEnumerator(name: "Test_B", value: 2, isUnsigned: true)
+; NOTE: LLVM upstream has "Test_B" here due to a bug. We fix it to "Test_C".
+; CHECK-NEXT: !10 = !DIEnumerator(name: "Test_C", value: 2, isUnsigned: true)
 ; CHECK-NEXT: !11 = !DICompositeType(tag: DW_TAG_enumeration_type, name: "LargeEnumTest", scope: !4, file: !1, baseType: !12, size: 128, elements: !13)
 ; CHECK-NEXT: !12 = !DIBasicType(name: "UInt128", size: 128)
 ; CHECK-NEXT: !13 = !{!14, !15}
@@ -87,7 +88,9 @@
 ; CHECK-NEXT: !51 = !DILocalVariable(name: "c", arg: 3, scope: !44, file: !1, line: 42, type: !47)
 ; CHECK-NEXT: !52 = !DILocalVariable(name: "e", scope: !43, file: !1, line: 44, type: !6)
 ; CHECK-NEXT: !53 = !DILabel(scope: !44, name: "label3", file: !1, line: 42)
-; CHECK-NEXT: !54 = !DICompositeType(tag: DW_TAG_class_type, name: "Class", scope: !4, file: !1, size: 192, flags: DIFlagFwdDecl, elements: !55, identifier: "FooClass")
+; NOTE: LLVM upstream has "Class" here due to a bug (passes length 5 for "Class1").
+; We fix it to "Class1".
+; CHECK-NEXT: !54 = !DICompositeType(tag: DW_TAG_class_type, name: "Class1", scope: !4, file: !1, size: 192, flags: DIFlagFwdDecl, elements: !55, identifier: "FooClass")
 ; CHECK-NEXT: !55 = !{!56}
 ; CHECK-NEXT: !56 = !{!6, !6, !57}
 ; CHECK-NEXT: !57 = !DIBasicType(name: "Int32", size: 32)

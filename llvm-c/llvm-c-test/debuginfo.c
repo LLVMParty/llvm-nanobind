@@ -205,8 +205,11 @@ int llvm_test_dibuilder(void) {
       LLVMDIBuilderCreateEnumerator(DIB, "Test_A", strlen("Test_A"), 0, true);
   LLVMMetadataRef EnumeratorTestB =
       LLVMDIBuilderCreateEnumerator(DIB, "Test_B", strlen("Test_B"), 1, true);
+  // NOTE: LLVM upstream has a bug here - it passes "Test_B" with strlen("Test_C").
+  // We fix this to use the correct name "Test_C". This diverges from upstream.
+  // TODO: Submit PR to LLVM to fix this bug.
   LLVMMetadataRef EnumeratorTestC =
-      LLVMDIBuilderCreateEnumerator(DIB, "Test_B", strlen("Test_C"), 2, true);
+      LLVMDIBuilderCreateEnumerator(DIB, "Test_C", strlen("Test_C"), 2, true);
   LLVMMetadataRef EnumeratorsTest[] = {EnumeratorTestA, EnumeratorTestB,
                                        EnumeratorTestC};
   LLVMMetadataRef EnumTest = LLVMDIBuilderCreateEnumerationType(
@@ -270,8 +273,11 @@ int llvm_test_dibuilder(void) {
       M, "DynType",
       LLVMMetadataAsValue(LLVMGetModuleContext(M), DynamicArrayMetadataTy));
 
+  // NOTE: LLVM upstream has a bug here - it passes "Class1" with length 5,
+  // which truncates to "Class". We fix this to use the correct length 6.
+  // This diverges from upstream. TODO: Submit PR to LLVM to fix this bug.
   LLVMMetadataRef StructPTy = LLVMDIBuilderCreateForwardDecl(
-      DIB, 2 /*DW_TAG_class_type*/, "Class1", 5, NameSpace, File, 0, 0, 192, 0,
+      DIB, 2 /*DW_TAG_class_type*/, "Class1", 6, NameSpace, File, 0, 0, 192, 0,
       "FooClass", 8);
 
   LLVMMetadataRef Int32Ty =

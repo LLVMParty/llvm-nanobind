@@ -2,7 +2,7 @@
 
 ## Overview
 
-When running lit tests with `--use-python`, 10 out of 23 tests fail. This plan documents the root causes and fixes for each category of failure.
+When running lit tests with `--use-python`, 2 out of 23 tests fail. This plan documents the root causes and fixes for each remaining failure.
 
 ## Current Test Status (December 18, 2025)
 
@@ -13,171 +13,134 @@ Failed:  2 (8.70%)
 
 ## Root Cause Analysis
 
-### Category 1: ModuleID Mismatch (6 tests)
+### Issue 1: echo.ll - Syncscope Crash
 
-**Tests Affected:**
-- `atomics.ll`
-- `empty.ll`
-- `float_ops.ll`
-- `freeze.ll`
-- `invoke.ll`
-- `memops.ll`
+**Root Cause:** The `get_module_context` binding is broken. It ignores the actual context returned by `LLVMGetModuleContext` and always returns a wrapper around the global context.
 
-**Root Cause:**
-When parsing bitcode from bytes, the module ID is set to `'<bytes>'` but the LLVM C test expects `'<stdin>'`. This is a regression from the rewrite that replaced stdin-specific parsing with `parse_bitcode_from_bytes`.
+```cpp
+// Current broken implementation in llvm-nanobind.cpp:
+m.def("get_module_context",
+      [](const LLVMModuleWrapper &mod) -> LLVMContextWrapper * {
+        mod.check_valid();
+        LLVMContextRef ctx = LLVMGetModuleContext(mod.m_ref);  // <-- Retrieved but IGNORED!
+        static thread_local LLVMContextWrapper global_ctx_wrapper(true);
+        return &global_ctx_wrapper;  // <-- Always returns global context!
+      }, ...);
+```
 
-**Regression Test:** `tests/regressions/test_module_id_stdin.py`
+**Impact:**
+1. When user creates a context with `llvm.create_context()` and parses a module containing custom syncscopes like `"agent"`, those syncscopes are registered in that context
+2. When `TypeCloner` in `echo.py` calls `llvm.get_module_context(module)`, it gets the global context instead
+3. Types created through the wrong context end up in the global context
+4. When building atomic operations with syncscope IDs from the source module, those IDs don't exist in the global context, causing a crash when printing
 
 **Fix:**
-In `echo.py`, rename the module to `'<stdin>'` after parsing when reading from stdin. This is acceptable since llvm-c-test is just for LLVM comparison.
+Fix `get_module_context` to properly return the module's actual context. Options:
+1. Return a new `LLVMContextWrapper` that wraps the actual context ref (non-owning)
+2. Track context wrappers and return the existing one if it matches
+
+**Regression Test:** `tests/regressions/test_syncscope_crash.py` (note: current test has a bug - it closes source module before creating dest, which is not the actual echo.py pattern)
+
+---
+
+### Issue 2: debug_info_new_format.ll - Metadata ID Mismatch
+
+**Root Cause:** Multiple API and usage differences between `debuginfo.py` and `debuginfo.c`:
+
+#### 2a. `dibuilder_create_struct_type` binding is incomplete
+
+The Python binding is missing parameters that the C API supports:
+- `derived_from` (LLVMMetadataRef)
+- `elements` (array of LLVMMetadataRef)
+- `num_elements` (unsigned)
+- `runtime_lang` (unsigned)
+- `vtable_holder` (LLVMMetadataRef)  
+- `unique_identifier` (string)
+
+**Result:** MyStruct in C has:
+```
+!34 = !DICompositeType(..., elements: !35, runtimeLang: DW_LANG_C89, identifier: "MyStruct")
+!35 = !{!6, !6, !6}
+```
+But Python produces:
+```
+!34 = !DICompositeType(..., elements: !20)
+!20 = !{}
+```
+
+#### 2b. `debuginfo.py` passes wrong value to `dibuilder_create_dynamic_array_type`
+
+Python passes `None` for `associated` parameter but C passes `FooVar1`:
 
 ```python
-# In echo.py, after parsing:
-mod.name = "<stdin>"
+# Python (wrong):
+dynamic_array_md_ty = llvm.dibuilder_create_dynamic_array_type(
+    ...,
+    None,  # associated - should be foo_var1
+    ...
+)
 ```
 
----
-
-### Category 2: Custom Syncscope Crash (1 test)
-
-**Tests Affected:**
-- `echo.ll`
-
-**Root Cause:**
-The test uses `syncscope("agent")` which is a custom, context-specific syncscope. When echo.py clones atomic instructions, it copies the syncscope ID directly from source to destination. However, syncscope IDs are context-specific integers that differ between contexts.
-
-The crash occurs in `LLVMPrintModuleToString` when LLVM tries to look up the syncscope name for an invalid ID.
-
-**Regression Test:** `tests/regressions/test_syncscope_crash.py` (existing)
-
-**Fix Options:**
-1. Add C++ binding to get syncscope name from ID (requires C++ API access)
-2. Translate syncscope IDs by maintaining a mapping during cloning
-3. Skip custom syncscopes in echo.py (document as limitation)
-
----
-
-### Category 3: Lazy Module Missing "Materializable" Comment (1 test)
-
-**Tests Affected:**
-- `functions.ll` (`--lazy-module-dump` command)
-
-**Root Cause:**
-Two issues:
-1. `module_ops.py` doesn't pass `lazy=True` to the parse function
-2. `parse_bitcode_from_bytes` doesn't have a `lazy` parameter (only `parse_bitcode_from_file` does)
-
-When truly lazy-loaded, LLVM's `PrintModuleToString` automatically includes `; Materializable` comments before function definitions with empty bodies `{}`.
-
-**Regression Test:** `tests/regressions/test_lazy_materializable.py`
-
-**Fix:**
-1. Add `lazy` parameter to `parse_bitcode_from_bytes` C++ binding (use `LLVMGetBitcodeModuleInContext2` instead of `LLVMParseBitcodeInContext2`)
-2. Update `module_ops.py` to use `lazy=True` for `--lazy-module-dump`
-
----
-
-### Category 4: Error Message Format (1 test)
-
-**Tests Affected:**
-- `invalid-bitcode.test`
-
-**Root Cause:**
-The Python exception wrapper adds extra text to error messages.
-
-**Expected (C):**
-```
-Error parsing bitcode: Unknown attribute kind (255)
+```c
+// C (correct):
+LLVMDIBuilderCreateDynamicArrayType(..., FooVar1, ...);
 ```
 
-**Actual (Python):**
-```
-Error parsing bitcode: Failed to parse LLVM IR:
-  error: Unknown attribute kind (255)
-```
+This causes `FooVar1` to be referenced earlier in C (as `!42` within DynType), shifting subsequent metadata IDs.
 
-**Regression Test:** `tests/regressions/test_error_message_format.py`
+#### 2c. C code bugs that we fix (diverging from LLVM upstream)
 
-**Fix:**
-HACK in `module_ops.py` to extract the clean error message:
-```python
-def extract_error_message(exception_msg: str) -> str:
-    """Extract core error message from LLVMParseError format."""
-    for line in exception_msg.strip().split("\n"):
-        line = line.strip()
-        if line.startswith("error:"):
-            return line[len("error:"):].strip()
-    return exception_msg
-```
+The LLVM upstream C test has bugs. We fix them in our Python implementation but document the divergence:
 
----
+1. **Forward decl name truncation:** C passes `"Class1"` with length `5`, producing `"Class"`. We use correct `"Class1"`.
+2. **Enumerator name mismatch:** C passes `"Test_B"` with `strlen("Test_C")`, producing `"Test_B"` instead of `"Test_C"`. We use correct `"Test_C"`.
 
-### Category 5: DIBuilder Metadata ID Mismatch (1 test)
+These fixes will be submitted as a PR to LLVM upstream.
 
-**Tests Affected:**
-- `debug_info_new_format.ll`
-
-**Root Cause:**
-The Python implementation creates 1 extra metadata node before the DISubprogram, resulting in `!dbg !45` instead of `!dbg !44`.
-
-Analysis shows:
-- Python: 54 metadata nodes before DISubprogram
-- C: 53 metadata nodes before DISubprogram
-
-This indicates the order of metadata creation differs between implementations.
-
-**Regression Test:** `tests/regressions/test_dibuilder_metadata.py`
-
-**Fix:**
-Compare `llvm_c_test/debuginfo.py` with `llvm-c/llvm-c-test/debuginfo.c` to find where the extra metadata is being created or where order differs.
+**Fix Strategy:**
+1. Extend `dibuilder_create_struct_type` binding to accept all parameters (medium effort)
+2. Update `debuginfo.py` to pass `foo_var1` to `dibuilder_create_dynamic_array_type`
+3. Keep our correct implementations and update the lit test expected output
 
 ---
 
 ## Implementation Phases
 
 ### Phase 1: ModuleID Fix ✅ COMPLETE
-**Priority:** High (fixes 6 tests)
-**Effort:** Low
-**File:** `llvm_c_test/echo.py`
 **Result:** Fixed 5 tests (atomics, float_ops, freeze, invoke, memops)
 
 ### Phase 2: Error Message Format Fix ✅ COMPLETE
-**Priority:** Medium (fixes 1 test)
-**Effort:** Low
-**Files:** `llvm_c_test/module_ops.py`, `llvm_c_test/diagnostic.py`
 **Result:** Fixed 2 tests (invalid-bitcode, empty)
 
 ### Phase 3: Lazy Module Support ✅ COMPLETE
-**Priority:** Medium (fixes 1 test)
-**Effort:** Medium
-**Files:** `src/llvm-nanobind.cpp`, `llvm_c_test/module_ops.py`
 **Result:** Fixed 1 test (functions)
 
-### Phase 4: DIBuilder Metadata Order
-**Priority:** Medium (fixes 1 test)
-**Effort:** Medium-High (requires careful comparison)
-**File:** `llvm_c_test/debuginfo.py`
-**Status:** Pending
+### Phase 4: Fix `get_module_context` binding
+**Priority:** High (fixes echo.ll)
+**Effort:** Low-Medium
+**Files:** `src/llvm-nanobind.cpp`
+**Status:** Root cause identified, fix pending
 
-### Phase 5: Syncscope Support
-**Priority:** Low (fixes 1 test, complex)
-**Effort:** High (may need C++ binding work)
-**Files:** `src/llvm-nanobind.cpp`, `llvm_c_test/echo.py`
-**Status:** Pending
+### Phase 5: Fix DIBuilder metadata order
+**Priority:** Medium (fixes debug_info_new_format.ll)  
+**Effort:** Medium
+**Files:** `src/llvm-nanobind.cpp`, `llvm_c_test/debuginfo.py`
+**Status:** Root cause identified, fix pending
 
 ---
 
 ## Summary Table
 
-| Root Cause | Tests | Regression Test | Fix Effort | Phase | Status |
-|------------|-------|-----------------|------------|-------|--------|
-| ModuleID `<bytes>` vs `<stdin>` | 5 | `test_module_id_stdin.py` | Low | 1 | ✅ Done |
-| Error message format | 2 | `test_error_message_format.py` | Low | 2 | ✅ Done |
-| Lazy module support | 1 | `test_lazy_materializable.py` | Medium | 3 | ✅ Done |
-| DIBuilder metadata order | 1 | `test_dibuilder_metadata.py` | Medium-High | 4 | Pending |
-| Custom syncscope crash | 1 | `test_syncscope_crash.py` | High | 5 | Pending |
-| **Total Fixed** | **8** | | | | |
-| **Remaining** | **2** | | | | |
+| Root Cause | Tests | Fix Effort | Phase | Status |
+|------------|-------|------------|-------|--------|
+| ModuleID `<bytes>` vs `<stdin>` | 5 | Low | 1 | ✅ Done |
+| Error message format | 2 | Low | 2 | ✅ Done |
+| Lazy module support | 1 | Medium | 3 | ✅ Done |
+| `get_module_context` returns wrong context | 1 | Low-Medium | 4 | **Pending** |
+| DIBuilder struct_type binding incomplete | 1 | Medium | 5 | **Pending** |
+| DIBuilder debuginfo.py `associated` param | 1 | Low | 5 | **Pending** |
+| **Total Fixed** | **8** | | | |
+| **Remaining** | **2** | | | |
 
 ---
 

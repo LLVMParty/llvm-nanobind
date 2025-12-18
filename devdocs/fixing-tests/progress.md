@@ -1,7 +1,7 @@
 # Progress: Fix Python llvm-c-test Implementation
 
 **Last Updated:** December 18, 2025
-**Current Phase:** Phases 1-3 Complete
+**Current Phase:** Investigation Complete, Phases 4-5 Ready for Implementation
 
 ## Quick Summary
 
@@ -41,21 +41,76 @@
 
 ---
 
-## Remaining Failures (2 tests)
+## Remaining Failures (2 tests) - Root Causes Identified
 
-### echo.ll - Custom Syncscope Crash
-**Root Cause:** The test uses `syncscope("agent")` which is a custom, context-specific syncscope. When cloning atomic instructions, the syncscope ID is copied directly but IDs are context-specific integers.
+### echo.ll - `get_module_context` Returns Wrong Context
 
-**Regression Test:** `tests/regressions/test_syncscope_crash.py`
+**Root Cause:** The `get_module_context` binding in `llvm-nanobind.cpp` is fundamentally broken. It retrieves the context via `LLVMGetModuleContext(mod.m_ref)` but then **ignores** it and returns a static wrapper around the global context instead.
 
-**Status:** Blocked - requires C++ binding work or LLVM-C API to translate syncscope names between contexts.
+**Evidence:**
+```cpp
+// Current broken code:
+static thread_local LLVMContextWrapper global_ctx_wrapper(true);
+return &global_ctx_wrapper;  // Always returns global context!
+```
 
-### debug_info_new_format.ll - Metadata ID Mismatch
-**Root Cause:** Python implementation creates 1 extra metadata node before the DISubprogram, resulting in `!dbg !45` instead of `!dbg !44`.
+**Effect:**
+- `echo.py`'s `TypeCloner` class gets the global context instead of the module's context
+- Types are created in the wrong context
+- Custom syncscopes (like `"agent"`) exist only in the user-created context
+- When printing the cloned module, LLVM crashes trying to look up invalid syncscope IDs
 
-**Regression Test:** `tests/regressions/test_dibuilder_metadata.py`
+**Verified:** Simple test case crashes in Python but works in C:
+```bash
+# Crashes:
+printf 'define void @test(ptr %%ptr) {\n  %%a = atomicrmw volatile xchg ptr %%ptr, i8 0 syncscope("agent") acq_rel, align 8\n  ret void\n}\n' | llvm-as | uv run llvm-c-test --echo
 
-**Status:** Needs investigation - compare `debuginfo.py` with `debuginfo.c` to find ordering difference.
+# Works:
+printf 'define void @test(ptr %%ptr) {\n  %%a = atomicrmw volatile xchg ptr %%ptr, i8 0 syncscope("agent") acq_rel, align 8\n  ret void\n}\n' | llvm-as | ./build/llvm-c-test --echo
+```
+
+**Fix Required:** Update `get_module_context` to return a wrapper for the actual context.
+
+---
+
+### debug_info_new_format.ll - Metadata ID Mismatch (!45 vs !44)
+
+**Root Causes Identified:**
+
+1. **`dibuilder_create_struct_type` binding incomplete:**
+   - Missing: `elements`, `runtime_lang`, `unique_identifier` parameters
+   - C creates MyStruct with `elements: !{!6, !6, !6}`, `runtimeLang: DW_LANG_C89`, `identifier: "MyStruct"`
+   - Python creates MyStruct with `elements: !{}` (empty)
+
+2. **`debuginfo.py` passes `None` instead of `foo_var1` for `associated`:**
+   - Line 510: passes `None` to `dibuilder_create_dynamic_array_type`
+   - C passes `FooVar1`, which causes it to appear as `!42` (referenced by DynType)
+   - This shifts the DISubprogram from `!44` to `!45` in Python
+
+3. **LLVM upstream C test code bugs (we fix, diverging from upstream):**
+   - Forward decl passes `"Class1"` with length 5 → produces `"Class"` (we use correct `"Class1"`)
+   - Enumerator passes `"Test_B"` with `strlen("Test_C")` → produces `"Test_B"` (we use correct `"Test_C"`)
+   - These will be submitted as a PR to LLVM upstream
+
+**Fix Required:**
+1. Extend `dibuilder_create_struct_type` binding with missing parameters
+2. Update `debuginfo.py` to pass `foo_var1` for `associated` parameter
+3. Update lit test expected output to match our corrected implementation
+
+---
+
+## Next Steps
+
+### Phase 4: Fix `get_module_context` binding
+**File:** `src/llvm-nanobind.cpp`
+**Change:** Return a wrapper that properly references the module's actual context
+**Complexity:** Need to handle ownership carefully (context may be user-created or global)
+
+### Phase 5: Fix DIBuilder metadata order
+**Files:** 
+- `src/llvm-nanobind.cpp` - extend `dibuilder_create_struct_type`
+- `llvm_c_test/debuginfo.py` - pass `foo_var1` to dynamic array type
+- `llvm-c/llvm-c-test/inputs/debug_info_new_format.ll` - update expected output
 
 ---
 
@@ -68,17 +123,16 @@ uv run run_llvm_c_tests.py --use-python
 # Run with verbose output
 uv run run_llvm_c_tests.py --use-python -v
 
+# Quick syncscope test
+printf 'define void @test(ptr %%ptr) {\n  %%a = atomicrmw volatile xchg ptr %%ptr, i8 0 syncscope("agent") acq_rel, align 8\n  ret void\n}\n' | /path/to/llvm-as | uv run llvm-c-test --echo
+
 # Run individual regression tests
-uv run python tests/regressions/test_module_id_stdin.py
-uv run python tests/regressions/test_lazy_materializable.py
-uv run python tests/regressions/test_error_message_format.py
 uv run python tests/regressions/test_dibuilder_metadata.py
-uv run python tests/regressions/test_syncscope_crash.py
 ```
 
 ---
 
-## Key Files Modified
+## Key Files Modified (Phases 1-3)
 
 | File | Changes |
 |------|---------|
@@ -87,16 +141,11 @@ uv run python tests/regressions/test_syncscope_crash.py
 | `llvm_c_test/diagnostic.py` | Implemented diagnostic handler test |
 | `src/llvm-nanobind.cpp` | Added `lazy` parameter to `parse_bitcode_from_bytes()` |
 
----
+## Files to Modify (Phases 4-5)
 
-## Next Steps (Phases 4-5)
-
-### Phase 4: DIBuilder Metadata Order
-- Compare `llvm_c_test/debuginfo.py` with `llvm-c/llvm-c-test/debuginfo.c`
-- Find the extra metadata creation causing ID offset
-- **Effort:** Medium-High
-
-### Phase 5: Syncscope Support
-- May need to add `LLVMGetSyncScopeName` binding (if it exists in LLVM-C)
-- Or implement name-based translation in Python
-- **Effort:** High
+| File | Planned Changes |
+|------|-----------------|
+| `src/llvm-nanobind.cpp` | Fix `get_module_context`, extend `dibuilder_create_struct_type` |
+| `llvm_c_test/debuginfo.py` | Pass `foo_var1` to `dibuilder_create_dynamic_array_type` |
+| `llvm-c/llvm-c-test/inputs/debug_info_new_format.ll` | Update expected output for bug fixes |
+| `tests/regressions/test_syncscope_crash.py` | Fix test to keep both modules open simultaneously |
