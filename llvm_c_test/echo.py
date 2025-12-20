@@ -33,41 +33,40 @@ class TypeCloner:
             return self.clone(src.type)
 
         kind = src.kind
+        types = self.ctx.types
         if kind == llvm.TypeKind.Void:
-            return self.ctx.void_type()
+            return types.void
         elif kind == llvm.TypeKind.Half:
-            return self.ctx.half_type()
+            return types.f16
         elif kind == llvm.TypeKind.BFloat:
-            return self.ctx.bfloat_type()
+            return types.bf16
         elif kind == llvm.TypeKind.Float:
-            return self.ctx.float_type()
+            return types.f32
         elif kind == llvm.TypeKind.Double:
-            return self.ctx.double_type()
+            return types.f64
         elif kind == llvm.TypeKind.X86_FP80:
-            return self.ctx.x86_fp80_type()
+            return types.x86_fp80
         elif kind == llvm.TypeKind.FP128:
-            return self.ctx.fp128_type()
+            return types.fp128
         elif kind == llvm.TypeKind.PPC_FP128:
-            return self.ctx.ppc_fp128_type()
+            return types.ppc_fp128
         elif kind == llvm.TypeKind.Label:
-            return self.ctx.label_type()
+            return types.label
         elif kind == llvm.TypeKind.Integer:
-            return self.ctx.int_type(src.int_width)
+            return types.int_n(src.int_width)
         elif kind == llvm.TypeKind.Function:
             param_count = src.param_count
             params = [self.clone(p) for p in src.param_types]
-            return self.ctx.function_type(
-                self.clone(src.return_type), params, src.is_vararg
-            )
+            return types.function(self.clone(src.return_type), params, src.is_vararg)
         elif kind == llvm.TypeKind.Struct:
             name = src.struct_name
             if name:
                 # Try to find existing struct with this name
-                existing = self.ctx.get_type_by_name(name)
+                existing = types.get(name)
                 if existing:
                     return existing
                 # Create a new named struct
-                s = self.ctx.named_struct_type(name)
+                s = types.opaque_struct(name)
                 if src.is_opaque_struct:
                     return s
                 # Set body for named struct
@@ -83,27 +82,25 @@ class TypeCloner:
                 elts = [
                     self.clone(src.get_struct_element_type(i)) for i in range(elt_count)
                 ]
-                return self.ctx.struct_type(elts, src.is_packed_struct)
+                return types.struct(elts, src.is_packed_struct)
         elif kind == llvm.TypeKind.Array:
-            return self.ctx.array_type(self.clone(src.element_type), src.array_length)
+            return self.clone(src.element_type).array(src.array_length)
         elif kind == llvm.TypeKind.Pointer:
             if src.is_opaque_pointer:
-                return self.ctx.pointer_type(src.pointer_address_space)
+                return types.ptr(src.pointer_address_space)
             else:
                 # Legacy typed pointer (shouldn't happen with opaque pointers)
-                return self.ctx.pointer_type(src.pointer_address_space)
+                return types.ptr(src.pointer_address_space)
         elif kind == llvm.TypeKind.Vector:
-            return self.ctx.vector_type(self.clone(src.element_type), src.vector_size)
+            return self.clone(src.element_type).vector(src.vector_size)
         elif kind == llvm.TypeKind.ScalableVector:
-            return self.ctx.scalable_vector_type(
-                self.clone(src.element_type), src.vector_size
-            )
+            return types.scalable_vector(self.clone(src.element_type), src.vector_size)
         elif kind == llvm.TypeKind.Metadata:
-            return self.ctx.metadata_type()
+            return types.metadata
         elif kind == llvm.TypeKind.X86_AMX:
-            return self.ctx.x86_amx_type()
+            return types.x86_amx
         elif kind == llvm.TypeKind.Token:
-            return self.ctx.token_type()
+            return types.token
         elif kind == llvm.TypeKind.TargetExt:
             name = src.target_ext_type_name
             num_type_params = src.target_ext_type_num_type_params
@@ -115,7 +112,7 @@ class TypeCloner:
             int_params = [
                 src.get_target_ext_type_int_param(i) for i in range(num_int_params)
             ]
-            return self.ctx.target_ext_type(name, type_params, int_params)
+            return types.target_ext(name, type_params, int_params)
         else:
             print(f"{kind} is not a supported typekind", file=sys.stderr)
             sys.exit(-1)
@@ -175,14 +172,13 @@ def clone_constant_impl(cst: llvm.Value, m: llvm.Module) -> llvm.Value:
     # Try integer literal
     if cst.is_a_constant_int():
         check_value_kind(cst, llvm.ValueKind.ConstantInt)
-        return llvm.const_int(
-            TypeCloner(m).clone(cst), llvm.const_int_get_zext_value(cst), False
-        )
+        ty = TypeCloner(m).clone(cst)
+        return ty.constant(llvm.const_int_get_zext_value(cst), False)
 
     # Try zeroinitializer
     if cst.is_a_constant_aggregate_zero():
         check_value_kind(cst, llvm.ValueKind.ConstantAggregateZero)
-        return llvm.const_null(TypeCloner(m).clone(cst))
+        return TypeCloner(m).clone(cst).null()
 
     # Try constant data array
     if cst.is_a_constant_data_array():
@@ -215,23 +211,23 @@ def clone_constant_impl(cst: llvm.Value, m: llvm.Module) -> llvm.Value:
     if cst.is_a_constant_pointer_null():
         check_value_kind(cst, llvm.ValueKind.ConstantPointerNull)
         ty = TypeCloner(m).clone(cst)
-        return llvm.const_null(ty)
+        return ty.null()
 
     # Try undef
     if cst.is_undef:
         check_value_kind(cst, llvm.ValueKind.UndefValue)
-        return llvm.undef(TypeCloner(m).clone(cst))
+        return TypeCloner(m).clone(cst).undef()
 
     # Try poison
     if cst.is_poison:
         check_value_kind(cst, llvm.ValueKind.PoisonValue)
-        return llvm.poison(TypeCloner(m).clone(cst))
+        return TypeCloner(m).clone(cst).poison()
 
     # Try null
     if cst.is_null():
         check_value_kind(cst, llvm.ValueKind.ConstantTokenNone)
         ty = TypeCloner(m).clone(cst)
-        return llvm.const_null(ty)
+        return ty.null()
 
     # Try float literal
     if cst.is_a_constant_fp():
@@ -819,13 +815,13 @@ class FunCloner:
             agg1 = self.clone_value(src.get_operand(1))
             mask_elts = []
             num_mask_elts = src.get_num_mask_elements()
-            int64_ty = llvm.get_module_context(self.module).int64_type()
+            int64_ty = llvm.get_module_context(self.module).types.i64
             for i in range(num_mask_elts):
                 val = src.get_mask_value(i)
                 if val == llvm.get_undef_mask_elem():
-                    mask_elts.append(llvm.undef(int64_ty))
+                    mask_elts.append(int64_ty.undef())
                 else:
-                    mask_elts.append(llvm.const_int(int64_ty, val, True))
+                    mask_elts.append(int64_ty.constant(val, True))
             mask = llvm.const_vector(mask_elts)
             dst = builder.shuffle_vector(agg0, agg1, mask, name)
 
@@ -1107,7 +1103,7 @@ def declare_symbols(src: llvm.Module, m: llvm.Module) -> None:
             val_type = TypeCloner(m).clone(cur.global_get_value_type())
             addr_space = ptr_type.pointer_address_space
             # FIXME: Allow NULL aliasee
-            m.add_alias(val_type, addr_space, llvm.undef(ptr_type), name)
+            m.add_alias(val_type, addr_space, ptr_type.undef(), name)
 
             next_a = cur.next_global_alias
             if next_a is None:
@@ -1134,7 +1130,7 @@ def declare_symbols(src: llvm.Module, m: llvm.Module) -> None:
                 raise RuntimeError("Global ifunc already cloned")
             cur_type = TypeCloner(m).clone(cur.global_get_value_type())
             # FIXME: Allow NULL resolver
-            m.add_global_ifunc(name, cur_type, 0, llvm.undef(cur_type))
+            m.add_global_ifunc(name, cur_type, 0, cur_type.undef())
 
             next_i = cur.next_global_ifunc
             if next_i is None:

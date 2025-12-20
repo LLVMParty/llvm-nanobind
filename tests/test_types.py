@@ -7,10 +7,10 @@ This is the Python equivalent of tests/test_types.cpp.
 Output should match the C++ golden master test.
 
 LLVM APIs covered (via Python bindings):
-- Integer types: int1_type(), int8_type(), int16_type(), int32_type(), int64_type(), int128_type(), int_type()
-- Floating point: half_type(), bfloat_type(), float_type(), double_type()
-- Other types: void_type(), pointer_type(), array_type(), vector_type(), function_type()
-- Struct types: struct_type(), named_struct_type(), set_body()
+- Integer types: ctx.types.i1, ctx.types.i8, ctx.types.i16, ctx.types.i32, ctx.types.i64, ctx.types.i128, ctx.types.int_n()
+- Floating point: ctx.types.f16, ctx.types.bf16, ctx.types.f32, ctx.types.f64
+- Other types: ctx.types.void, ctx.types.ptr(), ctx.types.array(), ctx.types.vector(), ctx.types.function()
+- Struct types: ctx.types.struct(), ctx.types.opaque_struct(), set_body()
 - Type inspection: kind, int_width, is_sized, is_packed_struct, is_opaque_struct, struct_name
 """
 
@@ -45,50 +45,50 @@ def main():
     with llvm.create_context() as ctx:
         with ctx.create_module("test_types") as mod:
             # Integer types
-            i1 = ctx.int1_type()
-            i8 = ctx.int8_type()
-            i16 = ctx.int16_type()
-            i32 = ctx.int32_type()
-            i64 = ctx.int64_type()
-            i128 = ctx.int128_type()
-            i256 = ctx.int_type(256)
+            i1 = ctx.types.i1
+            i8 = ctx.types.i8
+            i16 = ctx.types.i16
+            i32 = ctx.types.i32
+            i64 = ctx.types.i64
+            i128 = ctx.types.i128
+            i256 = ctx.types.int_n(256)
 
             # Floating point types
-            f16 = ctx.half_type()
-            bf16 = ctx.bfloat_type()
-            f32 = ctx.float_type()
-            f64 = ctx.double_type()
+            f16 = ctx.types.f16
+            bf16 = ctx.types.bf16
+            f32 = ctx.types.f32
+            f64 = ctx.types.f64
 
             # Void type
-            void_ty = ctx.void_type()
+            void_ty = ctx.types.void
 
             # Pointer type (opaque pointer)
-            ptr = ctx.pointer_type(0)
+            ptr = ctx.types.ptr()
 
             # Array type
-            arr_i32_10 = ctx.array_type(i32, 10)
+            arr_i32_10 = i32.array(10)
 
             # Vector type
-            vec_i32_4 = ctx.vector_type(i32, 4)
+            vec_i32_4 = i32.vector(4)
 
             # Function type: i32(i32, i32)
-            func_ty = ctx.function_type(i32, [i32, i32], vararg=False)
+            func_ty = ctx.types.function(i32, [i32, i32], vararg=False)
 
             # Function type with varargs: i32(i32, ...)
-            vararg_func_ty = ctx.function_type(i32, [i32], vararg=True)
+            vararg_func_ty = ctx.types.function(i32, [i32], vararg=True)
 
             # Anonymous struct type: {i32, f64}
-            anon_struct = ctx.struct_type([i32, f64], packed=False)
+            anon_struct = ctx.types.struct([i32, f64], packed=False)
 
             # Packed anonymous struct type: <{i8, i32}>
-            packed_struct = ctx.struct_type([i8, i32], packed=True)
+            packed_struct = ctx.types.struct([i8, i32], packed=True)
 
             # Named struct type
-            named_struct = ctx.named_struct_type("MyStruct")
+            named_struct = ctx.types.opaque_struct("MyStruct")
             named_struct.set_body([i32, ptr, f64], packed=False)
 
             # Opaque struct (no body set)
-            opaque_struct = ctx.named_struct_type("OpaqueStruct")
+            opaque_struct = ctx.types.opaque_struct("OpaqueStruct")
 
             # Add global variables to make types visible in output
             mod.add_global(i32, "global_i32")

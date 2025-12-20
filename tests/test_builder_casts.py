@@ -13,20 +13,22 @@ import llvm
 def main():
     with llvm.create_context() as ctx:
         with ctx.create_module("test_builder_casts") as mod:
-            i8 = ctx.int8_type()
-            i16 = ctx.int16_type()
-            i32 = ctx.int32_type()
-            i64 = ctx.int64_type()
-            f32 = ctx.float_type()
-            f64 = ctx.double_type()
-            ptr = ctx.pointer_type()
-            void_ty = ctx.void_type()
+            i8 = ctx.types.i8
+            i16 = ctx.types.i16
+            i32 = ctx.types.i32
+            i64 = ctx.types.i64
+            f32 = ctx.types.f32
+            f64 = ctx.types.f64
+            ptr = ctx.types.ptr()
+            void_ty = ctx.types.void
+
+            assert i8 == ctx.types.int_n(8), "oh nein"
 
             with ctx.create_builder() as builder:
                 # ==========================================
                 # Function 1: Integer casts
                 # ==========================================
-                int_cast_ty = ctx.function_type(i8, [i64])
+                int_cast_ty = ctx.types.function(i8, [i64])
                 int_cast_func = mod.add_function("integer_casts", int_cast_ty)
                 i64_val = int_cast_func.get_param(0)
                 i64_val.name = "val"
@@ -60,7 +62,7 @@ def main():
                 # ==========================================
                 # Function 2: Float casts
                 # ==========================================
-                fp_cast_ty = ctx.function_type(f32, [f64])
+                fp_cast_ty = ctx.types.function(f32, [f64])
                 fp_cast_func = mod.add_function("float_casts", fp_cast_ty)
                 f64_val = fp_cast_func.get_param(0)
                 f64_val.name = "val"
@@ -79,7 +81,7 @@ def main():
                 # ==========================================
                 # Function 3: Int <-> Float casts
                 # ==========================================
-                mixed_ty = ctx.function_type(void_ty, [i32, f64])
+                mixed_ty = ctx.types.function(void_ty, [i32, f64])
                 mixed_func = mod.add_function("int_float_casts", mixed_ty)
                 int_param = mixed_func.get_param(0)
                 fp_param = mixed_func.get_param(1)
@@ -102,7 +104,7 @@ def main():
                 # ==========================================
                 # Function 4: Pointer casts
                 # ==========================================
-                ptr_ty = ctx.function_type(void_ty, [ptr, i64])
+                ptr_ty = ctx.types.function(void_ty, [ptr, i64])
                 ptr_func = mod.add_function("pointer_casts", ptr_ty)
                 ptr_param = ptr_func.get_param(0)
                 int_for_ptr = ptr_func.get_param(1)
@@ -123,10 +125,10 @@ def main():
                 # ==========================================
                 # Function 5: Bitcast
                 # ==========================================
-                vec_i32 = ctx.vector_type(i32, 4)
-                vec_f32 = ctx.vector_type(f32, 4)
+                vec_i32 = i32.vector(4)
+                vec_f32 = f32.vector(4)
 
-                bitcast_ty = ctx.function_type(vec_f32, [vec_i32])
+                bitcast_ty = ctx.types.function(vec_f32, [vec_i32])
                 bitcast_func = mod.add_function("bitcast_example", bitcast_ty)
                 vec_param = bitcast_func.get_param(0)
                 vec_param.name = "v"

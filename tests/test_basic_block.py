@@ -24,11 +24,11 @@ import llvm
 def main():
     with llvm.create_context() as ctx:
         with ctx.create_module("test_basic_block") as mod:
-            i32 = ctx.int32_type()
-            void_ty = ctx.void_type()
+            i32 = ctx.types.i32
+            void_ty = ctx.types.void
 
             # Create a function to hold basic blocks
-            func_ty = ctx.function_type(void_ty, [], vararg=False)
+            func_ty = ctx.types.function(void_ty, [], vararg=False)
             func = mod.add_function("test_func", func_ty)
 
             # Append basic blocks

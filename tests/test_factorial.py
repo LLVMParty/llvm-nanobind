@@ -24,15 +24,15 @@ def main():
             # Set target for more realistic output
             mod.target_triple = "x86_64-unknown-linux-gnu"
 
-            i64 = ctx.int64_type()
-            i1 = ctx.int1_type()
+            i64 = ctx.types.i64
+            i1 = ctx.types.i1
 
             with ctx.create_builder() as builder:
                 # ==========================================
                 # Function: i64 factorial(i64 n)
                 # Iterative implementation using alloca/load/store
                 # ==========================================
-                fact_ty = ctx.function_type(i64, [i64])
+                fact_ty = ctx.types.function(i64, [i64])
                 fact_func = mod.add_function("factorial", fact_ty)
 
                 n = fact_func.get_param(0)
@@ -49,8 +49,8 @@ def main():
                 result_ptr = builder.alloca(i64, "result")
                 i_ptr = builder.alloca(i64, "i")
 
-                builder.store(llvm.const_int(i64, 1), result_ptr)
-                builder.store(llvm.const_int(i64, 1), i_ptr)
+                builder.store(i64.constant(1), result_ptr)
+                builder.store(i64.constant(1), i_ptr)
                 builder.br(loop_cond)
 
                 # Loop condition: while (i <= n)
@@ -67,7 +67,7 @@ def main():
                 new_result = builder.mul(result_val, i_val2, "new_result")
                 builder.store(new_result, result_ptr)
 
-                new_i = builder.add(i_val2, llvm.const_int(i64, 1), "new_i")
+                new_i = builder.add(i_val2, i64.constant(1), "new_i")
                 builder.store(new_i, i_ptr)
 
                 builder.br(loop_cond)
@@ -92,17 +92,17 @@ def main():
                 # Entry: if n <= 1 goto base_case else goto recursive
                 builder.position_at_end(rec_entry)
                 is_base = builder.icmp(
-                    llvm.IntPredicate.SLE, n_rec, llvm.const_int(i64, 1), "is_base"
+                    llvm.IntPredicate.SLE, n_rec, i64.constant(1), "is_base"
                 )
                 builder.cond_br(is_base, base_case, recursive)
 
                 # Base case: return 1
                 builder.position_at_end(base_case)
-                builder.ret(llvm.const_int(i64, 1))
+                builder.ret(i64.constant(1))
 
                 # Recursive: return n * factorial_recursive(n-1)
                 builder.position_at_end(recursive)
-                n_minus_1 = builder.sub(n_rec, llvm.const_int(i64, 1), "n_minus_1")
+                n_minus_1 = builder.sub(n_rec, i64.constant(1), "n_minus_1")
                 rec_result = builder.call(
                     fact_ty, fact_rec_func, [n_minus_1], "rec_result"
                 )
@@ -113,14 +113,14 @@ def main():
                 # Function: i64 main()
                 # Calls factorial(5) and returns the result
                 # ==========================================
-                main_ty = ctx.function_type(i64, [])
+                main_ty = ctx.types.function(i64, [])
                 main_func = mod.add_function("main", main_ty)
 
                 main_entry = main_func.append_basic_block("entry", ctx)
                 builder.position_at_end(main_entry)
 
                 fact_result = builder.call(
-                    fact_ty, fact_func, [llvm.const_int(i64, 5)], "fact_result"
+                    fact_ty, fact_func, [i64.constant(5)], "fact_result"
                 )
                 builder.ret(fact_result)
 

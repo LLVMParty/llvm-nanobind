@@ -549,6 +549,302 @@ struct LLVMTypeWrapper {
       throw LLVMAssertionError("Type is not a target extension type");
     return LLVMGetTargetExtTypeIntParam(m_ref, index);
   }
+
+  // =========================================================================
+  // Constant creation methods (Phase 2: Type-based constants)
+  // Declarations only - implementations after LLVMValueWrapper is defined
+  // =========================================================================
+
+  // Integer constant: ty.constant(42)
+  LLVMValueWrapper constant(long long val, bool sign_extend = false) const;
+
+  // Float constant: ty.real_constant(3.14)
+  LLVMValueWrapper real_constant(double val) const;
+
+  // Null value (works for all types): ty.null()
+  LLVMValueWrapper null() const;
+
+  // All-ones constant: ty.all_ones()
+  LLVMValueWrapper all_ones() const;
+
+  // Undef value: ty.undef()
+  LLVMValueWrapper undef() const;
+
+  // Poison value: ty.poison()
+  LLVMValueWrapper poison() const;
+
+  // =========================================================================
+  // Composite type factory methods (Phase 2)
+  // =========================================================================
+
+  // Create array type from this element type: i32.array(10) -> [10 x i32]
+  LLVMTypeWrapper array(uint64_t count) const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMArrayType2(m_ref, count), m_context_token);
+  }
+
+  // Create vector type from this element type: i32.vector(4) -> <4 x i32>
+  LLVMTypeWrapper vector(unsigned count) const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMVectorType(m_ref, count), m_context_token);
+  }
+
+  // Create pointer type (in the same context): ty.pointer() -> ptr
+  LLVMTypeWrapper pointer(unsigned address_space = 0) const {
+    check_valid();
+    return LLVMTypeWrapper(
+        LLVMPointerTypeInContext(LLVMGetTypeContext(m_ref), address_space),
+        m_context_token);
+  }
+};
+
+// =============================================================================
+// Type Factory Wrapper (property-based namespace for type creation)
+// =============================================================================
+
+struct LLVMTypeFactoryWrapper {
+  LLVMContextRef m_ctx_ref = nullptr;
+  std::shared_ptr<ValidityToken> m_context_token;
+
+  LLVMTypeFactoryWrapper() = default;
+  LLVMTypeFactoryWrapper(LLVMContextRef ctx,
+                         std::shared_ptr<ValidityToken> token)
+      : m_ctx_ref(ctx), m_context_token(std::move(token)) {}
+
+  void check_valid() const {
+    if (!m_ctx_ref)
+      throw LLVMMemoryError("TypeFactory context is null");
+    if (!m_context_token || !m_context_token->is_valid())
+      throw LLVMMemoryError("TypeFactory used after context was destroyed");
+  }
+
+  // =========================================================================
+  // Fixed-width integer types (properties)
+  // =========================================================================
+  LLVMTypeWrapper i1() const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMInt1TypeInContext(m_ctx_ref), m_context_token);
+  }
+
+  LLVMTypeWrapper i8() const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMInt8TypeInContext(m_ctx_ref), m_context_token);
+  }
+
+  LLVMTypeWrapper i16() const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMInt16TypeInContext(m_ctx_ref), m_context_token);
+  }
+
+  LLVMTypeWrapper i32() const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMInt32TypeInContext(m_ctx_ref), m_context_token);
+  }
+
+  LLVMTypeWrapper i64() const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMInt64TypeInContext(m_ctx_ref), m_context_token);
+  }
+
+  LLVMTypeWrapper i128() const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMInt128TypeInContext(m_ctx_ref), m_context_token);
+  }
+
+  // =========================================================================
+  // Floating-point types (properties)
+  // =========================================================================
+  LLVMTypeWrapper f16() const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMHalfTypeInContext(m_ctx_ref), m_context_token);
+  }
+
+  LLVMTypeWrapper bf16() const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMBFloatTypeInContext(m_ctx_ref), m_context_token);
+  }
+
+  LLVMTypeWrapper f32() const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMFloatTypeInContext(m_ctx_ref), m_context_token);
+  }
+
+  LLVMTypeWrapper f64() const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMDoubleTypeInContext(m_ctx_ref), m_context_token);
+  }
+
+  LLVMTypeWrapper x86_fp80() const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMX86FP80TypeInContext(m_ctx_ref), m_context_token);
+  }
+
+  LLVMTypeWrapper fp128() const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMFP128TypeInContext(m_ctx_ref), m_context_token);
+  }
+
+  LLVMTypeWrapper ppc_fp128() const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMPPCFP128TypeInContext(m_ctx_ref),
+                           m_context_token);
+  }
+
+  // =========================================================================
+  // Other types (properties)
+  // =========================================================================
+  LLVMTypeWrapper void_() const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMVoidTypeInContext(m_ctx_ref), m_context_token);
+  }
+
+  LLVMTypeWrapper label() const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMLabelTypeInContext(m_ctx_ref), m_context_token);
+  }
+
+  LLVMTypeWrapper metadata() const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMMetadataTypeInContext(m_ctx_ref),
+                           m_context_token);
+  }
+
+  LLVMTypeWrapper token() const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMTokenTypeInContext(m_ctx_ref), m_context_token);
+  }
+
+  LLVMTypeWrapper x86_amx() const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMX86AMXTypeInContext(m_ctx_ref), m_context_token);
+  }
+
+  // =========================================================================
+  // Parameterized types (methods)
+  // =========================================================================
+  LLVMTypeWrapper ptr(unsigned address_space = 0) const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMPointerTypeInContext(m_ctx_ref, address_space),
+                           m_context_token);
+  }
+
+  LLVMTypeWrapper int_n(unsigned bits) const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMIntTypeInContext(m_ctx_ref, bits),
+                           m_context_token);
+  }
+
+  LLVMTypeWrapper function(const LLVMTypeWrapper &ret_ty,
+                           const std::vector<LLVMTypeWrapper> &param_types,
+                           bool vararg = false) const {
+    check_valid();
+    ret_ty.check_valid();
+    std::vector<LLVMTypeRef> params;
+    params.reserve(param_types.size());
+    for (const auto &p : param_types) {
+      p.check_valid();
+      params.push_back(p.m_ref);
+    }
+    return LLVMTypeWrapper(
+        LLVMFunctionType(ret_ty.m_ref, params.data(),
+                         static_cast<unsigned>(params.size()), vararg),
+        m_context_token);
+  }
+
+  // Unified struct() method: named if name is provided, anonymous otherwise
+  LLVMTypeWrapper struct_(const std::vector<LLVMTypeWrapper> &elem_types,
+                          bool packed = false,
+                          const std::string &name = "") const {
+    check_valid();
+
+    if (!name.empty()) {
+      // Named struct
+      LLVMTypeRef s = LLVMStructCreateNamed(m_ctx_ref, name.c_str());
+      if (!elem_types.empty()) {
+        std::vector<LLVMTypeRef> elems;
+        elems.reserve(elem_types.size());
+        for (const auto &e : elem_types) {
+          e.check_valid();
+          elems.push_back(e.m_ref);
+        }
+        LLVMStructSetBody(s, elems.data(),
+                          static_cast<unsigned>(elems.size()), packed);
+      }
+      return LLVMTypeWrapper(s, m_context_token);
+    } else {
+      // Anonymous struct
+      std::vector<LLVMTypeRef> elems;
+      elems.reserve(elem_types.size());
+      for (const auto &e : elem_types) {
+        e.check_valid();
+        elems.push_back(e.m_ref);
+      }
+      return LLVMTypeWrapper(
+          LLVMStructTypeInContext(m_ctx_ref, elems.data(),
+                                  static_cast<unsigned>(elems.size()), packed),
+          m_context_token);
+    }
+  }
+
+  // Opaque named struct (forward declaration)
+  LLVMTypeWrapper opaque_struct(const std::string &name) const {
+    check_valid();
+    return LLVMTypeWrapper(LLVMStructCreateNamed(m_ctx_ref, name.c_str()),
+                           m_context_token);
+  }
+
+  // Array type
+  LLVMTypeWrapper array(const LLVMTypeWrapper &elem_ty, uint64_t count) const {
+    check_valid();
+    elem_ty.check_valid();
+    return LLVMTypeWrapper(LLVMArrayType2(elem_ty.m_ref, count),
+                           m_context_token);
+  }
+
+  // Vector type
+  LLVMTypeWrapper vector(const LLVMTypeWrapper &elem_ty,
+                         unsigned elem_count) const {
+    check_valid();
+    elem_ty.check_valid();
+    return LLVMTypeWrapper(LLVMVectorType(elem_ty.m_ref, elem_count),
+                           m_context_token);
+  }
+
+  // Scalable vector type
+  LLVMTypeWrapper scalable_vector(const LLVMTypeWrapper &elem_ty,
+                                  unsigned elem_count) const {
+    check_valid();
+    elem_ty.check_valid();
+    return LLVMTypeWrapper(LLVMScalableVectorType(elem_ty.m_ref, elem_count),
+                           m_context_token);
+  }
+
+  // Target extension type
+  LLVMTypeWrapper target_ext(const std::string &name,
+                             const std::vector<LLVMTypeWrapper> &type_params,
+                             const std::vector<unsigned> &int_params) const {
+    check_valid();
+    std::vector<LLVMTypeRef> type_refs;
+    type_refs.reserve(type_params.size());
+    for (const auto &t : type_params) {
+      t.check_valid();
+      type_refs.push_back(t.m_ref);
+    }
+    return LLVMTypeWrapper(
+        LLVMTargetExtTypeInContext(
+            m_ctx_ref, name.c_str(), type_refs.data(), type_refs.size(),
+            const_cast<unsigned *>(int_params.data()), int_params.size()),
+        m_context_token);
+  }
+
+  // Get type by name (for looking up named structs)
+  std::optional<LLVMTypeWrapper> get(const std::string &name) const {
+    check_valid();
+    LLVMTypeRef ty = LLVMGetTypeByName2(m_ctx_ref, name.c_str());
+    if (!ty)
+      return std::nullopt;
+    return LLVMTypeWrapper(ty, m_context_token);
+  }
 };
 
 // =============================================================================
@@ -1760,6 +2056,47 @@ struct LLVMFunctionWrapper : LLVMValueWrapper {
     return LLVMFunctionWrapper(prev, m_context_token);
   }
 };
+
+// =============================================================================
+// Implementation of LLVMTypeWrapper constant creation methods
+// These need LLVMValueWrapper which is now defined
+// =============================================================================
+
+inline LLVMValueWrapper LLVMTypeWrapper::constant(long long val,
+                                                  bool sign_extend) const {
+  check_valid();
+  if (!is_integer())
+    throw LLVMAssertionError("constant() requires integer type");
+  return LLVMValueWrapper(LLVMConstInt(m_ref, val, sign_extend),
+                          m_context_token);
+}
+
+inline LLVMValueWrapper LLVMTypeWrapper::real_constant(double val) const {
+  check_valid();
+  if (!is_float())
+    throw LLVMAssertionError("real_constant() requires floating-point type");
+  return LLVMValueWrapper(LLVMConstReal(m_ref, val), m_context_token);
+}
+
+inline LLVMValueWrapper LLVMTypeWrapper::null() const {
+  check_valid();
+  return LLVMValueWrapper(LLVMConstNull(m_ref), m_context_token);
+}
+
+inline LLVMValueWrapper LLVMTypeWrapper::all_ones() const {
+  check_valid();
+  return LLVMValueWrapper(LLVMConstAllOnes(m_ref), m_context_token);
+}
+
+inline LLVMValueWrapper LLVMTypeWrapper::undef() const {
+  check_valid();
+  return LLVMValueWrapper(LLVMGetUndef(m_ref), m_context_token);
+}
+
+inline LLVMValueWrapper LLVMTypeWrapper::poison() const {
+  check_valid();
+  return LLVMValueWrapper(LLVMGetPoison(m_ref), m_context_token);
+}
 
 // Implementation of LLVMUseWrapper methods - need LLVMValueWrapper
 inline LLVMValueWrapper LLVMUseWrapper::get_user() const {
@@ -3478,7 +3815,13 @@ struct LLVMContextWrapper : NoMoveCopy {
     LLVMContextSetDiscardValueNames(m_ref, discard);
   }
 
-  // Type factory methods
+  // New property-based type factory
+  LLVMTypeFactoryWrapper get_types() {
+    check_valid();
+    return LLVMTypeFactoryWrapper(m_ref, m_token);
+  }
+
+  // Type factory methods (legacy - will be removed)
   LLVMTypeWrapper void_type() {
     check_valid();
     return LLVMTypeWrapper(LLVMVoidTypeInContext(m_ref), m_token);
@@ -4187,23 +4530,43 @@ get_intrinsic_declaration(LLVMModuleWrapper *mod, unsigned id,
                           mod->m_context_token);
 }
 
-// Helper for PHI nodes
+// Helper for PHI nodes (with runtime assertions)
 void phi_add_incoming(LLVMValueWrapper &phi, const LLVMValueWrapper &val,
                       const LLVMBasicBlockWrapper &bb) {
   phi.check_valid();
   val.check_valid();
   bb.check_valid();
+
+  // Assert this is a PHI node
+  if (!LLVMIsAPHINode(phi.m_ref))
+    throw LLVMAssertionError("add_incoming() requires a PHI node");
+
+  // Assert type compatibility
+  LLVMTypeRef phi_type = LLVMTypeOf(phi.m_ref);
+  LLVMTypeRef val_type = LLVMTypeOf(val.m_ref);
+  if (phi_type != val_type)
+    throw LLVMAssertionError("PHI incoming value type mismatch");
+
   LLVMValueRef vals[] = {val.m_ref};
   LLVMBasicBlockRef bbs[] = {bb.m_ref};
   LLVMAddIncoming(phi.m_ref, vals, bbs, 1);
 }
 
-// Helper for switch
+// Helper for switch (with runtime assertions)
 void switch_add_case(LLVMValueWrapper &switch_inst, const LLVMValueWrapper &val,
                      const LLVMBasicBlockWrapper &bb) {
   switch_inst.check_valid();
   val.check_valid();
   bb.check_valid();
+
+  // Assert this is a switch instruction
+  if (LLVMGetInstructionOpcode(switch_inst.m_ref) != LLVMSwitch)
+    throw LLVMAssertionError("add_case() requires a switch instruction");
+
+  // Assert case value is constant
+  if (!LLVMIsConstant(val.m_ref))
+    throw LLVMAssertionError("Switch case value must be constant");
+
   LLVMAddCase(switch_inst.m_ref, val.m_ref, bb.m_ref);
 }
 
@@ -4391,6 +4754,7 @@ void struct_set_body(LLVMTypeWrapper &struct_ty,
     e.check_valid();
     elems.push_back(e.m_ref);
   }
+  // blahblah
   LLVMStructSetBody(struct_ty.m_ref, elems.data(),
                     static_cast<unsigned>(elems.size()), packed);
 }
@@ -5380,7 +5744,28 @@ NB_MODULE(llvm, m) {
       .def("get_target_ext_type_int_param",
            &LLVMTypeWrapper::get_target_ext_type_int_param, "index"_a)
       .def("set_body", &struct_set_body, "elem_types"_a, "packed"_a = false)
-      .def_prop_ro("struct_element_count", &type_count_struct_element_types);
+      .def_prop_ro("struct_element_count", &type_count_struct_element_types)
+      // Phase 2: Type-based constant creation
+      .def("constant", &LLVMTypeWrapper::constant, "val"_a,
+           "sign_extend"_a = false,
+           R"(Create an integer constant of this type.)")
+      .def("real_constant", &LLVMTypeWrapper::real_constant, "val"_a,
+           R"(Create a floating-point constant of this type.)")
+      .def("null", &LLVMTypeWrapper::null,
+           R"(Create a null value of this type.)")
+      .def("all_ones", &LLVMTypeWrapper::all_ones,
+           R"(Create an all-ones constant of this type.)")
+      .def("undef", &LLVMTypeWrapper::undef,
+           R"(Create an undef value of this type.)")
+      .def("poison", &LLVMTypeWrapper::poison,
+           R"(Create a poison value of this type.)")
+      // Phase 2: Composite type factory methods
+      .def("array", &LLVMTypeWrapper::array, "count"_a,
+           R"(Create an array type with this element type.)")
+      .def("vector", &LLVMTypeWrapper::vector, "count"_a,
+           R"(Create a vector type with this element type.)")
+      .def("pointer", &LLVMTypeWrapper::pointer, "address_space"_a = 0,
+           R"(Create a pointer type in this type's context.)");
 
   // Use wrapper (for use-def chain iteration)
   nb::class_<LLVMUseWrapper>(m, "Use")
@@ -5992,48 +6377,53 @@ NB_MODULE(llvm, m) {
                    &LLVMModuleWrapper::set_inline_asm)
       .def("clone", &LLVMModuleWrapper::clone, nb::rv_policy::take_ownership);
 
+  // TypeFactory wrapper (property-based type namespace)
+  nb::class_<LLVMTypeFactoryWrapper>(m, "TypeFactory")
+      // Fixed-width integer types (properties)
+      .def_prop_ro("i1", &LLVMTypeFactoryWrapper::i1)
+      .def_prop_ro("i8", &LLVMTypeFactoryWrapper::i8)
+      .def_prop_ro("i16", &LLVMTypeFactoryWrapper::i16)
+      .def_prop_ro("i32", &LLVMTypeFactoryWrapper::i32)
+      .def_prop_ro("i64", &LLVMTypeFactoryWrapper::i64)
+      .def_prop_ro("i128", &LLVMTypeFactoryWrapper::i128)
+      // Floating-point types (properties)
+      .def_prop_ro("f16", &LLVMTypeFactoryWrapper::f16)
+      .def_prop_ro("bf16", &LLVMTypeFactoryWrapper::bf16)
+      .def_prop_ro("f32", &LLVMTypeFactoryWrapper::f32)
+      .def_prop_ro("f64", &LLVMTypeFactoryWrapper::f64)
+      .def_prop_ro("x86_fp80", &LLVMTypeFactoryWrapper::x86_fp80)
+      .def_prop_ro("fp128", &LLVMTypeFactoryWrapper::fp128)
+      .def_prop_ro("ppc_fp128", &LLVMTypeFactoryWrapper::ppc_fp128)
+      // Other types (properties)
+      .def_prop_ro("void", &LLVMTypeFactoryWrapper::void_)
+      .def_prop_ro("label", &LLVMTypeFactoryWrapper::label)
+      .def_prop_ro("metadata", &LLVMTypeFactoryWrapper::metadata)
+      .def_prop_ro("token", &LLVMTypeFactoryWrapper::token)
+      .def_prop_ro("x86_amx", &LLVMTypeFactoryWrapper::x86_amx)
+      // Parameterized types (methods)
+      .def("ptr", &LLVMTypeFactoryWrapper::ptr, "address_space"_a = 0)
+      .def("int_n", &LLVMTypeFactoryWrapper::int_n, "bits"_a)
+      .def("function", &LLVMTypeFactoryWrapper::function, "ret_ty"_a,
+           "param_types"_a, "vararg"_a = false)
+      .def("struct", &LLVMTypeFactoryWrapper::struct_, "elem_types"_a,
+           "packed"_a = false, "name"_a = "")
+      .def("opaque_struct", &LLVMTypeFactoryWrapper::opaque_struct, "name"_a)
+      .def("array", &LLVMTypeFactoryWrapper::array, "elem_ty"_a, "count"_a)
+      .def("vector", &LLVMTypeFactoryWrapper::vector, "elem_ty"_a,
+           "elem_count"_a)
+      .def("scalable_vector", &LLVMTypeFactoryWrapper::scalable_vector,
+           "elem_ty"_a, "elem_count"_a)
+      .def("target_ext", &LLVMTypeFactoryWrapper::target_ext, "name"_a,
+           "type_params"_a, "int_params"_a)
+      .def("get", &LLVMTypeFactoryWrapper::get, "name"_a);
+
   // Context wrapper
   nb::class_<LLVMContextWrapper>(m, "Context")
       .def_prop_rw("discard_value_names",
                    &LLVMContextWrapper::get_discard_value_names,
                    &LLVMContextWrapper::set_discard_value_names)
-      // Type factories
-      .def("void_type", &LLVMContextWrapper::void_type)
-      .def("int1_type", &LLVMContextWrapper::int1_type)
-      .def("int8_type", &LLVMContextWrapper::int8_type)
-      .def("int16_type", &LLVMContextWrapper::int16_type)
-      .def("int32_type", &LLVMContextWrapper::int32_type)
-      .def("int64_type", &LLVMContextWrapper::int64_type)
-      .def("int128_type", &LLVMContextWrapper::int128_type)
-      .def("int_type", &LLVMContextWrapper::int_type, "bits"_a)
-      .def("half_type", &LLVMContextWrapper::half_type)
-      .def("float_type", &LLVMContextWrapper::float_type)
-      .def("double_type", &LLVMContextWrapper::double_type)
-      .def("bfloat_type", &LLVMContextWrapper::bfloat_type)
-      .def("x86_fp80_type", &LLVMContextWrapper::x86_fp80_type)
-      .def("fp128_type", &LLVMContextWrapper::fp128_type)
-      .def("ppc_fp128_type", &LLVMContextWrapper::ppc_fp128_type)
-      .def("label_type", &LLVMContextWrapper::label_type)
-      .def("metadata_type", &LLVMContextWrapper::metadata_type)
-      .def("x86_amx_type", &LLVMContextWrapper::x86_amx_type)
-      .def("token_type", &LLVMContextWrapper::token_type)
-      .def("pointer_type", &LLVMContextWrapper::pointer_type,
-           "address_space"_a = 0)
-      .def("array_type", &LLVMContextWrapper::array_type, "elem_ty"_a,
-           "count"_a)
-      .def("vector_type", &LLVMContextWrapper::vector_type, "elem_ty"_a,
-           "elem_count"_a)
-      .def("scalable_vector_type", &LLVMContextWrapper::scalable_vector_type,
-           "elem_ty"_a, "elem_count"_a)
-      .def("target_ext_type", &LLVMContextWrapper::target_ext_type, "name"_a,
-           "type_params"_a, "int_params"_a)
-      .def("get_type_by_name", &LLVMContextWrapper::get_type_by_name, "name"_a)
-      .def("function_type", &LLVMContextWrapper::function_type, "ret_ty"_a,
-           "param_types"_a, "vararg"_a = false)
-      .def("struct_type", &LLVMContextWrapper::struct_type, "elem_types"_a,
-           "packed"_a = false)
-      .def("named_struct_type", &LLVMContextWrapper::named_struct_type,
-           "name"_a)
+      // Property-based type factory
+      .def_prop_ro("types", &LLVMContextWrapper::get_types)
       // Module/Builder creation
       .def("create_module", &LLVMContextWrapper::create_module, "name"_a,
            nb::rv_policy::take_ownership)
@@ -6099,16 +6489,9 @@ NB_MODULE(llvm, m) {
       R"(Get the global LLVM context (use sparingly).)");
 
   // Constant creation functions
-  m.def("const_int", &const_int, "ty"_a, "val"_a, "sign_extend"_a = false,
-        R"(Create an integer constant.)");
-  m.def("const_real", &const_real, "ty"_a, "val"_a,
-        R"(Create a floating-point constant.)");
-  m.def("const_null", &const_null, "ty"_a,
-        R"(Create a null pointer constant.)");
-  m.def("const_all_ones", &const_all_ones, "ty"_a,
-        R"(Create an all-ones constant.)");
-  m.def("undef", &get_undef, "ty"_a, R"(Create an undef value.)");
-  m.def("poison", &get_poison, "ty"_a, R"(Create a poison value.)");
+  // Note: Basic constant creation (const_int, const_real, const_null, etc.)
+  // is now available via Type methods: ty.constant(), ty.real_constant(), ty.null()
+  // The following are aggregate/advanced constant creation functions still needed:
   m.def("const_array", &const_array, "elem_ty"_a, "vals"_a,
         R"(Create an array constant.)");
   m.def("const_struct", &const_struct, "vals"_a, "packed"_a, "ctx"_a,
@@ -6117,16 +6500,16 @@ NB_MODULE(llvm, m) {
         R"(Create a vector constant.)");
   m.def("const_string", &const_string, "ctx"_a, "str"_a,
         "dont_null_terminate"_a = false, R"(Create a string constant.)");
-  m.def("const_pointer_null", &const_pointer_null, "ty"_a,
-        R"(Create a null pointer constant for a specific pointer type.)");
   m.def("const_named_struct", &const_named_struct, "struct_ty"_a, "vals"_a,
         R"(Create a named struct constant.)");
+  // Value inspection functions
   m.def("value_is_null", &value_is_null, "val"_a,
         R"(Check if a value is null.)");
   m.def("const_int_get_zext_value", &const_int_get_zext_value, "val"_a,
         R"(Get the zero-extended value of an integer constant.)");
   m.def("const_int_get_sext_value", &const_int_get_sext_value, "val"_a,
         R"(Get the sign-extended value of an integer constant.)");
+  // Advanced constant creation (for echo command and complex use cases)
   m.def(
       "const_int_of_arbitrary_precision", &const_int_of_arbitrary_precision,
       "ty"_a, "words"_a,

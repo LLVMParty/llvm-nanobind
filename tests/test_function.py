@@ -41,17 +41,17 @@ def linkage_name(linkage: llvm.Linkage) -> str:
 def main():
     with llvm.create_context() as ctx:
         with ctx.create_module("test_function") as mod:
-            i32 = ctx.int32_type()
-            i64 = ctx.int64_type()
-            void_ty = ctx.void_type()
-            ptr = ctx.pointer_type(0)
+            i32 = ctx.types.i32
+            i64 = ctx.types.i64
+            void_ty = ctx.types.void
+            ptr = ctx.types.ptr()
 
             # Function 1: void foo()
-            foo_ty = ctx.function_type(void_ty, [], vararg=False)
+            foo_ty = ctx.types.function(void_ty, [], vararg=False)
             foo = mod.add_function("foo", foo_ty)
 
             # Function 2: i32 bar(i32, i32)
-            bar_ty = ctx.function_type(i32, [i32, i32], vararg=False)
+            bar_ty = ctx.types.function(i32, [i32, i32], vararg=False)
             bar = mod.add_function("bar", bar_ty)
 
             # Set parameter names
@@ -62,7 +62,7 @@ def main():
 
             # Function 3: i64 baz(ptr, i32, i64) with internal linkage
             # Internal linkage requires a body, so we add a simple one
-            baz_ty = ctx.function_type(i64, [ptr, i32, i64], vararg=False)
+            baz_ty = ctx.types.function(i64, [ptr, i32, i64], vararg=False)
             baz = mod.add_function("baz", baz_ty)
             baz.linkage = llvm.Linkage.Internal
 
@@ -70,19 +70,19 @@ def main():
             with ctx.create_builder() as builder:
                 baz_entry = baz.append_basic_block("entry", ctx)
                 builder.position_at_end(baz_entry)
-                builder.ret(llvm.const_int(i64, 0))
+                builder.ret(i64.constant(0))
 
             # Function 4: varargs function - i32 printf(ptr, ...)
-            printf_ty = ctx.function_type(i32, [ptr], vararg=True)
+            printf_ty = ctx.types.function(i32, [ptr], vararg=True)
             printf_fn = mod.add_function("printf", printf_ty)
 
             # Function 5: Function with fastcc calling convention
-            fastcc_ty = ctx.function_type(i32, [i32], vararg=False)
+            fastcc_ty = ctx.types.function(i32, [i32], vararg=False)
             fastcc_fn = mod.add_function("fastcc_func", fastcc_ty)
             fastcc_fn.calling_conv = llvm.CallConv.Fast.value
 
             # Function 6: Will be deleted
-            delete_ty = ctx.function_type(void_ty, [], vararg=False)
+            delete_ty = ctx.types.function(void_ty, [], vararg=False)
             delete_fn = mod.add_function("to_be_deleted", delete_ty)
 
             # Get function by name

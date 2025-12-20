@@ -69,9 +69,9 @@ def test_syncscope_clone():
 
                 # Clone the function type using the destination module's context
                 # (This is what TypeCloner does in echo.py)
-                ptr_ty = dst_ctx.pointer_type(0)
-                void_ty = dst_ctx.void_type()
-                func_ty = dst_ctx.function_type(void_ty, [ptr_ty], False)
+                ptr_ty = dst_ctx.types.ptr()
+                void_ty = dst_ctx.types.void
+                func_ty = dst_ctx.types.function(void_ty, [ptr_ty], False)
 
                 # Add the function to the destination module
                 dst_func = dst.add_function("test", func_ty)
@@ -89,8 +89,8 @@ def test_syncscope_clone():
 
                     # Clone the atomic instruction using the DESTINATION parameter
                     # with the syncscope ID from the SOURCE instruction
-                    i8 = dst_ctx.int8_type()
-                    val = llvm.const_int(i8, 0)
+                    i8 = dst_ctx.types.i8
+                    val = i8.constant(0)
 
                     print(
                         f"Creating atomic with sync_scope_id={sync_scope_id}",

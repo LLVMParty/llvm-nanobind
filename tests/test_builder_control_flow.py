@@ -13,15 +13,15 @@ import llvm
 def main():
     with llvm.create_context() as ctx:
         with ctx.create_module("test_builder_control_flow") as mod:
-            i32 = ctx.int32_type()
-            i1 = ctx.int1_type()
-            void_ty = ctx.void_type()
+            i32 = ctx.types.i32
+            i1 = ctx.types.i1
+            void_ty = ctx.types.void
 
             with ctx.create_builder() as builder:
                 # ==========================================
                 # Function 1: void return
                 # ==========================================
-                void_func_ty = ctx.function_type(void_ty, [])
+                void_func_ty = ctx.types.function(void_ty, [])
                 void_func = mod.add_function("return_void", void_func_ty)
                 void_entry = void_func.append_basic_block("entry", ctx)
                 builder.position_at_end(void_entry)
@@ -30,7 +30,7 @@ def main():
                 # ==========================================
                 # Function 2: value return
                 # ==========================================
-                ret_func_ty = ctx.function_type(i32, [i32])
+                ret_func_ty = ctx.types.function(i32, [i32])
                 ret_func = mod.add_function("return_value", ret_func_ty)
                 ret_param = ret_func.get_param(0)
                 ret_param.name = "x"
@@ -55,7 +55,7 @@ def main():
                 # ==========================================
                 # Function 4: conditional branch
                 # ==========================================
-                cond_func_ty = ctx.function_type(i32, [i1])
+                cond_func_ty = ctx.types.function(i32, [i1])
                 cond_func = mod.add_function("conditional_branch", cond_func_ty)
                 cond_param = cond_func.get_param(0)
                 cond_param.name = "cond"
@@ -68,15 +68,15 @@ def main():
                 cond_br = builder.cond_br(cond_param, cond_true, cond_false)
 
                 builder.position_at_end(cond_true)
-                builder.ret(llvm.const_int(i32, 1))
+                builder.ret(i32.constant(1))
 
                 builder.position_at_end(cond_false)
-                builder.ret(llvm.const_int(i32, 0))
+                builder.ret(i32.constant(0))
 
                 # ==========================================
                 # Function 5: switch statement
                 # ==========================================
-                switch_func_ty = ctx.function_type(i32, [i32])
+                switch_func_ty = ctx.types.function(i32, [i32])
                 switch_func = mod.add_function("switch_example", switch_func_ty)
                 switch_param = switch_func.get_param(0)
                 switch_param.name = "val"
@@ -89,21 +89,21 @@ def main():
 
                 builder.position_at_end(switch_entry)
                 switch_inst = builder.switch_(switch_param, default_case, 3)
-                switch_inst.add_case(llvm.const_int(i32, 0), case_0)
-                switch_inst.add_case(llvm.const_int(i32, 1), case_1)
-                switch_inst.add_case(llvm.const_int(i32, 2), case_2)
+                switch_inst.add_case(i32.constant(0), case_0)
+                switch_inst.add_case(i32.constant(1), case_1)
+                switch_inst.add_case(i32.constant(2), case_2)
 
                 builder.position_at_end(case_0)
-                builder.ret(llvm.const_int(i32, 100))
+                builder.ret(i32.constant(100))
 
                 builder.position_at_end(case_1)
-                builder.ret(llvm.const_int(i32, 200))
+                builder.ret(i32.constant(200))
 
                 builder.position_at_end(case_2)
-                builder.ret(llvm.const_int(i32, 300))
+                builder.ret(i32.constant(300))
 
                 builder.position_at_end(default_case)
-                builder.ret(llvm.const_int(i32, -1, sign_extend=True))
+                builder.ret(i32.constant(-1, sign_extend=True))
 
                 # ==========================================
                 # Function 6: function call

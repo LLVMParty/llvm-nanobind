@@ -13,15 +13,15 @@ import llvm
 def main():
     with llvm.create_context() as ctx:
         with ctx.create_module("test_phi") as mod:
-            i1 = ctx.int1_type()
-            i32 = ctx.int32_type()
+            i1 = ctx.types.i1
+            i32 = ctx.types.i32
 
             with ctx.create_builder() as builder:
                 # ==========================================
                 # Function: simple diamond pattern with PHI
                 # i32 diamond(i1 cond, i32 a, i32 b)
                 # ==========================================
-                diamond_ty = ctx.function_type(i32, [i1, i32, i32])
+                diamond_ty = ctx.types.function(i32, [i1, i32, i32])
                 diamond_func = mod.add_function("diamond", diamond_ty)
 
                 cond = diamond_func.get_param(0)
@@ -42,12 +42,12 @@ def main():
 
                 # True branch: compute a * 2
                 builder.position_at_end(if_true)
-                a_doubled = builder.mul(a, llvm.const_int(i32, 2), "a_doubled")
+                a_doubled = builder.mul(a, i32.constant(2), "a_doubled")
                 builder.br(merge)
 
                 # False branch: compute b + 1
                 builder.position_at_end(if_false)
-                b_inc = builder.add(b, llvm.const_int(i32, 1), "b_inc")
+                b_inc = builder.add(b, i32.constant(1), "b_inc")
                 builder.br(merge)
 
                 # Merge: PHI node to select result
@@ -64,7 +64,7 @@ def main():
                 # Function: loop with PHI (sum 1 to n)
                 # i32 sum_to_n(i32 n)
                 # ==========================================
-                sum_ty = ctx.function_type(i32, [i32])
+                sum_ty = ctx.types.function(i32, [i32])
                 sum_func = mod.add_function("sum_to_n", sum_ty)
 
                 n = sum_func.get_param(0)
@@ -85,7 +85,7 @@ def main():
 
                 # Loop body: sum += i; i++
                 new_sum = builder.add(sum_phi, i_phi, "new_sum")
-                new_i = builder.add(i_phi, llvm.const_int(i32, 1), "new_i")
+                new_i = builder.add(i_phi, i32.constant(1), "new_i")
 
                 # Loop condition: i <= n
                 loop_cond = builder.icmp(llvm.IntPredicate.SLE, new_i, n, "loop_cond")
@@ -93,10 +93,10 @@ def main():
 
                 # Add incoming values to PHIs
                 # From entry: i=1, sum=0
-                i_phi.add_incoming(llvm.const_int(i32, 1), sum_entry)
+                i_phi.add_incoming(i32.constant(1), sum_entry)
                 i_phi.add_incoming(new_i, loop)
 
-                sum_phi.add_incoming(llvm.const_int(i32, 0), sum_entry)
+                sum_phi.add_incoming(i32.constant(0), sum_entry)
                 sum_phi.add_incoming(new_sum, loop)
 
                 # Exit: return sum

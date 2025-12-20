@@ -290,10 +290,10 @@ def test_dibuilder():
         )
 
         # Create function
-        i64_type = ctx.int64_type()
-        vec_type = ctx.vector_type(i64_type, 10)
+        i64_type = ctx.types.i64
+        vec_type = i64_type.vector(10)
         foo_param_tys = [i64_type, i64_type, vec_type]
-        foo_func_ty = ctx.function_type(i64_type, foo_param_tys, False)
+        foo_func_ty = ctx.types.function(i64_type, foo_param_tys, False)
         foo_function = mod.add_function("foo", foo_func_ty)
         foo_entry_block = foo_function.append_basic_block("entry", ctx)
 
@@ -337,7 +337,7 @@ def test_dibuilder():
         foo_param_var1 = llvm.dibuilder_create_parameter_variable(
             dib, function_md, "a", 1, file_md, 42, int64_ty, True, 0
         )
-        zero_val = llvm.const_int(i64_type, 0, False)
+        zero_val = i64_type.constant(0)
         llvm.dibuilder_insert_declare_record_at_end(
             dib,
             zero_val,
@@ -397,7 +397,7 @@ def test_dibuilder():
         foo_var1 = llvm.dibuilder_create_auto_variable(
             dib, foo_lexical_block, "d", file_md, 43, int64_ty, True, 0, 0
         )
-        foo_val1 = llvm.const_int(i64_type, 0, False)
+        foo_val1 = i64_type.constant(0)
         foo_var_value_expr1 = llvm.dibuilder_create_constant_value_expression(dib, 0)
         llvm.dibuilder_insert_dbg_value_record_at_end(
             dib,
@@ -411,7 +411,7 @@ def test_dibuilder():
         foo_var2 = llvm.dibuilder_create_auto_variable(
             dib, foo_lexical_block, "e", file_md, 44, int64_ty, True, 0, 0
         )
-        foo_val2 = llvm.const_int(i64_type, 1, False)
+        foo_val2 = i64_type.constant(1)
         foo_var_value_expr2 = llvm.dibuilder_create_constant_value_expression(dib, 1)
         llvm.dibuilder_insert_dbg_value_record_at_end(
             dib,
@@ -476,8 +476,8 @@ def test_dibuilder():
         )
 
         # Create subrange type with metadata bounds
-        foo_val3 = llvm.const_int(i64_type, 8, False)
-        foo_val4 = llvm.const_int(i64_type, 4, False)
+        foo_val3 = i64_type.constant(8)
+        foo_val4 = i64_type.constant(4)
         lo = llvm.value_as_metadata(foo_val1)
         hi = llvm.value_as_metadata(foo_val2)
         strd = llvm.value_as_metadata(foo_val3)

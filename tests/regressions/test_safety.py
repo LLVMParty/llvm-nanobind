@@ -52,12 +52,12 @@ def test_module_outlives_context_no_crash():
     with llvm.create_context() as ctx:
         # Create a module using the context manager (safe pattern)
         with ctx.create_module("inner") as m:
-            fn_ty = ctx.function_type(ctx.int32_type(), [], False)
+            fn_ty = ctx.types.function(ctx.types.i32, [], False)
             fn = m.add_function("bar", fn_ty)
             bb = fn.append_basic_block("entry", ctx)
             with ctx.create_builder() as builder:
                 builder.position_at_end(bb)
-                builder.ret(llvm.const_int(ctx.int32_type(), 99, False))
+                builder.ret(ctx.types.i32.constant(99, False))
 
         # Create another module directly (unsafe pattern - for testing)
         # This module will NOT be automatically disposed when context exits
@@ -94,12 +94,12 @@ def test_proper_cleanup_order():
     try:
         with llvm.create_context() as ctx:
             with ctx.create_module("test") as m:
-                fn_ty = ctx.function_type(ctx.int32_type(), [], False)
+                fn_ty = ctx.types.function(ctx.types.i32, [], False)
                 fn = m.add_function("foo", fn_ty)
                 bb = fn.append_basic_block("entry", ctx)
                 with ctx.create_builder() as builder:
                     builder.position_at_end(bb)
-                    builder.ret(llvm.const_int(ctx.int32_type(), 42, False))
+                    builder.ret(ctx.types.i32.constant(42, False))
 
                 # Module is valid here
                 ir = str(m)
@@ -126,7 +126,7 @@ def test_value_outlives_context():
     escaped_value = None
 
     with llvm.create_context() as ctx:
-        escaped_value = llvm.const_int(ctx.int32_type(), 123, False)
+        escaped_value = ctx.types.i32.constant(123, False)
         # Value is valid here
         assert escaped_value.is_constant
 
@@ -150,7 +150,7 @@ def test_type_outlives_context():
     escaped_type = None
 
     with llvm.create_context() as ctx:
-        escaped_type = ctx.int32_type()
+        escaped_type = ctx.types.i32
         # Type is valid here
         assert escaped_type.is_integer
 
@@ -199,7 +199,7 @@ def test_function_outlives_module():
 
     with llvm.create_context() as ctx:
         with ctx.create_module("test") as m:
-            fn_ty = ctx.function_type(ctx.int32_type(), [], False)
+            fn_ty = ctx.types.function(ctx.types.i32, [], False)
             escaped_fn = m.add_function("foo", fn_ty)
             # Function is valid here
             assert escaped_fn.name == "foo"
@@ -227,7 +227,7 @@ def test_basic_block_outlives_function():
 
     with llvm.create_context() as ctx:
         with ctx.create_module("test") as m:
-            fn_ty = ctx.function_type(ctx.void_type(), [], False)
+            fn_ty = ctx.types.function(ctx.types.void, [], False)
             fn = m.add_function("foo", fn_ty)
             escaped_bb = fn.append_basic_block("entry", ctx)
             # BB is valid here

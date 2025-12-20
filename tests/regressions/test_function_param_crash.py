@@ -16,8 +16,8 @@ import llvm
 with llvm.create_context() as ctx:
     with ctx.create_module("test") as mod:
         # Create source function
-        ptr_ty = ctx.pointer_type()
-        func_ty = ctx.function_type(ctx.void_type(), [ptr_ty])
+        ptr_ty = ctx.types.ptr()
+        func_ty = ctx.types.function(ctx.types.void, [ptr_ty])
         src_func = mod.add_function("source", func_ty)
 
         # Add a basic block to source

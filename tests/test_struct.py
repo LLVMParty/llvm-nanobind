@@ -13,21 +13,21 @@ import llvm
 def main():
     with llvm.create_context() as ctx:
         with ctx.create_module("test_struct") as mod:
-            i32 = ctx.int32_type()
-            void_ty = ctx.void_type()
-            ptr = ctx.pointer_type()
+            i32 = ctx.types.i32
+            void_ty = ctx.types.void
+            ptr = ctx.types.ptr()
 
             # ==========================================
             # Define Point struct: { i32 x, i32 y }
             # ==========================================
-            point_ty = ctx.named_struct_type("Point")
+            point_ty = ctx.types.opaque_struct("Point")
             point_ty.set_body([i32, i32], packed=False)
 
             with ctx.create_builder() as builder:
                 # ==========================================
                 # Function: void point_init(Point* p, i32 x, i32 y)
                 # ==========================================
-                init_ty = ctx.function_type(void_ty, [ptr, i32, i32])
+                init_ty = ctx.types.function(void_ty, [ptr, i32, i32])
                 init_func = mod.add_function("point_init", init_ty)
 
                 p = init_func.get_param(0)
@@ -53,7 +53,7 @@ def main():
                 # ==========================================
                 # Function: void point_add(Point* a, Point* b, Point* result)
                 # ==========================================
-                add_ty = ctx.function_type(void_ty, [ptr, ptr, ptr])
+                add_ty = ctx.types.function(void_ty, [ptr, ptr, ptr])
                 add_func = mod.add_function("point_add", add_ty)
 
                 a = add_func.get_param(0)
@@ -94,7 +94,7 @@ def main():
                 # Function: i32 point_manhattan_distance(Point* p)
                 # Returns |x| + |y| (simplified: just x + y for demo)
                 # ==========================================
-                dist_ty = ctx.function_type(i32, [ptr])
+                dist_ty = ctx.types.function(i32, [ptr])
                 dist_func = mod.add_function("point_manhattan", dist_ty)
 
                 dist_p = dist_func.get_param(0)
@@ -114,7 +114,7 @@ def main():
                 # Function: i32 test_points()
                 # Creates two points, adds them, returns manhattan distance
                 # ==========================================
-                test_ty = ctx.function_type(i32, [])
+                test_ty = ctx.types.function(i32, [])
                 test_func = mod.add_function("test_points", test_ty)
 
                 test_entry = test_func.append_basic_block("entry", ctx)
@@ -126,11 +126,11 @@ def main():
                 p3 = builder.alloca(point_ty, "p3")
 
                 # Initialize p1 = (3, 4)
-                init_args1 = [p1, llvm.const_int(i32, 3), llvm.const_int(i32, 4)]
+                init_args1 = [p1, i32.constant(3), i32.constant(4)]
                 builder.call(init_ty, init_func, init_args1, "")
 
                 # Initialize p2 = (1, 2)
-                init_args2 = [p2, llvm.const_int(i32, 1), llvm.const_int(i32, 2)]
+                init_args2 = [p2, i32.constant(1), i32.constant(2)]
                 builder.call(init_ty, init_func, init_args2, "")
 
                 # Add p1 + p2 -> p3
@@ -146,7 +146,7 @@ def main():
             # ==========================================
             # Global constant Point
             # ==========================================
-            origin_vals = [llvm.const_int(i32, 0), llvm.const_int(i32, 0)]
+            origin_vals = [i32.constant(0), i32.constant(0)]
             origin_const = llvm.const_named_struct(point_ty, origin_vals)
             origin_global = mod.add_global(point_ty, "origin")
             origin_global.set_initializer(origin_const)

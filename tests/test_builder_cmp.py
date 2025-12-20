@@ -51,16 +51,16 @@ def real_pred_name(pred):
 def main():
     with llvm.create_context() as ctx:
         with ctx.create_module("test_builder_cmp") as mod:
-            i1 = ctx.int1_type()
-            i32 = ctx.int32_type()
-            f64 = ctx.double_type()
-            void_ty = ctx.void_type()
+            i1 = ctx.types.i1
+            i32 = ctx.types.i32
+            f64 = ctx.types.f64
+            void_ty = ctx.types.void
 
             with ctx.create_builder() as builder:
                 # ==========================================
                 # Function 1: Integer comparisons
                 # ==========================================
-                icmp_ty = ctx.function_type(void_ty, [i32, i32])
+                icmp_ty = ctx.types.function(void_ty, [i32, i32])
                 icmp_func = mod.add_function("int_comparisons", icmp_ty)
                 a = icmp_func.get_param(0)
                 b = icmp_func.get_param(1)
@@ -87,7 +87,7 @@ def main():
                 # ==========================================
                 # Function 2: Float comparisons
                 # ==========================================
-                fcmp_ty = ctx.function_type(void_ty, [f64, f64])
+                fcmp_ty = ctx.types.function(void_ty, [f64, f64])
                 fcmp_func = mod.add_function("float_comparisons", fcmp_ty)
                 x = fcmp_func.get_param(0)
                 y = fcmp_func.get_param(1)
@@ -128,7 +128,7 @@ def main():
                 # ==========================================
                 # Function 3: Select instruction
                 # ==========================================
-                sel_ty = ctx.function_type(i32, [i1, i32, i32])
+                sel_ty = ctx.types.function(i32, [i1, i32, i32])
                 sel_func = mod.add_function("select_example", sel_ty)
                 cond = sel_func.get_param(0)
                 true_val = sel_func.get_param(1)
@@ -146,7 +146,7 @@ def main():
                 # ==========================================
                 # Function 4: Select with comparison
                 # ==========================================
-                max_ty = ctx.function_type(i32, [i32, i32])
+                max_ty = ctx.types.function(i32, [i32, i32])
                 max_func = mod.add_function("max", max_ty)
                 m_a = max_func.get_param(0)
                 m_b = max_func.get_param(1)

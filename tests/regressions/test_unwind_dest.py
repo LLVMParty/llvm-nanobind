@@ -13,17 +13,17 @@ def test_get_unwind_dest_returns_none_when_not_present():
     with llvm.create_context() as ctx:
         with ctx.create_module("test") as m:
             # Create a function with exception handling
-            void_ty = ctx.void_type()
-            i8_ptr_ty = ctx.pointer_type(0)
-            token_ty = ctx.token_type()
+            void_ty = ctx.types.void
+            i8_ptr_ty = ctx.types.ptr()
+            token_ty = ctx.types.token
 
             # Create personality function type
-            i32_ty = ctx.int32_type()
-            personality_ty = ctx.function_type(i32_ty, [], True)
+            i32_ty = ctx.types.i32
+            personality_ty = ctx.types.function(i32_ty, [], True)
             personality_fn = m.add_function("__personality", personality_ty)
 
             # Create main function
-            fn_ty = ctx.function_type(void_ty, [])
+            fn_ty = ctx.types.function(void_ty, [])
             fn = m.add_function("test_cleanup", fn_ty)
             fn.set_personality_fn(personality_fn)
 
@@ -38,7 +38,7 @@ def test_get_unwind_dest_returns_none_when_not_present():
                 # Cleanup block with cleanuppad and cleanupret (no unwind)
                 builder.position_at_end(cleanup_block)
                 # Create a cleanup pad with no parent (use a constant none token)
-                none_token = llvm.const_null(token_ty)
+                none_token = token_ty.null()
                 cleanup_pad = builder.cleanup_pad(none_token, [], "pad")
 
                 # Create cleanupret WITHOUT unwind destination
@@ -53,15 +53,15 @@ def test_get_unwind_dest_returns_block_when_present():
     """get_unwind_dest should return the block when it exists."""
     with llvm.create_context() as ctx:
         with ctx.create_module("test") as m:
-            void_ty = ctx.void_type()
-            i32_ty = ctx.int32_type()
+            void_ty = ctx.types.void
+            i32_ty = ctx.types.i32
 
             # Create personality function
-            personality_ty = ctx.function_type(i32_ty, [], True)
+            personality_ty = ctx.types.function(i32_ty, [], True)
             personality_fn = m.add_function("__personality", personality_ty)
 
             # Create main function
-            fn_ty = ctx.function_type(void_ty, [])
+            fn_ty = ctx.types.function(void_ty, [])
             fn = m.add_function("test_invoke", fn_ty)
             fn.set_personality_fn(personality_fn)
 
@@ -70,7 +70,7 @@ def test_get_unwind_dest_returns_block_when_present():
             unwind = fn.append_basic_block("unwind", ctx)
 
             # Create a simple function to invoke
-            callee_ty = ctx.function_type(void_ty, [])
+            callee_ty = ctx.types.function(void_ty, [])
             callee = m.add_function("may_throw", callee_ty)
 
             with ctx.create_builder() as builder:
@@ -85,7 +85,7 @@ def test_get_unwind_dest_returns_block_when_present():
 
                 builder.position_at_end(unwind)
                 landing = builder.landing_pad(
-                    ctx.struct_type([ctx.pointer_type(0), i32_ty]), 0, "lp"
+                    ctx.types.struct([ctx.types.ptr(), i32_ty]), 0, "lp"
                 )
                 landing.set_cleanup(True)
                 builder.ret_void()

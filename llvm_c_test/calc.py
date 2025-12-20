@@ -24,7 +24,7 @@ def op_to_opcode(op):
     return ops[op]
 
 
-def build_from_tokens(tokens, builder, param):
+def build_from_tokens(tokens, builder, param, i64_ty):
     """
     Build IR from RPN token list.
 
@@ -54,7 +54,6 @@ def build_from_tokens(tokens, builder, param):
                 return None
 
             offset = stack.pop()
-            i64_ty = llvm.global_context().int64_type()
             ptr = builder.gep(i64_ty, param, [offset], "")
             value = builder.load(i64_ty, ptr, "")
             stack.append(value)
@@ -67,8 +66,7 @@ def build_from_tokens(tokens, builder, param):
                 print("error parsing number")
                 return None
 
-            i64_ty = llvm.global_context().int64_type()
-            const = llvm.const_int(i64_ty, val, sign_extend=True)
+            const = i64_ty.constant(val, sign_extend=True)
             stack.append(const)
 
     if len(stack) < 1:
@@ -89,9 +87,9 @@ def handle_line(tokens):
     with llvm.create_context() as ctx:
         with ctx.create_module(name) as mod:
             # Create function type: i64(i64*)
-            i64_ty = ctx.int64_type()
-            i64_ptr_ty = ctx.pointer_type()
-            func_ty = ctx.function_type(i64_ty, [i64_ptr_ty], vararg=False)
+            i64_ty = ctx.types.i64
+            i64_ptr_ty = ctx.types.ptr()
+            func_ty = ctx.types.function(i64_ty, [i64_ptr_ty], vararg=False)
 
             # Add function
             func = mod.add_function(name, func_ty)
@@ -105,7 +103,7 @@ def handle_line(tokens):
             with ctx.create_builder() as builder:
                 builder.position_at_end(entry)
 
-                result = build_from_tokens(expr_tokens, builder, param)
+                result = build_from_tokens(expr_tokens, builder, param, i64_ty)
 
                 if result:
                     # Print module

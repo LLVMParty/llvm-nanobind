@@ -13,12 +13,12 @@ import llvm
 def main():
     with llvm.create_context() as ctx:
         with ctx.create_module("test_builder_arithmetic") as mod:
-            i32 = ctx.int32_type()
-            i64 = ctx.int64_type()
-            f64 = ctx.double_type()
+            i32 = ctx.types.i32
+            i64 = ctx.types.i64
+            f64 = ctx.types.f64
 
             # Integer arithmetic function: i32 int_arith(i32, i32)
-            int_func_ty = ctx.function_type(i32, [i32, i32])
+            int_func_ty = ctx.types.function(i32, [i32, i32])
             int_func = mod.add_function("int_arith", int_func_ty)
 
             a = int_func.get_param(0)
@@ -68,7 +68,7 @@ def main():
 
             # Floating point arithmetic function: f64 float_arith(f64, f64)
             with ctx.create_builder() as builder:
-                fp_func_ty = ctx.function_type(f64, [f64, f64])
+                fp_func_ty = ctx.types.function(f64, [f64, f64])
                 fp_func = mod.add_function("float_arith", fp_func_ty)
 
                 x = fp_func.get_param(0)

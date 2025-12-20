@@ -13,19 +13,19 @@ import llvm
 def main():
     with llvm.create_context() as ctx:
         with ctx.create_module("test_builder_memory") as mod:
-            i32 = ctx.int32_type()
-            i64 = ctx.int64_type()
-            ptr = ctx.pointer_type()
-            void_ty = ctx.void_type()
+            i32 = ctx.types.i32
+            i64 = ctx.types.i64
+            ptr = ctx.types.ptr()
+            void_ty = ctx.types.void
 
             # Array type for array alloca test
-            arr_ty = ctx.array_type(i32, 10)
+            arr_ty = i32.array(10)
 
             # Struct type for struct GEP test
-            struct_ty = ctx.struct_type([i32, i64, i32], packed=False)
+            struct_ty = ctx.types.struct([i32, i64, i32], packed=False)
 
             # Function: void memory_ops()
-            func_ty = ctx.function_type(void_ty, [])
+            func_ty = ctx.types.function(void_ty, [])
             func = mod.add_function("memory_ops", func_ty)
 
             with ctx.create_builder() as builder:
@@ -40,7 +40,7 @@ def main():
                 alloca_aligned.set_inst_alignment(16)
 
                 # Array alloca (dynamic size)
-                array_size = llvm.const_int(i32, 5)
+                array_size = i32.constant(5)
                 array_alloca = builder.array_alloca(i32, array_size, "dynamic_array")
 
                 # Static array alloca
@@ -50,7 +50,7 @@ def main():
                 struct_alloca = builder.alloca(struct_ty, "local_struct")
 
                 # Store and load
-                val = llvm.const_int(i32, 42)
+                val = i32.constant(42)
                 store = builder.store(val, alloca_i32)
                 load = builder.load(i32, alloca_i32, "loaded")
 
@@ -65,7 +65,7 @@ def main():
                 aligned_load.set_inst_alignment(16)
 
                 # GEP into array (static)
-                indices = [llvm.const_int(i64, 0), llvm.const_int(i64, 3)]
+                indices = [i64.constant(0), i64.constant(3)]
                 gep = builder.gep(arr_ty, static_array, indices, "arr_elem")
 
                 # Inbounds GEP
@@ -85,9 +85,9 @@ def main():
                 )
 
                 # Store to struct fields
-                builder.store(llvm.const_int(i32, 100), struct_gep_0)
-                builder.store(llvm.const_int(i64, 200), struct_gep_1)
-                builder.store(llvm.const_int(i32, 300), struct_gep_2)
+                builder.store(i32.constant(100), struct_gep_0)
+                builder.store(i64.constant(200), struct_gep_1)
+                builder.store(i32.constant(300), struct_gep_2)
 
                 # Load from struct fields
                 field_0_val = builder.load(i32, struct_gep_0, "field_0_val")

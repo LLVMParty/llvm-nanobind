@@ -19,8 +19,8 @@ def add_named_metadata_operand():
         with llvm.create_context() as ctx:
             with ctx.create_module("Mod") as mod:
                 # Create integer constant
-                i32 = ctx.int32_type()
-                val = llvm.const_int(i32, 0, False)
+                i32 = ctx.types.i32
+                val = i32.constant(0, False)
 
                 # Create metadata node and add to named metadata
                 # This used to trigger an assertion in the C API
@@ -44,8 +44,8 @@ def set_metadata():
                 ret_inst = builder.ret_void()
 
                 # Create metadata and set it on the instruction
-                i32 = ctx.int32_type()
-                val = llvm.const_int(i32, 0, False)
+                i32 = ctx.types.i32
+                val = i32.constant(0, False)
                 md_node = llvm.md_node([val])
 
                 kind_id = llvm.get_md_kind_id("kind")
@@ -74,8 +74,8 @@ def is_a_value_as_metadata():
         with llvm.create_context() as ctx:
             with ctx.create_module("Mod") as mod:
                 # Create integer constant
-                i32 = ctx.int32_type()
-                val = llvm.const_int(i32, 0, False)
+                i32 = ctx.types.i32
+                val = i32.constant(0, False)
 
                 # Create metadata node
                 md_node = llvm.md_node([val])
