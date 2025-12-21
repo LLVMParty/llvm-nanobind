@@ -18,8 +18,8 @@ def get_di_tag():
     ctx = llvm.global_context()
     with ctx.create_module("Mod") as mod:
         # Create metadata string and node
-        string_md = llvm.md_string_in_context_2(ctx, "foo")
-        node_md = llvm.md_node_in_context_2(ctx, [string_md])
+        string_md = ctx.md_string("foo")
+        node_md = ctx.md_node([string_md])
 
         # Get tag from node (should be 0 for generic node)
         tag = llvm.get_di_node_tag(node_md)
@@ -265,9 +265,7 @@ def test_dibuilder():
             struct_dbg_ptr_ty = dib.create_pointer_type(struct_dbg_ty, 192, 0, 0, "")
 
             # Add to named metadata
-            llvm.add_named_metadata_operand(
-                mod, "FooType", llvm.metadata_as_value(ctx, struct_dbg_ptr_ty)
-            )
+            mod.add_named_metadata_operand("FooType", struct_dbg_ptr_ty)
 
             # Create function
             i64_type = ctx.types.i64
@@ -301,7 +299,7 @@ def test_dibuilder():
             )
 
             # Replace temporary metadata
-            llvm.metadata_replace_all_uses_with(replaceable_function_md, function_md)
+            replaceable_function_md.replace_all_uses_with(function_md)
 
             # Replace function type
             llvm.di_subprogram_replace_type(function_md, function_ty)
@@ -406,9 +404,7 @@ def test_dibuilder():
             enum_test = dib.create_enumeration_type(
                 namespace, "EnumTest", file_md, 0, 64, 0, enumerators_test, int64_ty
             )
-            llvm.add_named_metadata_operand(
-                mod, "EnumTest", llvm.metadata_as_value(ctx, enum_test)
-            )
+            mod.add_named_metadata_operand("EnumTest", enum_test)
 
             # Create UInt128 type and large enumerators
             uint128_ty = dib.create_basic_type("UInt128", 128, 0, llvm.DIFlagZero)
@@ -433,9 +429,7 @@ def test_dibuilder():
                 large_enumerators,
                 uint128_ty,
             )
-            llvm.add_named_metadata_operand(
-                mod, "LargeEnumTest", llvm.metadata_as_value(ctx, large_enum_test)
-            )
+            mod.add_named_metadata_operand("LargeEnumTest", large_enum_test)
 
             # Create subrange type with metadata bounds
             foo_val3 = i64_type.constant(8)
@@ -448,9 +442,7 @@ def test_dibuilder():
             subrange_md_ty = dib.create_subrange_type(
                 file_md, "foo", 42, file_md, 64, 0, 0, int64_ty, lo, hi, strd, bias
             )
-            llvm.add_named_metadata_operand(
-                mod, "SubrangeType", llvm.metadata_as_value(ctx, subrange_md_ty)
-            )
+            mod.add_named_metadata_operand("SubrangeType", subrange_md_ty)
 
             # Create set types
             set_md_ty1 = dib.create_set_type(
@@ -459,12 +451,8 @@ def test_dibuilder():
             set_md_ty2 = dib.create_set_type(
                 file_md, "subrangeset", file_md, 42, 64, 0, subrange_md_ty
             )
-            llvm.add_named_metadata_operand(
-                mod, "SetType1", llvm.metadata_as_value(ctx, set_md_ty1)
-            )
-            llvm.add_named_metadata_operand(
-                mod, "SetType2", llvm.metadata_as_value(ctx, set_md_ty2)
-            )
+            mod.add_named_metadata_operand("SetType1", set_md_ty1)
+            mod.add_named_metadata_operand("SetType2", set_md_ty2)
 
             # Create dynamic array type
             dyn_subscripts = [dib.get_or_create_subrange(0, 10)]
@@ -485,9 +473,7 @@ def test_dibuilder():
                 rank_expr,
                 None,
             )
-            llvm.add_named_metadata_operand(
-                mod, "DynType", llvm.metadata_as_value(ctx, dynamic_array_md_ty)
-            )
+            mod.add_named_metadata_operand("DynType", dynamic_array_md_ty)
 
             # Create forward declaration
             struct_p_ty = dib.create_forward_decl(
@@ -499,9 +485,7 @@ def test_dibuilder():
             struct_elts_array = [int64_ty, int64_ty, int32_ty]
             class_arr = dib.get_or_create_array(struct_elts_array)
             dib.replace_arrays([struct_p_ty], [class_arr])
-            llvm.add_named_metadata_operand(
-                mod, "ClassType", llvm.metadata_as_value(ctx, struct_p_ty)
-            )
+            mod.add_named_metadata_operand("ClassType", struct_p_ty)
 
             # Build IR instructions
             with ctx.create_builder() as builder:

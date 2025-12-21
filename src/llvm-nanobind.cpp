@@ -1852,6 +1852,34 @@ struct LLVMValueWrapper {
   // Convert value to metadata - declared here, implemented after
   // LLVMMetadataWrapper
   LLVMMetadataWrapper as_metadata() const;
+
+  // Callsite attribute methods (for call/invoke instructions)
+  unsigned get_callsite_attribute_count(int idx) const {
+    check_valid();
+    return LLVMGetCallSiteAttributeCount(m_ref, static_cast<unsigned>(idx));
+  }
+
+  std::optional<LLVMAttributeWrapper>
+  get_callsite_enum_attribute(int idx, unsigned kind_id) const {
+    check_valid();
+    LLVMAttributeRef ref =
+        LLVMGetCallSiteEnumAttribute(m_ref, static_cast<unsigned>(idx), kind_id);
+    if (!ref)
+      return std::nullopt;
+    return LLVMAttributeWrapper(ref, m_context_token);
+  }
+
+  void add_callsite_attribute(int idx, const LLVMAttributeWrapper &attr) {
+    check_valid();
+    attr.check_valid();
+    LLVMAddCallSiteAttribute(m_ref, static_cast<unsigned>(idx), attr.m_ref);
+  }
+
+  // Unified set_metadata - works for both instructions and globals
+  // Declared here, implemented after LLVMMetadataWrapper
+  // Takes a context for converting metadata to value (needed for instructions)
+  void set_metadata(unsigned kind, const LLVMMetadataWrapper &md,
+                    LLVMContextWrapper &ctx);
 };
 
 // =============================================================================
@@ -2093,6 +2121,28 @@ struct LLVMFunctionWrapper : LLVMValueWrapper {
     if (!prev)
       return std::nullopt;
     return LLVMFunctionWrapper(prev, m_context_token);
+  }
+
+  // Attribute methods (moved from global functions)
+  unsigned get_attribute_count(int idx) const {
+    check_valid();
+    return LLVMGetAttributeCountAtIndex(m_ref, static_cast<unsigned>(idx));
+  }
+
+  std::optional<LLVMAttributeWrapper> get_enum_attribute(int idx,
+                                                         unsigned kind_id) const {
+    check_valid();
+    LLVMAttributeRef ref =
+        LLVMGetEnumAttributeAtIndex(m_ref, static_cast<unsigned>(idx), kind_id);
+    if (!ref)
+      return std::nullopt;
+    return LLVMAttributeWrapper(ref, m_context_token);
+  }
+
+  void add_attribute(int idx, const LLVMAttributeWrapper &attr) {
+    check_valid();
+    attr.check_valid();
+    LLVMAddAttributeAtIndex(m_ref, static_cast<unsigned>(idx), attr.m_ref);
   }
 };
 
@@ -3725,6 +3775,11 @@ struct LLVMModuleWrapper : NoMoveCopy {
     LLVMSetModuleInlineAsm2(m_ref, asm_str.c_str(), asm_str.size());
   }
 
+  // Add named metadata operand - takes LLVMMetadataWrapper
+  // Declared here, implemented after LLVMMetadataWrapper
+  void add_named_metadata_operand(const std::string &name,
+                                  const LLVMMetadataWrapper &md);
+
   // Clone - returns a ModuleManager that must be used with 'with' or .dispose()
   LLVMModuleManager *clone() const;
 
@@ -4053,6 +4108,18 @@ struct LLVMContextWrapper : NoMoveCopy {
     LLVMBasicBlockRef bb = LLVMCreateBasicBlockInContext(m_ref, name.c_str());
     return LLVMBasicBlockWrapper(bb, m_token);
   }
+
+  // Attribute creation method (moved from global function)
+  LLVMAttributeWrapper create_enum_attribute(unsigned kind_id, uint64_t val) {
+    check_valid();
+    LLVMAttributeRef ref = LLVMCreateEnumAttribute(m_ref, kind_id, val);
+    return LLVMAttributeWrapper(ref, m_token);
+  }
+
+  // Metadata creation methods - declared here, implemented after
+  // LLVMMetadataWrapper
+  LLVMMetadataWrapper md_string(const std::string &str);
+  LLVMMetadataWrapper md_node(const std::vector<LLVMMetadataWrapper> &mds);
 
   // Module creation (returns context manager) - defined after LLVMModuleManager
   LLVMModuleManager *create_module(const std::string &name);
@@ -5654,6 +5721,20 @@ struct LLVMMetadataWrapper {
     if (!m_context_token || !m_context_token->is_valid())
       throw LLVMMemoryError("Metadata used after context was destroyed");
   }
+
+  // Convert metadata to value (requires context)
+  LLVMValueWrapper as_value(LLVMContextWrapper &ctx) const {
+    check_valid();
+    ctx.check_valid();
+    return LLVMValueWrapper(LLVMMetadataAsValue(ctx.m_ref, m_ref), ctx.m_token);
+  }
+
+  // Replace all uses of this temporary metadata with another
+  void replace_all_uses_with(const LLVMMetadataWrapper &md) {
+    check_valid();
+    md.check_valid();
+    LLVMMetadataReplaceAllUsesWith(m_ref, md.m_ref);
+  }
 };
 
 // Implementation of get_metadata for ValueMetadataEntriesWrapper
@@ -5671,6 +5752,58 @@ inline LLVMMetadataWrapper LLVMValueMetadataEntriesWrapper_get_metadata(
 inline LLVMMetadataWrapper LLVMValueWrapper::as_metadata() const {
   check_valid();
   return LLVMMetadataWrapper(LLVMValueAsMetadata(m_ref), m_context_token);
+}
+
+// Implementation of LLVMValueWrapper::set_metadata() - unified for instructions
+// and globals. Takes a context wrapper to convert metadata to value when needed.
+inline void LLVMValueWrapper::set_metadata(unsigned kind,
+                                           const LLVMMetadataWrapper &md,
+                                           LLVMContextWrapper &ctx) {
+  check_valid();
+  md.check_valid();
+  ctx.check_valid();
+  // Check if this is a global value or an instruction
+  if (LLVMIsAGlobalValue(m_ref)) {
+    LLVMGlobalSetMetadata(m_ref, kind, md.m_ref);
+  } else {
+    // For instructions, convert metadata to value using provided context
+    LLVMValueRef md_val = LLVMMetadataAsValue(ctx.m_ref, md.m_ref);
+    LLVMSetMetadata(m_ref, kind, md_val);
+  }
+}
+
+// Implementation of LLVMContextWrapper::md_string() - needs LLVMMetadataWrapper
+inline LLVMMetadataWrapper
+LLVMContextWrapper::md_string(const std::string &str) {
+  check_valid();
+  return LLVMMetadataWrapper(
+      LLVMMDStringInContext2(m_ref, str.c_str(), str.size()), m_token);
+}
+
+// Implementation of LLVMContextWrapper::md_node() - needs LLVMMetadataWrapper
+inline LLVMMetadataWrapper
+LLVMContextWrapper::md_node(const std::vector<LLVMMetadataWrapper> &mds) {
+  check_valid();
+  std::vector<LLVMMetadataRef> refs;
+  refs.reserve(mds.size());
+  for (const auto &md : mds) {
+    md.check_valid();
+    refs.push_back(md.m_ref);
+  }
+  return LLVMMetadataWrapper(LLVMMDNodeInContext2(m_ref, refs.data(), refs.size()),
+                             m_token);
+}
+
+// Implementation of LLVMModuleWrapper::add_named_metadata_operand() - needs
+// LLVMMetadataWrapper
+inline void
+LLVMModuleWrapper::add_named_metadata_operand(const std::string &name,
+                                              const LLVMMetadataWrapper &md) {
+  check_valid();
+  md.check_valid();
+  // Need to convert metadata to value first for LLVMAddNamedMetadataOperand
+  LLVMValueRef val = LLVMMetadataAsValue(m_ctx_ref, md.m_ref);
+  LLVMAddNamedMetadataOperand(m_ref, name.c_str(), val);
 }
 
 // =============================================================================
@@ -7024,7 +7157,21 @@ NB_MODULE(llvm, m) {
       .def("as_metadata", &LLVMValueWrapper::as_metadata,
            R"(Convert value to metadata.)")
       .def("delete_instruction", &LLVMValueWrapper::delete_instruction,
-           R"(Delete this instruction from its parent basic block.)");
+           R"(Delete this instruction from its parent basic block.)")
+      // Callsite attribute methods (for call/invoke instructions)
+      .def("get_callsite_attribute_count",
+           &LLVMValueWrapper::get_callsite_attribute_count, "idx"_a,
+           R"(Get the number of callsite attributes at the given index.)")
+      .def("get_callsite_enum_attribute",
+           &LLVMValueWrapper::get_callsite_enum_attribute, "idx"_a, "kind_id"_a,
+           R"(Get an enum attribute at the given callsite index. Returns None if not found.)")
+      .def("add_callsite_attribute", &LLVMValueWrapper::add_callsite_attribute,
+           "idx"_a, "attr"_a,
+           R"(Add an attribute to a callsite at the given index.)")
+      // Unified metadata method for instructions and globals
+      .def("set_metadata", &LLVMValueWrapper::set_metadata, "kind"_a, "md"_a,
+           "ctx"_a,
+           R"(Set metadata on this value (works for both instructions and globals).)");
 
   // BasicBlock wrapper
   nb::class_<LLVMBasicBlockWrapper>(m, "BasicBlock")
@@ -7078,7 +7225,15 @@ NB_MODULE(llvm, m) {
       .def("last_param", &LLVMFunctionWrapper::last_param)
       // Echo command support - function iteration
       .def_prop_ro("next_function", &LLVMFunctionWrapper::next_function)
-      .def_prop_ro("prev_function", &LLVMFunctionWrapper::prev_function);
+      .def_prop_ro("prev_function", &LLVMFunctionWrapper::prev_function)
+      // Attribute methods (moved from global functions)
+      .def("get_attribute_count", &LLVMFunctionWrapper::get_attribute_count,
+           "idx"_a, R"(Get the number of attributes at the given index.)")
+      .def("get_enum_attribute", &LLVMFunctionWrapper::get_enum_attribute,
+           "idx"_a, "kind_id"_a,
+           R"(Get an enum attribute at the given index. Returns None if not found.)")
+      .def("add_attribute", &LLVMFunctionWrapper::add_attribute, "idx"_a,
+           "attr"_a, R"(Add an attribute to this function at the given index.)");
 
   // Builder wrapper
   nb::class_<LLVMBuilderWrapper>(m, "Builder")
@@ -7367,7 +7522,11 @@ NB_MODULE(llvm, m) {
       // Inline assembly support
       .def_prop_rw("inline_asm", &LLVMModuleWrapper::get_inline_asm,
                    &LLVMModuleWrapper::set_inline_asm)
-      .def("clone", &LLVMModuleWrapper::clone, nb::rv_policy::take_ownership);
+      .def("clone", &LLVMModuleWrapper::clone, nb::rv_policy::take_ownership)
+      // Named metadata operand (moved from global function)
+      .def("add_named_metadata_operand",
+           &LLVMModuleWrapper::add_named_metadata_operand, "name"_a, "md"_a,
+           R"(Add operand to named metadata.)");
 
   // TypeFactory wrapper (property-based type namespace)
   nb::class_<LLVMTypeFactoryWrapper>(m, "TypeFactory")
@@ -7436,7 +7595,15 @@ NB_MODULE(llvm, m) {
            nb::rv_policy::take_ownership, "Parse LLVM IR from string")
       // Diagnostics
       .def("get_diagnostics", &LLVMContextWrapper::get_diagnostics)
-      .def("clear_diagnostics", &LLVMContextWrapper::clear_diagnostics);
+      .def("clear_diagnostics", &LLVMContextWrapper::clear_diagnostics)
+      // Attribute creation method (moved from global function)
+      .def("create_enum_attribute", &LLVMContextWrapper::create_enum_attribute,
+           "kind_id"_a, "val"_a, R"(Create an enum attribute.)")
+      // Metadata creation methods (moved from global functions)
+      .def("md_string", &LLVMContextWrapper::md_string, "str"_a,
+           R"(Create metadata string in context.)")
+      .def("md_node", &LLVMContextWrapper::md_node, "mds"_a,
+           R"(Create metadata node in context from metadata refs.)");
 
   // Context manager
   nb::class_<LLVMContextManager>(m, "ContextManager")
@@ -7828,140 +7995,13 @@ NB_MODULE(llvm, m) {
   m.attr("AttributeFunctionIndex") =
       nb::int_(static_cast<int>(LLVMAttributeFunctionIndex));
 
-  // Attribute functions
-  m.def(
-      "get_attribute_count_at_index",
-      [](const LLVMFunctionWrapper &func, int idx) {
-        func.check_valid();
-        return LLVMGetAttributeCountAtIndex(func.m_ref,
-                                            static_cast<unsigned>(idx));
-      },
-      "func"_a, "idx"_a, R"(Get the number of attributes at the given index.)");
-
-  m.def(
-      "get_callsite_attribute_count",
-      [](const LLVMValueWrapper &call_inst, int idx) {
-        call_inst.check_valid();
-        return LLVMGetCallSiteAttributeCount(call_inst.m_ref,
-                                             static_cast<unsigned>(idx));
-      },
-      "call_inst"_a, "idx"_a,
-      R"(Get the number of call site attributes at the given index.)");
-
-  // Additional attribute functions for echo command
+  // Static attribute function (kept as global - no object context needed)
   m.def(
       "get_last_enum_attribute_kind",
       []() { return LLVMGetLastEnumAttributeKind(); },
       R"(Get the last enum attribute kind (highest attribute number).)");
 
-  m.def(
-      "create_enum_attribute",
-      [](const LLVMContextWrapper &ctx, unsigned kind_id, uint64_t val) {
-        ctx.check_valid();
-        LLVMAttributeRef ref = LLVMCreateEnumAttribute(ctx.m_ref, kind_id, val);
-        return LLVMAttributeWrapper(ref, ctx.m_token);
-      },
-      "ctx"_a, "kind_id"_a, "val"_a, R"(Create an enum attribute.)");
-
-  m.def(
-      "get_enum_attribute_at_index",
-      [](const LLVMFunctionWrapper &func, int idx,
-         unsigned kind_id) -> std::optional<LLVMAttributeWrapper> {
-        func.check_valid();
-        LLVMAttributeRef ref = LLVMGetEnumAttributeAtIndex(
-            func.m_ref, static_cast<unsigned>(idx), kind_id);
-        if (!ref)
-          return std::nullopt;
-        return LLVMAttributeWrapper(ref, func.m_context_token);
-      },
-      "func"_a, "idx"_a, "kind_id"_a,
-      R"(Get an enum attribute at the given index on a function. Returns None if not found.)");
-
-  m.def(
-      "add_attribute_at_index",
-      [](LLVMFunctionWrapper &func, int idx, const LLVMAttributeWrapper &attr) {
-        func.check_valid();
-        attr.check_valid();
-        LLVMAddAttributeAtIndex(func.m_ref, static_cast<unsigned>(idx),
-                                attr.m_ref);
-      },
-      "func"_a, "idx"_a, "attr"_a,
-      R"(Add an attribute to a function at the given index.)");
-
-  m.def(
-      "get_callsite_enum_attribute",
-      [](const LLVMValueWrapper &call_inst, int idx,
-         unsigned kind_id) -> std::optional<LLVMAttributeWrapper> {
-        call_inst.check_valid();
-        LLVMAttributeRef ref = LLVMGetCallSiteEnumAttribute(
-            call_inst.m_ref, static_cast<unsigned>(idx), kind_id);
-        if (!ref)
-          return std::nullopt;
-        return LLVMAttributeWrapper(ref, call_inst.m_context_token);
-      },
-      "call_inst"_a, "idx"_a, "kind_id"_a,
-      R"(Get an enum attribute at the given call site index. Returns None if not found.)");
-
-  m.def(
-      "add_callsite_attribute",
-      [](LLVMValueWrapper &call_inst, int idx,
-         const LLVMAttributeWrapper &attr) {
-        call_inst.check_valid();
-        attr.check_valid();
-        LLVMAddCallSiteAttribute(call_inst.m_ref, static_cast<unsigned>(idx),
-                                 attr.m_ref);
-      },
-      "call_inst"_a, "idx"_a, "attr"_a,
-      R"(Add an attribute to a call site at the given index.)");
-
-  // Global metadata functions for echo command
-  m.def(
-      "global_set_metadata",
-      [](LLVMValueWrapper &global_val, unsigned kind,
-         const LLVMMetadataWrapper &md) {
-        global_val.check_valid();
-        md.check_valid();
-        LLVMGlobalSetMetadata(global_val.m_ref, kind, md.m_ref);
-      },
-      "global_val"_a, "kind"_a, "md"_a,
-      R"(Set metadata on a global value at the given kind.)");
-
-  // Metadata functions
-  m.def(
-      "md_node",
-      [](const std::vector<LLVMValueWrapper> &vals) {
-        std::vector<LLVMValueRef> refs;
-        refs.reserve(vals.size());
-        for (const auto &v : vals) {
-          v.check_valid();
-          refs.push_back(v.m_ref);
-        }
-        return LLVMValueWrapper(
-            LLVMMDNode(refs.data(), static_cast<unsigned>(refs.size())),
-            vals.empty() ? nullptr : vals[0].m_context_token);
-      },
-      "vals"_a, R"(Create metadata node from values (global context).)");
-
-  m.def(
-      "add_named_metadata_operand",
-      [](LLVMModuleWrapper &mod, const std::string &name,
-         const LLVMValueWrapper &val) {
-        mod.check_valid();
-        val.check_valid();
-        LLVMAddNamedMetadataOperand(mod.m_ref, name.c_str(), val.m_ref);
-      },
-      "mod"_a, "name"_a, "val"_a, R"(Add operand to named metadata.)");
-
-  m.def(
-      "set_metadata",
-      [](LLVMValueWrapper &inst, unsigned kind_id,
-         const LLVMValueWrapper &val) {
-        inst.check_valid();
-        val.check_valid();
-        LLVMSetMetadata(inst.m_ref, kind_id, val.m_ref);
-      },
-      "inst"_a, "kind_id"_a, "val"_a, R"(Set metadata on instruction.)");
-
+  // Static metadata function (kept as global - no object context needed)
   m.def(
       "get_md_kind_id",
       [](const std::string &name) {
@@ -8202,37 +8242,11 @@ Use with 'with' statement:
         dib.finalize()
 )");
 
-  nb::class_<LLVMMetadataWrapper>(m, "Metadata");
-
-  m.def(
-      "md_string_in_context_2",
-      [](LLVMContextWrapper &ctx,
-         const std::string &str) -> LLVMMetadataWrapper {
-        ctx.check_valid();
-        return LLVMMetadataWrapper(
-            LLVMMDStringInContext2(ctx.m_ref, str.c_str(), str.size()),
-            ctx.m_token);
-      },
-      "ctx"_a, "str"_a,
-      R"(Create metadata string in context (returns LLVMMetadataRef).)");
-
-  m.def(
-      "md_node_in_context_2",
-      [](LLVMContextWrapper &ctx,
-         const std::vector<LLVMMetadataWrapper> &mds) -> LLVMMetadataWrapper {
-        ctx.check_valid();
-        std::vector<LLVMMetadataRef> refs;
-        refs.reserve(mds.size());
-        for (const auto &md : mds) {
-          md.check_valid();
-          refs.push_back(md.m_ref);
-        }
-        return LLVMMetadataWrapper(
-            LLVMMDNodeInContext2(ctx.m_ref, refs.data(), refs.size()),
-            ctx.m_token);
-      },
-      "ctx"_a, "mds"_a,
-      R"(Create metadata node in context from metadata refs.)");
+  nb::class_<LLVMMetadataWrapper>(m, "Metadata")
+      .def("as_value", &LLVMMetadataWrapper::as_value, "ctx"_a,
+           R"(Convert metadata to value.)")
+      .def("replace_all_uses_with", &LLVMMetadataWrapper::replace_all_uses_with,
+           "md"_a, R"(Replace all uses of this temporary metadata.)");
 
   m.def(
       "get_di_node_tag",
@@ -8269,17 +8283,6 @@ Use with 'with' statement:
       R"(Create debug location.)");
 
   m.def(
-      "metadata_as_value",
-      [](LLVMContextWrapper &ctx,
-         const LLVMMetadataWrapper &md) -> LLVMValueWrapper {
-        ctx.check_valid();
-        md.check_valid();
-        return LLVMValueWrapper(LLVMMetadataAsValue(ctx.m_ref, md.m_ref),
-                                ctx.m_token);
-      },
-      "ctx"_a, "md"_a, R"(Convert metadata to value.)");
-
-  m.def(
       "set_subprogram",
       [](LLVMFunctionWrapper &func, const LLVMMetadataWrapper &sp) {
         func.check_valid();
@@ -8287,16 +8290,6 @@ Use with 'with' statement:
         LLVMSetSubprogram(func.m_ref, sp.m_ref);
       },
       "func"_a, "sp"_a, R"(Set subprogram metadata for function.)");
-
-  // Metadata operations
-  m.def(
-      "metadata_replace_all_uses_with",
-      [](LLVMMetadataWrapper &temp_md, const LLVMMetadataWrapper &md) {
-        temp_md.check_valid();
-        md.check_valid();
-        LLVMMetadataReplaceAllUsesWith(temp_md.m_ref, md.m_ref);
-      },
-      "temp_md"_a, "md"_a, R"(Replace all uses of temporary metadata.)");
 
   m.def(
       "di_subprogram_replace_type",

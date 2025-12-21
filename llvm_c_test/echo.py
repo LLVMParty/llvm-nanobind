@@ -424,11 +424,11 @@ class FunCloner:
         # Params start at index 1
         for idx in range(llvm.AttributeFunctionIndex, src.get_num_arg_operands() + 1):
             for kind in range(1, last_kind + 1):
-                attr = llvm.get_callsite_enum_attribute(src, idx, kind)
+                attr = src.get_callsite_enum_attribute(idx, kind)
                 if attr is not None:
                     # Create a copy of the attribute in the destination context
-                    new_attr = llvm.create_enum_attribute(ctx, attr.kind, attr.value)
-                    llvm.add_callsite_attribute(dst, idx, new_attr)
+                    new_attr = ctx.create_enum_attribute(attr.kind, attr.value)
+                    dst.add_callsite_attribute(idx, new_attr)
 
     def clone_instruction(self, src: llvm.Value, builder: llvm.Builder) -> llvm.Value:
         """Clone a single instruction."""
@@ -936,7 +936,7 @@ class FunCloner:
         for i in range(len(all_metadata)):
             kind = all_metadata.get_kind(i)
             md = all_metadata.get_metadata(i)
-            llvm.set_metadata(dst, kind, llvm.metadata_as_value(ctx, md))
+            dst.set_metadata(kind, md, ctx)
 
         check_value_kind(dst, llvm.ValueKind.Instruction)
         self.vmap[src] = dst
@@ -1080,11 +1080,11 @@ def declare_symbols(src: llvm.Module, m: llvm.Module) -> None:
         last_kind = llvm.get_last_enum_attribute_kind()
         for i in range(llvm.AttributeFunctionIndex, cur.param_count + 1):
             for k in range(1, last_kind + 1):
-                src_a = llvm.get_enum_attribute_at_index(cur, i, k)
+                src_a = cur.get_enum_attribute(i, k)
                 if src_a:
                     val = src_a.value
-                    dst_a = llvm.create_enum_attribute(ctx, k, val)
-                    llvm.add_attribute_at_index(f, i, dst_a)
+                    dst_a = ctx.create_enum_attribute(k, val)
+                    f.add_attribute(i, dst_a)
 
         cur = cur.next_function
 
@@ -1190,11 +1190,12 @@ def clone_symbols(src: llvm.Module, m: llvm.Module) -> None:
                 g.set_initializer(clone_constant(init, m))
 
             # Copy global metadata
+            ctx = llvm.get_module_context(m)
             all_metadata = cur.global_copy_all_metadata()
             for i in range(len(all_metadata)):
                 kind = all_metadata.get_kind(i)
                 md = all_metadata.get_metadata(i)
-                llvm.global_set_metadata(global_val=g, kind=kind, md=md)
+                g.set_metadata(kind, md, ctx)
 
             g.set_constant(cur.is_global_constant())
             g.set_thread_local(cur.is_thread_local())
@@ -1240,11 +1241,12 @@ def clone_symbols(src: llvm.Module, m: llvm.Module) -> None:
                 fun.set_personality_fn(p)
 
             # Copy function metadata
+            ctx = llvm.get_module_context(m)
             all_metadata = cur.global_copy_all_metadata()
             for i in range(len(all_metadata)):
                 kind = all_metadata.get_kind(i)
                 md = all_metadata.get_metadata(i)
-                llvm.global_set_metadata(global_val=fun, kind=kind, md=md)
+                fun.set_metadata(kind, md, ctx)
 
             # Copy prefix and prologue data
             if cur.has_prefix_data():
@@ -1352,7 +1354,9 @@ def clone_symbols(src: llvm.Module, m: llvm.Module) -> None:
             operand_count = src.get_named_metadata_num_operands(name)
             operands = src.get_named_metadata_operands(name)
             for op in operands:
-                llvm.add_named_metadata_operand(m, name, op)
+                # Convert value to metadata before adding
+                md = op.as_metadata()
+                m.add_named_metadata_operand(name, md)
 
             next_md = cur_md.next
             if next_md is None:

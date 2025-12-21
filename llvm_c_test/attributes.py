@@ -27,7 +27,7 @@ def test_function_attributes():
                 # AttributeFunctionIndex is -1, so iterate from -1 to param_count
                 idx = llvm.AttributeFunctionIndex
                 while idx <= param_count:
-                    attr_count = llvm.get_attribute_count_at_index(func, idx)
+                    attr_count = func.get_attribute_count(idx)
                     idx += 1
                     # The C version allocates and frees but doesn't use the attributes
                     # We just check the count is valid
@@ -63,9 +63,7 @@ def test_callsite_attributes():
                             # Read call site attributes at different indices
                             idx = llvm.AttributeFunctionIndex
                             while idx <= param_count:
-                                attr_count = llvm.get_callsite_attribute_count(
-                                    inst, idx
-                                )
+                                attr_count = inst.get_callsite_attribute_count(idx)
                                 if attr_count < 0:
                                     raise ValueError(
                                         f"Invalid attribute count: {attr_count}"

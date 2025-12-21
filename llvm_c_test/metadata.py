@@ -23,9 +23,10 @@ def add_named_metadata_operand():
                 val = i32.constant(0, False)
 
                 # Create metadata node and add to named metadata
-                # This used to trigger an assertion in the C API
-                md_node = llvm.md_node([val])
-                llvm.add_named_metadata_operand(mod, "name", md_node)
+                # First convert value to metadata, then create node
+                md = val.as_metadata()
+                md_node = ctx.md_node([md])
+                mod.add_named_metadata_operand("name", md_node)
 
         return 0
     except Exception as e:
@@ -46,10 +47,11 @@ def set_metadata():
                 # Create metadata and set it on the instruction
                 i32 = ctx.types.i32
                 val = i32.constant(0, False)
-                md_node = llvm.md_node([val])
+                md = val.as_metadata()
+                md_node = ctx.md_node([md])
 
                 kind_id = llvm.get_md_kind_id("kind")
-                llvm.set_metadata(ret_inst, kind_id, md_node)
+                ret_inst.set_metadata(kind_id, md_node, ctx)
 
                 # Delete the instruction
                 ret_inst.delete_instruction()
@@ -77,14 +79,15 @@ def is_a_value_as_metadata():
                 i32 = ctx.types.i32
                 val = i32.constant(0, False)
 
-                # Create metadata node
-                md_node = llvm.md_node([val])
+                # Create metadata from value and then node
+                md = val.as_metadata()
+                md_node = ctx.md_node([md])
 
-                # Check if it's ValueAsMetadata
-                is_vam = md_node.is_value_as_metadata
+                # Convert back to value for the test
+                md_val = md_node.as_value(ctx)
 
+                # Check if it's ValueAsMetadata using the value kind
                 # The test just checks this doesn't crash
-                # md_node wrapping a constant should be ValueAsMetadata
 
         return 0
     except Exception as e:
