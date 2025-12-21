@@ -919,14 +919,6 @@ struct LLVMUseWrapper {
       throw LLVMMemoryError("Use used after context was destroyed");
   }
 
-  std::optional<LLVMUseWrapper> next_use() const {
-    check_valid();
-    LLVMUseRef next = LLVMGetNextUse(m_ref);
-    if (!next)
-      return std::nullopt;
-    return LLVMUseWrapper(next, m_context_token);
-  }
-
   // get_user and get_used_value are implemented after LLVMValueWrapper is
   // defined
   LLVMValueWrapper get_user() const;
@@ -1004,16 +996,7 @@ struct LLVMValueWrapper {
     return LLVMIsPoison(m_ref);
   }
 
-  // Use-def chain iteration
-  std::optional<LLVMUseWrapper> first_use() const {
-    check_valid();
-    LLVMUseRef use = LLVMGetFirstUse(m_ref);
-    if (!use)
-      return std::nullopt;
-    return LLVMUseWrapper(use, m_context_token);
-  }
-
-  // Get all uses of this value as a vector (pythonic iteration)
+  // Use-def chain iteration (pythonic API)
   std::vector<LLVMUseWrapper> uses() const {
     check_valid();
     std::vector<LLVMUseWrapper> result;
@@ -7067,9 +7050,8 @@ NB_MODULE(llvm, m) {
       .def("pointer", &LLVMTypeWrapper::pointer, "address_space"_a = 0,
            R"(Create a pointer type in this type's context.)");
 
-  // Use wrapper (for use-def chain iteration)
+  // Use wrapper (represents a use edge in the use-def chain)
   nb::class_<LLVMUseWrapper>(m, "Use")
-      .def_prop_ro("next_use", &LLVMUseWrapper::next_use)
       .def_prop_ro("user", &LLVMUseWrapper::get_user)
       .def_prop_ro("used_value", &LLVMUseWrapper::get_used_value);
 
@@ -7091,7 +7073,6 @@ NB_MODULE(llvm, m) {
       .def_prop_ro("is_constant", &LLVMValueWrapper::is_constant)
       .def_prop_ro("is_undef", &LLVMValueWrapper::is_undef)
       .def_prop_ro("is_poison", &LLVMValueWrapper::is_poison)
-      .def_prop_ro("first_use", &LLVMValueWrapper::first_use)
       .def_prop_ro("uses", &LLVMValueWrapper::uses)
       .def_prop_ro("users", &LLVMValueWrapper::users)
       .def_prop_ro("next_global", &LLVMValueWrapper::next_global)

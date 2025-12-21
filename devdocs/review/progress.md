@@ -142,8 +142,7 @@ None currently.
   - C++ cleanup.cpp, cleanup_input.ll, cleanup_expected.txt created
   - Python cleanup.py ported - golden master test passes
   - **Added new bindings for this example:**
-    - `LLVMUseWrapper` class with `next_use`, `user`, `used_value` properties
-    - `Value.first_use` property for low-level use-def chain iteration
+    - `LLVMUseWrapper` class with `user`, `used_value` properties
     - `Value.uses` property for pythonic iteration over Use objects
     - `Value.users` property for pythonic iteration over user Values
     - `Value.delete()` method (alias for `delete_global`)

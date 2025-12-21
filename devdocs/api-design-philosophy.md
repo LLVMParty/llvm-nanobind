@@ -283,7 +283,7 @@ The object context makes the prefix unnecessary: `inst.opcode` is clearly the in
 
 ## Iterators and Collections
 
-**Principle**: Provide collection properties for common iteration patterns.
+**Principle**: Provide collection properties for common iteration patterns. Prefer returning lists over exposing manual linked-list traversal APIs.
 
 ### Before (Manual Iteration)
 
@@ -309,12 +309,35 @@ for inst in block.instructions:
    - `block.instructions` - all instructions in a basic block
    - `func.basic_blocks` - all basic blocks in a function
    - `term.successors` - all successor blocks of a terminator
+   - `value.uses` - all uses of a value
+   - `value.users` - all users of a value
 
-2. **Keep linked-list navigation** for advanced use cases:
-   - `inst.next_instruction` / `inst.prev_instruction` still available
-   - Useful for insertions, deletions, or partial traversal
+2. **Return lists, not iterators**: Collection properties return `list[T]`, not lazy iterators. This is safer and avoids common pitfalls.
 
-3. **Return lists, not iterators**: Collection properties return `list[T]`, not lazy iterators. This is simpler and avoids iterator invalidation issues during modification.
+3. **Avoid exposing manual iteration APIs**: Do NOT expose `first_*` / `next_*` style APIs for linked-list traversal. These are footguns:
+
+   ```python
+   # DANGEROUS: Iterator invalidation during mutation
+   use = value.first_use
+   while use is not None:
+       user = use.user
+       user.replace_with(new_value)  # Modifies use-def chain!
+       use = use.next_use  # CRASH: use may be invalid
+   ```
+
+   Instead, the list-based API creates a snapshot that's safe to iterate while mutating:
+
+   ```python
+   # SAFE: List is a snapshot, iteration is stable
+   for user in value.users:
+       user.replace_with(new_value)  # Safe: not iterating the live chain
+   ```
+
+4. **Exception: Keep linked-list navigation only when necessary** for insertion/deletion at specific positions:
+   - `inst.next_instruction` / `inst.prev_instruction` - needed for inserting before/after
+   - `block.next_block` / `block.prev_block` - needed for block reordering
+
+   These are for targeted navigation, not iteration. The pattern `while x is not None: x = x.next_*` should never be needed.
 
 ---
 

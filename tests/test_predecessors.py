@@ -9,8 +9,8 @@ Output should match the C++ golden master test.
 LLVM APIs covered (via Python bindings):
 - BasicBlock.successors property
 - BasicBlock.predecessors property
-- Value.uses property (pythonic iteration over Use objects)
-- Value.users property (pythonic iteration over user Values)
+- Value.uses property (list of Use objects)
+- Value.users property (list of user Values)
 - Use.user property
 - Value.is_terminator_inst property
 - Value.instruction_parent property
