@@ -194,6 +194,180 @@ with llvm.create_context() as ctx:
 
 ---
 
+## Properties vs Methods
+
+**Principle**: Use properties for attribute-like access; use methods for operations that require arguments or have side effects.
+
+### When to Use Properties
+
+| Pattern | Use Property | Example |
+|---------|-------------|---------|
+| No-argument getter | ✅ | `inst.opcode`, `value.type`, `block.terminator` |
+| Boolean check | ✅ | `value.is_constant`, `func.is_declaration` |
+| Count/length | ✅ | `inst.num_operands`, `phi.num_incoming` |
+| Collection access | ✅ | `block.instructions`, `term.successors` |
+| Read-write attribute | ✅ | `global.linkage`, `global.alignment` |
+
+### When to Use Methods
+
+| Pattern | Use Method | Example |
+|---------|-----------|---------|
+| Takes arguments | ✅ | `inst.get_operand(index)`, `phi.get_incoming_value(i)` |
+| Has side effects | ✅ | `phi.add_incoming(val, bb)`, `block.move_before(other)` |
+| Factory/creation | ✅ | `type.constant(42)`, `ctx.create_module(name)` |
+
+### Property Naming
+
+```python
+# Good: property access reads naturally
+opcode = inst.opcode
+count = phi.num_incoming
+ty = value.type
+
+# Avoid: get_ prefix is redundant for properties
+opcode = inst.get_instruction_opcode()  # Too verbose
+```
+
+---
+
+## Naming Conventions
+
+### Type Checking Properties: `is_*` not `is_a_*`
+
+**Principle**: Use `is_*` for type checking properties, not `is_a_*`.
+
+```python
+# Good: follows Python's isinstance() naming pattern
+if value.is_function:
+    ...
+if value.is_constant_int:
+    ...
+
+# Avoid: the "a" is redundant
+if value.is_a_function:  # Reads awkwardly
+    ...
+```
+
+**Rationale**: Python uses `isinstance()`, not `is_an_instance()`. The `is_*` pattern is consistent with Python conventions and more concise.
+
+### Collection Properties: Plural Names
+
+**Principle**: Use plural names for properties that return collections.
+
+```python
+# Good: plural indicates iteration
+for inst in block.instructions:
+    ...
+for succ in terminator.successors:
+    ...
+for handler in catchswitch.handlers:
+    ...
+
+# Avoid: singular names for collections
+for inst in block.instruction_list:  # Verbose
+    ...
+```
+
+### Drop Redundant Prefixes
+
+| C API Pattern | Python Property |
+|---------------|-----------------|
+| `LLVMGetInstructionOpcode()` | `opcode` |
+| `LLVMGetNumOperands()` | `num_operands` |
+| `LLVMGetAlignment()` | `alignment` |
+| `LLVMGetLinkage()` | `linkage` |
+
+The object context makes the prefix unnecessary: `inst.opcode` is clearly the instruction's opcode.
+
+---
+
+## Iterators and Collections
+
+**Principle**: Provide collection properties for common iteration patterns.
+
+### Before (Manual Iteration)
+
+```python
+# Tedious: manual linked-list traversal
+inst = block.first_instruction
+while inst is not None:
+    process(inst)
+    inst = inst.next_instruction
+```
+
+### After (Collection Property)
+
+```python
+# Pythonic: standard iteration
+for inst in block.instructions:
+    process(inst)
+```
+
+### Guidelines
+
+1. **Provide collection properties** when iteration is common:
+   - `block.instructions` - all instructions in a basic block
+   - `func.basic_blocks` - all basic blocks in a function
+   - `term.successors` - all successor blocks of a terminator
+
+2. **Keep linked-list navigation** for advanced use cases:
+   - `inst.next_instruction` / `inst.prev_instruction` still available
+   - Useful for insertions, deletions, or partial traversal
+
+3. **Return lists, not iterators**: Collection properties return `list[T]`, not lazy iterators. This is simpler and avoids iterator invalidation issues during modification.
+
+---
+
+## Nullable vs Exception-Throwing
+
+**Principle**: Prefer throwing exceptions with a `has_*` check over returning None when None makes code awkward.
+
+### When to Return None
+
+Return `None` when the absence of a value is a normal, expected case that the caller typically handles inline:
+
+```python
+# Good: None is natural here
+next_block = block.next_block  # None if last block
+parent = inst.prev_instruction  # None if first instruction
+```
+
+### When to Throw + Provide has_* Check
+
+Throw an exception when:
+1. None would require defensive checks in most use cases
+2. The caller should explicitly opt-in to handling the missing case
+
+```python
+# Before: None requires defensive checks everywhere
+terminator = block.terminator  # Returns None if no terminator
+if terminator is not None:  # Required before every use
+    match terminator.opcode:
+        ...
+
+# After: throws by default, has_* for explicit check
+if block.has_terminator:
+    terminator = block.terminator  # Safe: guaranteed non-None
+    match terminator.opcode:
+        ...
+```
+
+**Benefits**:
+- Cleaner code in common cases (most blocks have terminators)
+- Explicit opt-in for edge cases
+- Catches bugs: accessing terminator on incomplete block is likely an error
+
+### Pattern Summary
+
+| Situation | Approach |
+|-----------|----------|
+| Missing value is common/expected | Return `None` |
+| Missing value is edge case | Throw + `has_*` check |
+| Iterator end | Return `None` |
+| Invalid state access | Throw exception |
+
+---
+
 ## Benefits Summary
 
 1. **Fewer imports**: No need to remember which operations are global
@@ -201,6 +375,8 @@ with llvm.create_context() as ctx:
 3. **Self-documenting**: `phi.add_incoming()` vs `llvm.phi_add_incoming(phi, ...)`
 4. **Error prevention**: Methods can validate their receiver (e.g., assert it's a PHI)
 5. **Consistency**: All operations follow the same pattern
+6. **Ergonomic iteration**: Collection properties like `block.instructions` reduce boilerplate
+7. **Cleaner null handling**: `has_*` + throwing pattern reduces defensive checks
 
 ---
 
