@@ -132,15 +132,18 @@ def build_llvm_c_test_cmd(
         # Check if we should enable coverage or logging
         coverage_run = os.environ.get("COVERAGE_RUN")
 
+        # On Windows, quote the Python executable path to handle backslashes in bash
+        python_exe = f'"{sys.executable}"' if sys.platform == "win32" else sys.executable
+
         if coverage_run:
             # Use coverage run with --parallel-mode so each invocation creates
             # a unique data file that can be combined later with `coverage combine`
             # Specify --data-file to write coverage to project root regardless of cwd
             coverage_file = project_root / ".coverage.llvm_c_test"
-            cmd = f"{sys.executable} -m coverage run --parallel-mode --data-file={coverage_file} -m llvm_c_test"
+            cmd = f"{python_exe} -m coverage run --parallel-mode --data-file={coverage_file} -m llvm_c_test"
         else:
             # Direct invocation using the installed script
-            cmd = f"{sys.executable} -m llvm_c_test"
+            cmd = f"{python_exe} -m llvm_c_test"
 
         return cmd, extra_env
     else:
@@ -148,7 +151,13 @@ def build_llvm_c_test_cmd(
         llvm_c_test_exe = project_root / "build" / "llvm-c-test"
         if sys.platform == "win32":
             llvm_c_test_exe = llvm_c_test_exe.with_suffix(".exe")
-        return str(llvm_c_test_exe), extra_env
+        
+        # On Windows, quote the path to handle backslashes in bash
+        exe_path = str(llvm_c_test_exe)
+        if sys.platform == "win32":
+            exe_path = f'"{exe_path}"'
+        
+        return exe_path, extra_env
 
 
 def main():
