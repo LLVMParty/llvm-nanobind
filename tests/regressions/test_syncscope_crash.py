@@ -65,7 +65,7 @@ def test_syncscope_clone():
 
                 # Get the context from the destination module
                 # This should return the same context as ctx, not the global context
-                dst_ctx = llvm.get_module_context(dst)
+                dst_ctx = dst.context
 
                 # Clone the function type using the destination module's context
                 # (This is what TypeCloner does in echo.py)

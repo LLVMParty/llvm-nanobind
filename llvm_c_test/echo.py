@@ -21,7 +21,7 @@ class TypeCloner:
 
     def __init__(self, module: llvm.Module):
         self.module = module
-        self.ctx = llvm.get_module_context(module)
+        self.ctx = module.context
 
     def clone(self, src: llvm.Type | llvm.Value) -> llvm.Type:
         """Clone a type or a value's type."""
@@ -141,7 +141,7 @@ def clone_constant_impl(cst: llvm.Value, m: llvm.Module) -> llvm.Value:
             # Try an intrinsic
             intrinsic_id = cst.get_intrinsic_id()
             if intrinsic_id > 0 and not llvm.intrinsic_is_overloaded(intrinsic_id):
-                dst = llvm.get_intrinsic_declaration(m, intrinsic_id, [])
+                dst = m.get_intrinsic_declaration(intrinsic_id, [])
             else:
                 # Try a normal function
                 dst = m.get_function(name)
@@ -205,7 +205,7 @@ def clone_constant_impl(cst: llvm.Value, m: llvm.Module) -> llvm.Value:
         elts = [clone_constant(cst.get_operand(i), m) for i in range(elt_count)]
         if ty.struct_name:
             return llvm.const_named_struct(ty, elts)
-        return llvm.const_struct(elts, ty.is_packed_struct, llvm.get_module_context(m))
+        return llvm.const_struct(elts, ty.is_packed_struct, m.context)
 
     # Try ConstantPointerNull
     if cst.is_a_constant_pointer_null:
@@ -408,7 +408,7 @@ class FunCloner:
             raise RuntimeError("Expected an instruction")
 
         # Create the instruction in the right basic block
-        ctx = llvm.get_module_context(self.module)
+        ctx = self.module.context
         with ctx.create_builder() as builder:
             bb = self.declare_bb(src.get_instruction_parent())
             builder.position_at_end(bb)
@@ -416,7 +416,7 @@ class FunCloner:
 
     def clone_attrs(self, src: llvm.Value, dst: llvm.Value) -> None:
         """Clone call/invoke attributes from src to dst."""
-        ctx = llvm.get_module_context(self.module)
+        ctx = self.module.context
         last_kind = llvm.get_last_enum_attribute_kind()
 
         # Clone attributes for all indices (return, function, and each param)
@@ -815,7 +815,7 @@ class FunCloner:
             agg1 = self.clone_value(src.get_operand(1))
             mask_elts = []
             num_mask_elts = src.get_num_mask_elements()
-            int64_ty = llvm.get_module_context(self.module).types.i64
+            int64_ty = self.module.context.types.i64
             for i in range(num_mask_elts):
                 val = src.get_mask_value(i)
                 if val == llvm.get_undef_mask_elem():
@@ -931,7 +931,7 @@ class FunCloner:
             dst.set_fast_math_flags(src.get_fast_math_flags())
 
         # Copy instruction metadata
-        ctx = llvm.get_module_context(self.module)
+        ctx = self.module.context
         all_metadata = src.instruction_get_all_metadata_other_than_debug_loc()
         for i in range(len(all_metadata)):
             kind = all_metadata.get_kind(i)
@@ -948,9 +948,7 @@ class FunCloner:
         args = []
         for i in range(src.num_args):
             args.append(self.clone_value(src.get_arg_at_index(i)))
-        return llvm.create_operand_bundle(
-            tag, args, llvm.get_module_context(self.module)
-        )
+        return llvm.create_operand_bundle(tag, args, self.module.context)
 
     def declare_bb(self, src: llvm.BasicBlock) -> llvm.BasicBlock:
         """Declare a basic block, creating if necessary."""
@@ -963,7 +961,7 @@ class FunCloner:
             raise RuntimeError("Basic block is not a basic block")
 
         name = src.name
-        bb = self.fun.append_basic_block(name, llvm.get_module_context(self.module))
+        bb = self.fun.append_basic_block(name, self.module.context)
         self.bb_map[src] = bb
         return bb
 
@@ -984,7 +982,7 @@ class FunCloner:
                 raise RuntimeError("Has no first instruction, but last one")
             return bb
 
-        ctx = llvm.get_module_context(self.module)
+        ctx = self.module.context
         with ctx.create_builder() as builder:
             builder.position_at_end(bb)
 
@@ -1040,7 +1038,7 @@ class FunCloner:
 
 def declare_symbols(src: llvm.Module, m: llvm.Module) -> None:
     """Declare all global symbols in the destination module."""
-    ctx = llvm.get_module_context(m)
+    ctx = m.context
 
     # Declare global variables
     cur = src.first_global
@@ -1190,7 +1188,7 @@ def clone_symbols(src: llvm.Module, m: llvm.Module) -> None:
                 g.set_initializer(clone_constant(init, m))
 
             # Copy global metadata
-            ctx = llvm.get_module_context(m)
+            ctx = m.context
             all_metadata = cur.global_copy_all_metadata()
             for i in range(len(all_metadata)):
                 kind = all_metadata.get_kind(i)
@@ -1241,7 +1239,7 @@ def clone_symbols(src: llvm.Module, m: llvm.Module) -> None:
                 fun.set_personality_fn(p)
 
             # Copy function metadata
-            ctx = llvm.get_module_context(m)
+            ctx = m.context
             all_metadata = cur.global_copy_all_metadata()
             for i in range(len(all_metadata)):
                 kind = all_metadata.get_kind(i)

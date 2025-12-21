@@ -26,7 +26,7 @@ def get_di_tag():
         assert tag == 0, f"Expected tag 0, got {tag}"
 
         # Create DIBuilder
-        with llvm.create_dibuilder(mod) as dib:
+        with mod.create_dibuilder() as dib:
             # Create file
             file_md = dib.create_file("metadata.c", ".")
 
@@ -58,7 +58,7 @@ def di_type_get_name():
     ctx = llvm.global_context()
     with ctx.create_module("Mod") as mod:
         # Create DIBuilder
-        with llvm.create_dibuilder(mod) as dib:
+        with mod.create_dibuilder() as dib:
             # Create file
             file_md = dib.create_file("metadata.c", ".")
 
@@ -151,11 +151,11 @@ def test_dibuilder():
 
     with ctx.create_module(filename) as mod:
         # Enable new debug info format
-        llvm.set_is_new_dbg_info_format(mod, True)
-        assert llvm.is_new_dbg_info_format(mod)
+        mod.is_new_dbg_info_format = True
+        assert mod.is_new_dbg_info_format
 
         # Create DIBuilder
-        with llvm.create_dibuilder(mod) as dib:
+        with mod.create_dibuilder() as dib:
             # Create file
             file_md = dib.create_file(filename, ".")
 
@@ -343,7 +343,7 @@ def test_dibuilder():
             )
 
             # Set subprogram
-            llvm.set_subprogram(foo_function, function_md)
+            foo_function.set_subprogram(function_md)
 
             # Create label
             foo_label1 = dib.create_label(function_md, "label1", file_md, 42, False)
@@ -513,14 +513,12 @@ def test_dibuilder():
                 assert insert_pos is not None, (
                     "Expected at least one instruction in block"
                 )
-                llvm.position_builder_before_instr_and_dbg_records(builder, insert_pos)
+                builder.position_before_instr_and_dbg_records(insert_pos)
                 phi1 = builder.phi(i64_type, "p1")
                 phi1.add_incoming(zero_val, foo_entry_block)
 
                 # Do it again with the other positioning function
-                llvm.position_builder_before_dbg_records(
-                    builder, foo_var_block, insert_pos
-                )
+                builder.position_before_dbg_records(foo_var_block, insert_pos)
                 phi2 = builder.phi(i64_type, "p2")
                 phi2.add_incoming(zero_val, foo_entry_block)
 

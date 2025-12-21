@@ -150,6 +150,7 @@ struct LLVMBasicBlockWrapper;
 struct LLVMBuilderWrapper;
 struct LLVMModuleManager;
 struct LLVMBuilderManager;
+struct LLVMDIBuilderManager;
 struct LLVMNamedMDNodeWrapper;
 struct LLVMOperandBundleWrapper;
 struct LLVMUseWrapper;
@@ -2144,6 +2145,14 @@ struct LLVMFunctionWrapper : LLVMValueWrapper {
     attr.check_valid();
     LLVMAddAttributeAtIndex(m_ref, static_cast<unsigned>(idx), attr.m_ref);
   }
+
+  // =========================================================================
+  // Function API Refactor: Methods moved from global functions
+  // =========================================================================
+
+  // subprogram property (write-only setter)
+  // Declared here, implemented after LLVMMetadataWrapper is defined
+  void set_subprogram(const LLVMMetadataWrapper &sp);
 };
 
 // =============================================================================
@@ -3387,6 +3396,26 @@ struct LLVMBuilderWrapper : NoMoveCopy {
     instr.check_valid();
     LLVMAddMetadataToInst(m_ref, instr.m_ref);
   }
+
+  // =========================================================================
+  // Builder API Refactor: Methods moved from global functions
+  // =========================================================================
+
+  // Position builder before debug records
+  void position_before_dbg_records(const LLVMBasicBlockWrapper &block,
+                                   const LLVMValueWrapper &instr) {
+    check_valid();
+    block.check_valid();
+    instr.check_valid();
+    LLVMPositionBuilderBeforeDbgRecords(m_ref, block.m_ref, instr.m_ref);
+  }
+
+  // Position builder before instruction and debug records
+  void position_before_instr_and_dbg_records(const LLVMValueWrapper &instr) {
+    check_valid();
+    instr.check_valid();
+    LLVMPositionBuilderBeforeInstrAndDbgRecords(m_ref, instr.m_ref);
+  }
 };
 
 // =============================================================================
@@ -3779,6 +3808,46 @@ struct LLVMModuleWrapper : NoMoveCopy {
   // Declared here, implemented after LLVMMetadataWrapper
   void add_named_metadata_operand(const std::string &name,
                                   const LLVMMetadataWrapper &md);
+
+  // =========================================================================
+  // Module API Refactor: Methods moved from global functions
+  // =========================================================================
+
+  // Context property (read-only)
+  // Declared here, implemented after LLVMContextWrapper is defined
+  LLVMContextWrapper *get_context() const;
+
+  // is_new_dbg_info_format property (read/write)
+  bool is_new_dbg_info_format() const {
+    check_valid();
+    return LLVMIsNewDbgInfoFormat(m_ref);
+  }
+
+  void set_is_new_dbg_info_format(bool use_new_format) {
+    check_valid();
+    LLVMSetIsNewDbgInfoFormat(m_ref, use_new_format);
+  }
+
+  // get_intrinsic_declaration method
+  LLVMValueWrapper
+  get_intrinsic_declaration(unsigned id,
+                            const std::vector<LLVMTypeWrapper> &param_types) {
+    check_valid();
+    std::vector<LLVMTypeRef> type_refs;
+    type_refs.reserve(param_types.size());
+    for (const auto &ty : param_types) {
+      ty.check_valid();
+      type_refs.push_back(ty.m_ref);
+    }
+    return LLVMValueWrapper(LLVMGetIntrinsicDeclaration(m_ref, id,
+                                                        type_refs.data(),
+                                                        type_refs.size()),
+                            m_context_token);
+  }
+
+  // create_dibuilder method - returns a DIBuilderManager
+  // Declared here, implemented after LLVMDIBuilderManager is defined
+  LLVMDIBuilderManager *create_dibuilder();
 
   // Clone - returns a ModuleManager that must be used with 'with' or .dispose()
   LLVMModuleManager *clone() const;
@@ -5806,6 +5875,15 @@ LLVMModuleWrapper::add_named_metadata_operand(const std::string &name,
   LLVMAddNamedMetadataOperand(m_ref, name.c_str(), val);
 }
 
+// Implementation of LLVMFunctionWrapper::set_subprogram() - needs
+// LLVMMetadataWrapper
+inline void
+LLVMFunctionWrapper::set_subprogram(const LLVMMetadataWrapper &sp) {
+  check_valid();
+  sp.check_valid();
+  LLVMSetSubprogram(m_ref, sp.m_ref);
+}
+
 // =============================================================================
 // DIBuilder Method Implementations
 // =============================================================================
@@ -6505,6 +6583,24 @@ struct LLVMDIBuilderManager : NoMoveCopy {
     m_disposed = true;
   }
 };
+
+// =============================================================================
+// Implementation of LLVMModuleWrapper methods that need LLVMContextWrapper or
+// LLVMDIBuilderManager
+// =============================================================================
+
+inline LLVMContextWrapper *LLVMModuleWrapper::get_context() const {
+  check_valid();
+  // Return a non-owning wrapper for the module's context.
+  return new LLVMContextWrapper(m_ctx_ref, m_context_token);
+}
+
+inline LLVMDIBuilderManager *LLVMModuleWrapper::create_dibuilder() {
+  check_valid();
+  // Using const_cast because we need a non-const pointer for the manager
+  // but the method is logically const (creates a new object, doesn't modify module)
+  return new LLVMDIBuilderManager(const_cast<LLVMModuleWrapper *>(this));
+}
 
 // =============================================================================
 // Module Registration
@@ -7233,7 +7329,12 @@ NB_MODULE(llvm, m) {
            "idx"_a, "kind_id"_a,
            R"(Get an enum attribute at the given index. Returns None if not found.)")
       .def("add_attribute", &LLVMFunctionWrapper::add_attribute, "idx"_a,
-           "attr"_a, R"(Add an attribute to this function at the given index.)");
+           "attr"_a, R"(Add an attribute to this function at the given index.)")
+      // =====================================================================
+      // Function API Refactor: Methods moved from global functions
+      // =====================================================================
+      .def("set_subprogram", &LLVMFunctionWrapper::set_subprogram, "sp"_a,
+           R"(Set subprogram metadata for this function.)");
 
   // Builder wrapper
   nb::class_<LLVMBuilderWrapper>(m, "Builder")
@@ -7425,7 +7526,16 @@ NB_MODULE(llvm, m) {
       .def("catch_switch", &LLVMBuilderWrapper::catch_switch, "parent_pad"_a,
            "unwind_bb"_a = nb::none(), "num_handlers"_a = 0, "name"_a = "")
       .def("cleanup_ret", &LLVMBuilderWrapper::cleanup_ret, "catch_pad"_a,
-           "bb"_a = nb::none());
+           "bb"_a = nb::none())
+      // =====================================================================
+      // Builder API Refactor: Methods moved from global functions
+      // =====================================================================
+      .def("position_before_dbg_records",
+           &LLVMBuilderWrapper::position_before_dbg_records, "block"_a,
+           "instr"_a, R"(Position builder before debug records.)")
+      .def("position_before_instr_and_dbg_records",
+           &LLVMBuilderWrapper::position_before_instr_and_dbg_records,
+           "instr"_a, R"(Position builder before instruction and debug records.)");
 
   // Operand Bundle wrapper
   nb::class_<LLVMOperandBundleWrapper>(m, "OperandBundle")
@@ -7526,7 +7636,30 @@ NB_MODULE(llvm, m) {
       // Named metadata operand (moved from global function)
       .def("add_named_metadata_operand",
            &LLVMModuleWrapper::add_named_metadata_operand, "name"_a, "md"_a,
-           R"(Add operand to named metadata.)");
+           R"(Add operand to named metadata.)")
+      // =====================================================================
+      // Module API Refactor: Methods moved from global functions
+      // =====================================================================
+      .def_prop_ro("context", &LLVMModuleWrapper::get_context,
+                   nb::rv_policy::take_ownership,
+                   R"(Get the context for this module (read-only).)")
+      .def_prop_rw("is_new_dbg_info_format",
+                   &LLVMModuleWrapper::is_new_dbg_info_format,
+                   &LLVMModuleWrapper::set_is_new_dbg_info_format,
+                   R"(Whether to use new debug info format.)")
+      .def("get_intrinsic_declaration",
+           &LLVMModuleWrapper::get_intrinsic_declaration, "id"_a, "param_types"_a,
+           R"(Get intrinsic declaration for this module.)")
+      .def("create_dibuilder", &LLVMModuleWrapper::create_dibuilder,
+           nb::rv_policy::take_ownership,
+           R"(Create a debug info builder for this module.
+
+Use with 'with' statement:
+    with mod.create_dibuilder() as dib:
+        file = dib.create_file("foo.c", ".")
+        # ... create debug info ...
+        dib.finalize()
+)");
 
   // TypeFactory wrapper (property-based type namespace)
   nb::class_<LLVMTypeFactoryWrapper>(m, "TypeFactory")
@@ -7676,9 +7809,7 @@ NB_MODULE(llvm, m) {
         R"(Create a constant pointer authentication expression.)");
   m.def("intrinsic_is_overloaded", &intrinsic_is_overloaded, "id"_a,
         R"(Check if an intrinsic is overloaded.)");
-  m.def("get_intrinsic_declaration", &get_intrinsic_declaration, "mod"_a,
-        "id"_a, "param_types"_a,
-        R"(Get or insert an intrinsic function declaration.)");
+  // NOTE: get_intrinsic_declaration has been moved to Module.get_intrinsic_declaration() method
 
   // Operand bundle creation
   m.def(
@@ -8010,17 +8141,7 @@ NB_MODULE(llvm, m) {
       },
       "name"_a, R"(Get metadata kind ID for name.)");
 
-  m.def(
-      "get_module_context",
-      [](const LLVMModuleWrapper &mod) -> LLVMContextWrapper * {
-        mod.check_valid();
-        // Return a non-owning wrapper for the module's context.
-        // The module stores its context ref and validity token, which we use
-        // to create a borrowed context wrapper that will be valid as long as
-        // the original context is alive.
-        return new LLVMContextWrapper(mod.m_ctx_ref, mod.m_context_token);
-      },
-      nb::rv_policy::take_ownership, "mod"_a, R"(Get module's context.)");
+  // NOTE: get_module_context has been moved to Module.context property
 
   // ==========================================================================
   // Diagnostic Handler Support
@@ -8226,21 +8347,7 @@ NB_MODULE(llvm, m) {
       .def("dispose", &LLVMDIBuilderManager::dispose,
            R"(Dispose the DIBuilder manager without using context manager.)");
 
-  m.def(
-      "create_dibuilder",
-      [](LLVMModuleWrapper &mod) -> LLVMDIBuilderManager * {
-        mod.check_valid();
-        return new LLVMDIBuilderManager(&mod);
-      },
-      nb::rv_policy::take_ownership, "mod"_a,
-      R"(Create a debug info builder for a module.
-
-Use with 'with' statement:
-    with llvm.create_dibuilder(mod) as dib:
-        file = dib.create_file("foo.c", ".")
-        # ... create debug info ...
-        dib.finalize()
-)");
+  // NOTE: create_dibuilder has been moved to Module.create_dibuilder() method
 
   nb::class_<LLVMMetadataWrapper>(m, "Metadata")
       .def("as_value", &LLVMMetadataWrapper::as_value, "ctx"_a,
@@ -8282,14 +8389,7 @@ Use with 'with' statement:
       "ctx"_a, "line"_a, "column"_a, "scope"_a, "inlined_at"_a.none(),
       R"(Create debug location.)");
 
-  m.def(
-      "set_subprogram",
-      [](LLVMFunctionWrapper &func, const LLVMMetadataWrapper &sp) {
-        func.check_valid();
-        sp.check_valid();
-        LLVMSetSubprogram(func.m_ref, sp.m_ref);
-      },
-      "func"_a, "sp"_a, R"(Set subprogram metadata for function.)");
+  // NOTE: set_subprogram has been moved to Function.set_subprogram() method
 
   m.def(
       "di_subprogram_replace_type",
@@ -8307,47 +8407,16 @@ Use with 'with' statement:
   // Builder Positioning and Debug Records
   // ==========================================================================
 
-  m.def(
-      "set_is_new_dbg_info_format",
-      [](LLVMModuleWrapper &mod, bool use_new_format) {
-        mod.check_valid();
-        LLVMSetIsNewDbgInfoFormat(mod.m_ref, use_new_format);
-      },
-      "mod"_a, "use_new_format"_a,
-      R"(Set whether to use new debug info format.)");
+  // NOTE: set_is_new_dbg_info_format and is_new_dbg_info_format have been
+  // moved to Module.is_new_dbg_info_format property
 
-  m.def(
-      "is_new_dbg_info_format",
-      [](const LLVMModuleWrapper &mod) -> bool {
-        mod.check_valid();
-        return LLVMIsNewDbgInfoFormat(mod.m_ref);
-      },
-      "mod"_a, R"(Check if using new debug info format.)");
+  // NOTE: position_builder_before_instr_and_dbg_records has been moved to
+  // Builder.position_before_instr_and_dbg_records() method
 
-  m.def(
-      "position_builder_before_instr_and_dbg_records",
-      [](LLVMBuilderWrapper &builder, LLVMValueWrapper &instr) {
-        builder.check_valid();
-        instr.check_valid();
-        LLVMPositionBuilderBeforeInstrAndDbgRecords(builder.m_ref, instr.m_ref);
-      },
-      "builder"_a, "instr"_a,
-      R"(Position builder before instruction and debug records.)");
+  // NOTE: position_builder_before_dbg_records has been moved to
+  // Builder.position_before_dbg_records() method
 
-  m.def(
-      "position_builder_before_dbg_records",
-      [](LLVMBuilderWrapper &builder, LLVMBasicBlockWrapper &block,
-         LLVMValueWrapper &instr) {
-        builder.check_valid();
-        block.check_valid();
-        instr.check_valid();
-        LLVMPositionBuilderBeforeDbgRecords(builder.m_ref, block.m_ref,
-                                            instr.m_ref);
-      },
-      "builder"_a, "block"_a, "instr"_a,
-      R"(Position builder before debug records.)");
-
-  // Debug record iteration (opaque DbgRecord type - no wrapper needed)
+  // Debug record iteration (opaque DbgRecord type - kept as global functions)
   m.def(
       "get_first_dbg_record",
       [](const LLVMValueWrapper &instr) -> void * {
