@@ -4202,7 +4202,8 @@ struct LLVMContextWrapper : NoMoveCopy {
                                              bool lazy = false);
   LLVMModuleManager *parse_bitcode_from_bytes(nb::bytes data,
                                               bool lazy = false);
-  LLVMModuleManager *parse_ir(const std::string &source);
+  LLVMModuleManager *parse_ir(const std::string &source,
+                              const std::string &mod_name);
 };
 
 // =============================================================================
@@ -4447,7 +4448,8 @@ LLVMModuleManager *LLVMContextWrapper::parse_bitcode_from_bytes(nb::bytes data,
   return new LLVMModuleManager(std::move(mod));
 }
 
-LLVMModuleManager *LLVMContextWrapper::parse_ir(const std::string &source) {
+LLVMModuleManager *LLVMContextWrapper::parse_ir(const std::string &source,
+                                                const std::string &mod_name) {
   check_valid();
   clear_diagnostics();
 
@@ -7735,7 +7737,8 @@ Use with 'with' statement:
            "lazy"_a = false, nb::rv_policy::take_ownership,
            "Parse LLVM bitcode from bytes")
       .def("parse_ir", &LLVMContextWrapper::parse_ir, "source"_a,
-           nb::rv_policy::take_ownership, "Parse LLVM IR from string")
+           "mod_name"_a = "<source>", nb::rv_policy::take_ownership,
+           "Parse LLVM IR from string")
       // Diagnostics
       .def("get_diagnostics", &LLVMContextWrapper::get_diagnostics)
       .def("clear_diagnostics", &LLVMContextWrapper::clear_diagnostics)
