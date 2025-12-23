@@ -27,7 +27,7 @@ def main():
             b.name = "b"
 
             with ctx.create_builder() as builder:
-                int_entry = int_func.append_basic_block("entry", ctx)
+                int_entry = int_func.append_basic_block("entry")
                 builder.position_at_end(int_entry)
 
                 # Basic arithmetic
@@ -51,7 +51,7 @@ def main():
                 # Bitwise operations
                 and_op = builder.and_(a, b, "and")
                 or_op = builder.or_(a, b, "or")
-                xor_op = builder.xor_(a, b, "xor")
+                xor_op = builder.xor(a, b, "xor")
 
                 # Shift operations
                 shl = builder.shl(a, b, "shl")
@@ -76,7 +76,7 @@ def main():
                 x.name = "x"
                 y.name = "y"
 
-                fp_entry = fp_func.append_basic_block("entry", ctx)
+                fp_entry = fp_func.append_basic_block("entry")
                 builder.position_at_end(fp_entry)
 
                 # Floating point operations

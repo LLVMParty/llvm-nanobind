@@ -33,7 +33,7 @@ def main():
                 i64_val = int_cast_func.get_param(0)
                 i64_val.name = "val"
 
-                int_entry = int_cast_func.append_basic_block("entry", ctx)
+                int_entry = int_cast_func.append_basic_block("entry")
                 builder.position_at_end(int_entry)
 
                 # Truncate i64 -> i32 -> i16 -> i8
@@ -67,7 +67,7 @@ def main():
                 f64_val = fp_cast_func.get_param(0)
                 f64_val.name = "val"
 
-                fp_entry = fp_cast_func.append_basic_block("entry", ctx)
+                fp_entry = fp_cast_func.append_basic_block("entry")
                 builder.position_at_end(fp_entry)
 
                 # FP truncate f64 -> f32
@@ -88,7 +88,7 @@ def main():
                 int_param.name = "i"
                 fp_param.name = "f"
 
-                mixed_entry = mixed_func.append_basic_block("entry", ctx)
+                mixed_entry = mixed_func.append_basic_block("entry")
                 builder.position_at_end(mixed_entry)
 
                 # Int -> Float
@@ -111,7 +111,7 @@ def main():
                 ptr_param.name = "p"
                 int_for_ptr.name = "addr"
 
-                ptr_entry = ptr_func.append_basic_block("entry", ctx)
+                ptr_entry = ptr_func.append_basic_block("entry")
                 builder.position_at_end(ptr_entry)
 
                 # Pointer -> Int
@@ -133,7 +133,7 @@ def main():
                 vec_param = bitcast_func.get_param(0)
                 vec_param.name = "v"
 
-                bitcast_entry = bitcast_func.append_basic_block("entry", ctx)
+                bitcast_entry = bitcast_func.append_basic_block("entry")
                 builder.position_at_end(bitcast_entry)
 
                 bitcast = builder.bitcast(vec_param, vec_f32, "bitcast")

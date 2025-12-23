@@ -620,7 +620,7 @@ class FunCloner:
         elif op == llvm.Opcode.Xor:
             lhs = self.clone_value(src.get_operand(0))
             rhs = self.clone_value(src.get_operand(1))
-            dst = builder.xor_(lhs, rhs, name)
+            dst = builder.xor(lhs, rhs, name)
 
         elif op == llvm.Opcode.Alloca:
             ty = self.clone_type(src.allocated_type)
@@ -959,7 +959,7 @@ class FunCloner:
             raise RuntimeError("Basic block is not a basic block")
 
         name = src.name
-        bb = self.fun.append_basic_block(name, self.module.context)
+        bb = self.fun.append_basic_block(name)
         self.bb_map[src] = bb
         return bb
 

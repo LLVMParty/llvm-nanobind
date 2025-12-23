@@ -54,7 +54,7 @@ def test_module_outlives_context_no_crash():
         with ctx.create_module("inner") as m:
             fn_ty = ctx.types.function(ctx.types.i32, [], False)
             fn = m.add_function("bar", fn_ty)
-            bb = fn.append_basic_block("entry", ctx)
+            bb = fn.append_basic_block("entry")
             with ctx.create_builder() as builder:
                 builder.position_at_end(bb)
                 builder.ret(ctx.types.i32.constant(99, False))
@@ -96,7 +96,7 @@ def test_proper_cleanup_order():
             with ctx.create_module("test") as m:
                 fn_ty = ctx.types.function(ctx.types.i32, [], False)
                 fn = m.add_function("foo", fn_ty)
-                bb = fn.append_basic_block("entry", ctx)
+                bb = fn.append_basic_block("entry")
                 with ctx.create_builder() as builder:
                     builder.position_at_end(bb)
                     builder.ret(ctx.types.i32.constant(42, False))
@@ -229,7 +229,7 @@ def test_basic_block_outlives_function():
         with ctx.create_module("test") as m:
             fn_ty = ctx.types.function(ctx.types.void, [], False)
             fn = m.add_function("foo", fn_ty)
-            escaped_bb = fn.append_basic_block("entry", ctx)
+            escaped_bb = fn.append_basic_block("entry")
             # BB is valid here
             assert escaped_bb.name == "entry"
 

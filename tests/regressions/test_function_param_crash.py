@@ -22,7 +22,7 @@ with llvm.create_context() as ctx:
 
         # Add a basic block to source
         with ctx.create_builder() as builder:
-            bb = src_func.append_basic_block("entry", ctx)
+            bb = src_func.append_basic_block("entry")
             builder.position_at_end(bb)
             builder.ret_void()
 

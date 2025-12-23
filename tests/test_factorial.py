@@ -39,10 +39,10 @@ def main():
                 n.name = "n"
 
                 # Basic blocks
-                entry = fact_func.append_basic_block("entry", ctx)
-                loop_cond = fact_func.append_basic_block("loop_cond", ctx)
-                loop_body = fact_func.append_basic_block("loop_body", ctx)
-                exit_bb = fact_func.append_basic_block("exit", ctx)
+                entry = fact_func.append_basic_block("entry")
+                loop_cond = fact_func.append_basic_block("loop_cond")
+                loop_body = fact_func.append_basic_block("loop_body")
+                exit_bb = fact_func.append_basic_block("exit")
 
                 # Entry block: initialize result=1, i=1
                 builder.position_at_end(entry)
@@ -85,9 +85,9 @@ def main():
                 n_rec = fact_rec_func.get_param(0)
                 n_rec.name = "n"
 
-                rec_entry = fact_rec_func.append_basic_block("entry", ctx)
-                base_case = fact_rec_func.append_basic_block("base_case", ctx)
-                recursive = fact_rec_func.append_basic_block("recursive", ctx)
+                rec_entry = fact_rec_func.append_basic_block("entry")
+                base_case = fact_rec_func.append_basic_block("base_case")
+                recursive = fact_rec_func.append_basic_block("recursive")
 
                 # Entry: if n <= 1 goto base_case else goto recursive
                 builder.position_at_end(rec_entry)
@@ -116,7 +116,7 @@ def main():
                 main_ty = ctx.types.function(i64, [])
                 main_func = mod.add_function("main", main_ty)
 
-                main_entry = main_func.append_basic_block("entry", ctx)
+                main_entry = main_func.append_basic_block("entry")
                 builder.position_at_end(main_entry)
 
                 fact_result = builder.call(

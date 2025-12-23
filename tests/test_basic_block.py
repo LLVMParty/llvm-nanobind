@@ -32,9 +32,9 @@ def main():
             func = mod.add_function("test_func", func_ty)
 
             # Append basic blocks
-            entry = func.append_basic_block("entry", ctx)
-            middle = func.append_basic_block("middle", ctx)
-            exit_bb = func.append_basic_block("exit", ctx)
+            entry = func.append_basic_block("entry")
+            middle = func.append_basic_block("middle")
+            exit_bb = func.append_basic_block("exit")
 
             # Get block names
             entry_name = entry.name

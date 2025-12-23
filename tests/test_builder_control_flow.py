@@ -23,7 +23,7 @@ def main():
                 # ==========================================
                 void_func_ty = ctx.types.function(void_ty, [])
                 void_func = mod.add_function("return_void", void_func_ty)
-                void_entry = void_func.append_basic_block("entry", ctx)
+                void_entry = void_func.append_basic_block("entry")
                 builder.position_at_end(void_entry)
                 builder.ret_void()
 
@@ -35,7 +35,7 @@ def main():
                 ret_param = ret_func.get_param(0)
                 ret_param.name = "x"
 
-                ret_entry = ret_func.append_basic_block("entry", ctx)
+                ret_entry = ret_func.append_basic_block("entry")
                 builder.position_at_end(ret_entry)
                 builder.ret(ret_param)
 
@@ -43,8 +43,8 @@ def main():
                 # Function 3: unconditional branch
                 # ==========================================
                 br_func = mod.add_function("unconditional_branch", void_func_ty)
-                br_entry = br_func.append_basic_block("entry", ctx)
-                br_target = br_func.append_basic_block("target", ctx)
+                br_entry = br_func.append_basic_block("entry")
+                br_target = br_func.append_basic_block("target")
 
                 builder.position_at_end(br_entry)
                 br_inst = builder.br(br_target)
@@ -60,9 +60,9 @@ def main():
                 cond_param = cond_func.get_param(0)
                 cond_param.name = "cond"
 
-                cond_entry = cond_func.append_basic_block("entry", ctx)
-                cond_true = cond_func.append_basic_block("if_true", ctx)
-                cond_false = cond_func.append_basic_block("if_false", ctx)
+                cond_entry = cond_func.append_basic_block("entry")
+                cond_true = cond_func.append_basic_block("if_true")
+                cond_false = cond_func.append_basic_block("if_false")
 
                 builder.position_at_end(cond_entry)
                 cond_br = builder.cond_br(cond_param, cond_true, cond_false)
@@ -81,11 +81,11 @@ def main():
                 switch_param = switch_func.get_param(0)
                 switch_param.name = "val"
 
-                switch_entry = switch_func.append_basic_block("entry", ctx)
-                case_0 = switch_func.append_basic_block("case_0", ctx)
-                case_1 = switch_func.append_basic_block("case_1", ctx)
-                case_2 = switch_func.append_basic_block("case_2", ctx)
-                default_case = switch_func.append_basic_block("default", ctx)
+                switch_entry = switch_func.append_basic_block("entry")
+                case_0 = switch_func.append_basic_block("case_0")
+                case_1 = switch_func.append_basic_block("case_1")
+                case_2 = switch_func.append_basic_block("case_2")
+                default_case = switch_func.append_basic_block("default")
 
                 builder.position_at_end(switch_entry)
                 switch_inst = builder.switch_(switch_param, default_case, 3)
@@ -112,7 +112,7 @@ def main():
                 call_param = call_func.get_param(0)
                 call_param.name = "n"
 
-                call_entry = call_func.append_basic_block("entry", ctx)
+                call_entry = call_func.append_basic_block("entry")
                 builder.position_at_end(call_entry)
 
                 args = [call_param]
@@ -123,7 +123,7 @@ def main():
                 # Function 7: unreachable
                 # ==========================================
                 unreach_func = mod.add_function("unreachable_example", void_func_ty)
-                unreach_entry = unreach_func.append_basic_block("entry", ctx)
+                unreach_entry = unreach_func.append_basic_block("entry")
                 builder.position_at_end(unreach_entry)
                 builder.unreachable()
 

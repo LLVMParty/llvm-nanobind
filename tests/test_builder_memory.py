@@ -29,7 +29,7 @@ def main():
             func = mod.add_function("memory_ops", func_ty)
 
             with ctx.create_builder() as builder:
-                entry = func.append_basic_block("entry", ctx)
+                entry = func.append_basic_block("entry")
                 builder.position_at_end(entry)
 
                 # Basic alloca

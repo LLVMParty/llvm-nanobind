@@ -68,7 +68,7 @@ def main():
 
             # Add a basic block with return to make it a valid definition
             with ctx.create_builder() as builder:
-                baz_entry = baz.append_basic_block("entry", ctx)
+                baz_entry = baz.append_basic_block("entry")
                 builder.position_at_end(baz_entry)
                 builder.ret(i64.constant(0))
 

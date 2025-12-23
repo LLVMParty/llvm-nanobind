@@ -31,10 +31,10 @@ def main():
                 a.name = "a"
                 b.name = "b"
 
-                entry = diamond_func.append_basic_block("entry", ctx)
-                if_true = diamond_func.append_basic_block("if_true", ctx)
-                if_false = diamond_func.append_basic_block("if_false", ctx)
-                merge = diamond_func.append_basic_block("merge", ctx)
+                entry = diamond_func.append_basic_block("entry")
+                if_true = diamond_func.append_basic_block("if_true")
+                if_false = diamond_func.append_basic_block("if_false")
+                merge = diamond_func.append_basic_block("merge")
 
                 # Entry: conditional branch
                 builder.position_at_end(entry)
@@ -70,9 +70,9 @@ def main():
                 n = sum_func.get_param(0)
                 n.name = "n"
 
-                sum_entry = sum_func.append_basic_block("entry", ctx)
-                loop = sum_func.append_basic_block("loop", ctx)
-                exit_bb = sum_func.append_basic_block("exit", ctx)
+                sum_entry = sum_func.append_basic_block("entry")
+                loop = sum_func.append_basic_block("loop")
+                exit_bb = sum_func.append_basic_block("exit")
 
                 # Entry: branch to loop
                 builder.position_at_end(sum_entry)

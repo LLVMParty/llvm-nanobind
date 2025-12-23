@@ -78,7 +78,7 @@ def test_syncscope_clone():
 
                 # Clone the basic block and instruction
                 with ctx.create_builder() as builder:
-                    bb = dst_func.append_basic_block("", ctx)
+                    bb = dst_func.append_basic_block("")
                     builder.position_at_end(bb)
 
                     # Get destination parameter

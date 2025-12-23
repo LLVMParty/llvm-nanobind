@@ -37,7 +37,7 @@ def main():
                 x.name = "x"
                 y.name = "y"
 
-                init_entry = init_func.append_basic_block("entry", ctx)
+                init_entry = init_func.append_basic_block("entry")
                 builder.position_at_end(init_entry)
 
                 # Store x to p->x (field 0)
@@ -63,7 +63,7 @@ def main():
                 b.name = "b"
                 result.name = "result"
 
-                add_entry = add_func.append_basic_block("entry", ctx)
+                add_entry = add_func.append_basic_block("entry")
                 builder.position_at_end(add_entry)
 
                 # Load a->x and a->y
@@ -100,7 +100,7 @@ def main():
                 dist_p = dist_func.get_param(0)
                 dist_p.name = "p"
 
-                dist_entry = dist_func.append_basic_block("entry", ctx)
+                dist_entry = dist_func.append_basic_block("entry")
                 builder.position_at_end(dist_entry)
 
                 px_ptr = builder.struct_gep(point_ty, dist_p, 0, "px_ptr")
@@ -117,7 +117,7 @@ def main():
                 test_ty = ctx.types.function(i32, [])
                 test_func = mod.add_function("test_points", test_ty)
 
-                test_entry = test_func.append_basic_block("entry", ctx)
+                test_entry = test_func.append_basic_block("entry")
                 builder.position_at_end(test_entry)
 
                 # Allocate three Points

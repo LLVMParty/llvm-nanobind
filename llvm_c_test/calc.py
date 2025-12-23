@@ -97,7 +97,7 @@ def handle_line(tokens):
             param.name = "in"
 
             # Create entry block
-            entry = func.append_basic_block("entry", ctx)
+            entry = func.append_basic_block("entry")
 
             # Create builder and build IR
             with ctx.create_builder() as builder:

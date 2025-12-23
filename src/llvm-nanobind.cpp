@@ -2093,11 +2093,16 @@ struct LLVMFunctionWrapper : LLVMValueWrapper {
     LLVMSetFunctionCallConv(m_ref, cc);
   }
 
-  LLVMBasicBlockWrapper append_basic_block(const std::string &name,
-                                           LLVMContextRef ctx) {
+  LLVMBasicBlockWrapper append_basic_block(const std::string &name) {
     check_valid();
+    auto module = LLVMGetGlobalParent(m_ref);
+    if (module == nullptr)
+      throw LLVMAssertionError("Function has no parent module");
+    auto context = LLVMGetModuleContext(module);
+    if (context == nullptr)
+      throw LLVMAssertionError("Function module has no context");
     LLVMBasicBlockRef bb =
-        LLVMAppendBasicBlockInContext(ctx, m_ref, name.c_str());
+        LLVMAppendBasicBlockInContext(context, m_ref, name.c_str());
     return LLVMBasicBlockWrapper(bb, m_context_token);
   }
 
@@ -7051,9 +7056,15 @@ NB_MODULE(llvm, m) {
            R"(Create a pointer type in this type's context.)");
 
   // Use wrapper (represents a use edge in the use-def chain)
-  nb::class_<LLVMUseWrapper>(m, "Use")
-      .def_prop_ro("user", &LLVMUseWrapper::get_user)
-      .def_prop_ro("used_value", &LLVMUseWrapper::get_used_value);
+  nb::class_<LLVMUseWrapper>(
+      m, "Use",
+      "A use is a `user` which contains a reference to the `used_value`.")
+      .def_prop_ro("user", &LLVMUseWrapper::get_user,
+                   "Obtain the user value for a user.\n\n@api "
+                   "llvm::Use::getUser(), LLVMGetUser")
+      .def_prop_ro("used_value", &LLVMUseWrapper::get_used_value,
+                   "Obtain the value this use corresponds to.\n\n@api "
+                   "llvm::Use::get(), LLVMGetUsedValue");
 
   // Value wrapper
   nb::class_<LLVMValueWrapper>(m, "Value")
@@ -7392,11 +7403,10 @@ NB_MODULE(llvm, m) {
                    &LLVMFunctionWrapper::set_calling_conv)
       .def(
           "append_basic_block",
-          [](LLVMFunctionWrapper &self, const std::string &name,
-             LLVMContextWrapper *ctx) {
-            return self.append_basic_block(name, ctx->m_ref);
+          [](LLVMFunctionWrapper &self, const std::string &name) {
+            return self.append_basic_block(name);
           },
-          "name"_a, "ctx"_a)
+          "name"_a = "")
       .def_prop_ro("entry_block", &LLVMFunctionWrapper::entry_block)
       .def_prop_ro("basic_block_count", &LLVMFunctionWrapper::basic_block_count)
       .def_prop_ro("first_basic_block", &LLVMFunctionWrapper::first_basic_block)
@@ -7471,7 +7481,7 @@ NB_MODULE(llvm, m) {
       .def("ashr", &LLVMBuilderWrapper::ashr, "lhs"_a, "rhs"_a, "name"_a = "")
       .def("and_", &LLVMBuilderWrapper::and_, "lhs"_a, "rhs"_a, "name"_a = "")
       .def("or_", &LLVMBuilderWrapper::or_, "lhs"_a, "rhs"_a, "name"_a = "")
-      .def("xor_", &LLVMBuilderWrapper::xor_, "lhs"_a, "rhs"_a, "name"_a = "")
+      .def("xor", &LLVMBuilderWrapper::xor_, "lhs"_a, "rhs"_a, "name"_a = "")
       .def("binop", &LLVMBuilderWrapper::binop, "opcode"_a, "lhs"_a, "rhs"_a,
            "name"_a = "")
       // Memory
@@ -7878,6 +7888,8 @@ Use with 'with' statement:
   // is now available via Type methods: ty.constant(), ty.real_constant(),
   // ty.null() The following are aggregate/advanced constant creation functions
   // still needed:
+  // TODO: these need to be refactored to not be in the llvm module as globals
+  // they are specific to values and therefore to a context (or even module?)
   m.def("const_array", &const_array, "elem_ty"_a, "vals"_a,
         R"(Create an array constant.)");
   m.def("const_struct", &const_struct, "vals"_a, "packed"_a, "ctx"_a,
@@ -7901,6 +7913,8 @@ Use with 'with' statement:
   m.def("const_ptr_auth", &const_ptr_auth, "ptr"_a, "key"_a, "discriminator"_a,
         "addr_discriminator"_a,
         R"(Create a constant pointer authentication expression.)");
+  // TODO: this should probably be a custom LLVMIntrinsic class instead of an
+  // integer-based lookup
   m.def("intrinsic_is_overloaded", &intrinsic_is_overloaded, "id"_a,
         R"(Check if an intrinsic is overloaded.)");
   // NOTE: get_intrinsic_declaration has been moved to
@@ -7927,6 +7941,7 @@ Use with 'with' statement:
       R"(Get the value that indicates an undef element in a shuffle mask.)");
 
   // Get inline assembly
+  // TODO: this should be a method on type instead
   m.def(
       "get_inline_asm",
       [](const LLVMTypeWrapper &fn_ty, const std::string &asm_string,

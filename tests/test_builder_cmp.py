@@ -67,7 +67,7 @@ def main():
                 a.name = "a"
                 b.name = "b"
 
-                icmp_entry = icmp_func.append_basic_block("entry", ctx)
+                icmp_entry = icmp_func.append_basic_block("entry")
                 builder.position_at_end(icmp_entry)
 
                 # All integer predicates
@@ -94,7 +94,7 @@ def main():
                 x.name = "x"
                 y.name = "y"
 
-                fcmp_entry = fcmp_func.append_basic_block("entry", ctx)
+                fcmp_entry = fcmp_func.append_basic_block("entry")
                 builder.position_at_end(fcmp_entry)
 
                 # Ordered comparisons (false if either is NaN)
@@ -137,7 +137,7 @@ def main():
                 true_val.name = "true_val"
                 false_val.name = "false_val"
 
-                sel_entry = sel_func.append_basic_block("entry", ctx)
+                sel_entry = sel_func.append_basic_block("entry")
                 builder.position_at_end(sel_entry)
 
                 selected = builder.select(cond, true_val, false_val, "selected")
@@ -153,7 +153,7 @@ def main():
                 m_a.name = "a"
                 m_b.name = "b"
 
-                max_entry = max_func.append_basic_block("entry", ctx)
+                max_entry = max_func.append_basic_block("entry")
                 builder.position_at_end(max_entry)
 
                 cmp_gt = builder.icmp(llvm.IntPredicate.SGT, m_a, m_b, "a_gt_b")

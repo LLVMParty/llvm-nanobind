@@ -273,7 +273,7 @@ def test_dibuilder():
             foo_param_tys = [i64_type, i64_type, vec_type]
             foo_func_ty = ctx.types.function(i64_type, foo_param_tys, False)
             foo_function = mod.add_function("foo", foo_func_ty)
-            foo_entry_block = foo_function.append_basic_block("entry", ctx)
+            foo_entry_block = foo_function.append_basic_block("entry")
 
             # Create vector type metadata
             subscripts = [dib.get_or_create_subrange(0, 10)]
@@ -353,7 +353,7 @@ def test_dibuilder():
             foo_lexical_block = dib.create_lexical_block(function_md, file_md, 42, 0)
 
             # Create another basic block for variables
-            foo_var_block = foo_function.append_basic_block("vars", ctx)
+            foo_var_block = foo_function.append_basic_block("vars")
             foo_vars_location = llvm.dibuilder_create_debug_location(
                 ctx, 43, 0, function_md, None
             )

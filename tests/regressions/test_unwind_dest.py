@@ -27,8 +27,8 @@ def test_get_unwind_dest_returns_none_when_not_present():
             fn = m.add_function("test_cleanup", fn_ty)
             fn.set_personality_fn(personality_fn)
 
-            entry = fn.append_basic_block("entry", ctx)
-            cleanup_block = fn.append_basic_block("cleanup", ctx)
+            entry = fn.append_basic_block("entry")
+            cleanup_block = fn.append_basic_block("cleanup")
 
             with ctx.create_builder() as builder:
                 # Entry block - just branch to cleanup for simplicity
@@ -65,9 +65,9 @@ def test_get_unwind_dest_returns_block_when_present():
             fn = m.add_function("test_invoke", fn_ty)
             fn.set_personality_fn(personality_fn)
 
-            entry = fn.append_basic_block("entry", ctx)
-            normal = fn.append_basic_block("normal", ctx)
-            unwind = fn.append_basic_block("unwind", ctx)
+            entry = fn.append_basic_block("entry")
+            normal = fn.append_basic_block("normal")
+            unwind = fn.append_basic_block("unwind")
 
             # Create a simple function to invoke
             callee_ty = ctx.types.function(void_ty, [])

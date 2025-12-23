@@ -85,10 +85,10 @@ def main():
             cond = diamond_func.get_param(0)
             cond.name = "cond"
 
-            entry = diamond_func.append_basic_block("entry", ctx)
-            if_true = diamond_func.append_basic_block("if_true", ctx)
-            if_false = diamond_func.append_basic_block("if_false", ctx)
-            merge = diamond_func.append_basic_block("merge", ctx)
+            entry = diamond_func.append_basic_block("entry")
+            if_true = diamond_func.append_basic_block("if_true")
+            if_false = diamond_func.append_basic_block("if_false")
+            merge = diamond_func.append_basic_block("merge")
 
             with ctx.create_builder() as builder:
                 # Entry: conditional branch to if_true or if_false
@@ -118,9 +118,9 @@ def main():
             n = loop_func.get_param(0)
             n.name = "n"
 
-            loop_entry = loop_func.append_basic_block("entry", ctx)
-            loop_body = loop_func.append_basic_block("loop", ctx)
-            loop_exit = loop_func.append_basic_block("exit", ctx)
+            loop_entry = loop_func.append_basic_block("entry")
+            loop_body = loop_func.append_basic_block("loop")
+            loop_exit = loop_func.append_basic_block("exit")
 
             with ctx.create_builder() as builder:
                 # Entry: branch to loop
