@@ -410,7 +410,7 @@ class FunCloner:
         # Create the instruction in the right basic block
         ctx = self.module.context
         with ctx.create_builder() as builder:
-            bb = self.declare_bb(src.instruction_parent)
+            bb = self.declare_bb(src.block)
             builder.position_at_end(bb)
             return self.clone_instruction(src, builder)
 

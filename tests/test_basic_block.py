@@ -42,7 +42,7 @@ def main():
             exit_name = exit_bb.name
 
             # Get parent function
-            entry_parent = entry.parent
+            entry_parent = entry.function
 
             # Get entry basic block
             func_entry = func.entry_block

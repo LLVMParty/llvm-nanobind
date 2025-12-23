@@ -597,6 +597,9 @@ struct LLVMTypeWrapper {
         LLVMPointerTypeInContext(LLVMGetTypeContext(m_ref), address_space),
         m_context_token);
   }
+
+  // Get the context this type belongs to
+  LLVMContextWrapper *context() const;
 };
 
 // =============================================================================
@@ -1831,8 +1834,36 @@ struct LLVMValueWrapper {
     return LLVMIsATerminatorInst(m_ref) != nullptr;
   }
 
+  // Check if this value is a parameter (argument)
+  bool is_a_argument() const {
+    check_valid();
+    return LLVMIsAArgument(m_ref) != nullptr;
+  }
+
+  // =========================================================================
+  // Parent navigation for Values (instructions, parameters, globals)
+  // =========================================================================
+
+  // Get the block this instruction belongs to (throws if not an instruction)
+  LLVMBasicBlockWrapper block() const;
+
+  // Get the function this value belongs to:
+  // - For instructions: derived via block
+  // - For parameters: uses LLVMGetParamParent
+  // - For globals: throws (use .module instead)
+  LLVMFunctionWrapper get_function() const;
+
+  // Get the module this value belongs to:
+  // - For instructions: derived via block -> function -> module
+  // - For parameters: derived via function -> module
+  // - For globals: uses LLVMGetGlobalParent
+  LLVMModuleWrapper *get_module() const;
+
+  // Get the context this value belongs to:
+  // - For all value types: derived via module -> context
+  LLVMContextWrapper *get_context() const;
+
   // BasicBlock properties - forward declared
-  LLVMBasicBlockWrapper get_instruction_parent() const;
   LLVMBasicBlockWrapper get_normal_dest() const;
   std::optional<LLVMBasicBlockWrapper> get_unwind_dest() const;
   LLVMBasicBlockWrapper get_successor(unsigned index) const;
@@ -1989,8 +2020,19 @@ struct LLVMBasicBlockWrapper {
     return LLVMValueWrapper(inst, m_context_token);
   }
 
-  // Get parent function - declared here, defined after LLVMFunctionWrapper
-  LLVMFunctionWrapper parent() const;
+  // =========================================================================
+  // Parent navigation: block -> function -> module -> context
+  // =========================================================================
+
+  // Get the function this basic block belongs to
+  LLVMFunctionWrapper function() const;
+
+  // Get the module this basic block belongs to (derived via function)
+  LLVMModuleWrapper *module() const;
+
+  // Get the context this basic block belongs to (derived via function ->
+  // module)
+  LLVMContextWrapper *context() const;
 
   void move_before(const LLVMBasicBlockWrapper &other) {
     check_valid();
@@ -2220,6 +2262,16 @@ struct LLVMFunctionWrapper : LLVMValueWrapper {
   // subprogram property (write-only setter)
   // Declared here, implemented after LLVMMetadataWrapper is defined
   void set_subprogram(const LLVMMetadataWrapper &sp);
+
+  // =========================================================================
+  // Parent navigation: function -> module -> context
+  // =========================================================================
+
+  // Get the module this function belongs to
+  LLVMModuleWrapper *module() const;
+
+  // Get the context this function belongs to (derived via module)
+  LLVMContextWrapper *context() const;
 };
 
 // =============================================================================
@@ -2280,14 +2332,18 @@ inline LLVMValueWrapper LLVMUseWrapper::get_used_value() const {
   return LLVMValueWrapper(used, m_context_token);
 }
 
-// Implementation of LLVMBasicBlockWrapper::parent() - needs LLVMFunctionWrapper
-inline LLVMFunctionWrapper LLVMBasicBlockWrapper::parent() const {
+// Implementation of LLVMBasicBlockWrapper::function() - needs
+// LLVMFunctionWrapper
+inline LLVMFunctionWrapper LLVMBasicBlockWrapper::function() const {
   check_valid();
   LLVMValueRef parent_fn = LLVMGetBasicBlockParent(m_ref);
   if (!parent_fn)
     throw LLVMAssertionError("BasicBlock has no parent function");
   return LLVMFunctionWrapper(parent_fn, m_context_token);
 }
+
+// Note: LLVMBasicBlockWrapper::module() and ::context() are defined after
+// LLVMModuleWrapper and LLVMContextWrapper are fully defined
 
 // Implementation of LLVMValueWrapper::get_incoming_block() - needs
 // LLVMBasicBlockWrapper
@@ -2311,13 +2367,18 @@ LLVMOperandBundleWrapper::get_arg_at_index(unsigned index) const {
 
 // Implementation of LLVMValueWrapper BasicBlock methods - need
 // LLVMBasicBlockWrapper
-inline LLVMBasicBlockWrapper LLVMValueWrapper::get_instruction_parent() const {
+inline LLVMBasicBlockWrapper LLVMValueWrapper::block() const {
   check_valid();
+  if (!is_a_instruction())
+    throw LLVMAssertionError("Cannot get block: value is not an instruction");
   LLVMBasicBlockRef bb = LLVMGetInstructionParent(m_ref);
   if (!bb)
     throw LLVMAssertionError("Instruction has no parent basic block");
   return LLVMBasicBlockWrapper(bb, m_context_token);
 }
+
+// Note: LLVMValueWrapper::get_function(), get_module(), get_context() are
+// defined after LLVMModuleWrapper and LLVMContextWrapper are fully defined
 
 inline LLVMBasicBlockWrapper LLVMValueWrapper::get_normal_dest() const {
   check_valid();
@@ -3505,6 +3566,7 @@ struct LLVMModuleWrapper : NoMoveCopy {
   std::shared_ptr<ValidityToken> m_context_token;
   std::shared_ptr<ValidityToken> m_token;
   LLVMContextRef m_ctx_ref = nullptr;
+  bool m_borrowed = false; // True if we don't own the module (non-owning ref)
 
   LLVMModuleWrapper(const std::string &name, LLVMContextRef ctx,
                     std::shared_ptr<ValidityToken> context_token)
@@ -3519,8 +3581,23 @@ struct LLVMModuleWrapper : NoMoveCopy {
       : m_ref(mod), m_context_token(std::move(context_token)),
         m_token(std::make_shared<ValidityToken>()), m_ctx_ref(ctx) {}
 
+  // Constructor for non-owning (borrowed) reference to an existing module.
+  // Used by function.module to return the function's parent module.
+  // Borrowed wrappers don't dispose the module when destroyed.
+  static LLVMModuleWrapper *
+  create_borrowed(LLVMModuleRef mod, LLVMContextRef ctx,
+                  std::shared_ptr<ValidityToken> context_token) {
+    auto *wrapper = new LLVMModuleWrapper();
+    wrapper->m_ref = mod;
+    wrapper->m_context_token = std::move(context_token);
+    wrapper->m_token = std::make_shared<ValidityToken>();
+    wrapper->m_ctx_ref = ctx;
+    wrapper->m_borrowed = true;
+    return wrapper;
+  }
+
   ~LLVMModuleWrapper() {
-    if (m_ref) {
+    if (m_ref && !m_borrowed) {
       // Only dispose the module if its context is still alive.
       // If the context was already destroyed, the module memory is already
       // freed and calling LLVMDisposeModule would cause a use-after-free crash.
@@ -3538,7 +3615,8 @@ struct LLVMModuleWrapper : NoMoveCopy {
       }
       m_ref = nullptr;
     }
-    if (m_token) {
+    // Only invalidate the token if we own it (not borrowed)
+    if (m_token && !m_borrowed) {
       m_token->invalidate();
     }
   }
@@ -6682,6 +6760,168 @@ inline LLVMDIBuilderManager *LLVMModuleWrapper::create_dibuilder() {
 }
 
 // =============================================================================
+// Implementation of LLVMTypeWrapper methods that need LLVMContextWrapper
+// =============================================================================
+
+inline LLVMContextWrapper *LLVMTypeWrapper::context() const {
+  check_valid();
+  LLVMContextRef ctx_ref = LLVMGetTypeContext(m_ref);
+  // Return a non-owning (borrowed) wrapper for the type's context
+  return new LLVMContextWrapper(ctx_ref, m_context_token);
+}
+
+// =============================================================================
+// Implementation of LLVMBasicBlockWrapper methods that need
+// LLVMModuleWrapper/LLVMContextWrapper
+// =============================================================================
+
+inline LLVMModuleWrapper *LLVMBasicBlockWrapper::module() const {
+  check_valid();
+  LLVMValueRef parent_fn = LLVMGetBasicBlockParent(m_ref);
+  if (!parent_fn)
+    throw LLVMAssertionError("BasicBlock has no parent function");
+  LLVMModuleRef mod_ref = LLVMGetGlobalParent(parent_fn);
+  if (!mod_ref)
+    throw LLVMAssertionError("BasicBlock's function has no parent module");
+  LLVMContextRef ctx_ref = LLVMGetModuleContext(mod_ref);
+  return LLVMModuleWrapper::create_borrowed(mod_ref, ctx_ref, m_context_token);
+}
+
+inline LLVMContextWrapper *LLVMBasicBlockWrapper::context() const {
+  check_valid();
+  LLVMValueRef parent_fn = LLVMGetBasicBlockParent(m_ref);
+  if (!parent_fn)
+    throw LLVMAssertionError("BasicBlock has no parent function");
+  LLVMModuleRef mod_ref = LLVMGetGlobalParent(parent_fn);
+  if (!mod_ref)
+    throw LLVMAssertionError("BasicBlock's function has no parent module");
+  LLVMContextRef ctx_ref = LLVMGetModuleContext(mod_ref);
+  return new LLVMContextWrapper(ctx_ref, m_context_token);
+}
+
+// =============================================================================
+// Implementation of LLVMFunctionWrapper parent navigation methods
+// =============================================================================
+
+inline LLVMModuleWrapper *LLVMFunctionWrapper::module() const {
+  check_valid();
+  LLVMModuleRef mod_ref = LLVMGetGlobalParent(m_ref);
+  if (!mod_ref)
+    throw LLVMAssertionError("Function has no parent module");
+  LLVMContextRef ctx_ref = LLVMGetModuleContext(mod_ref);
+  // Return a non-owning (borrowed) wrapper for the function's module
+  return LLVMModuleWrapper::create_borrowed(mod_ref, ctx_ref, m_context_token);
+}
+
+inline LLVMContextWrapper *LLVMFunctionWrapper::context() const {
+  check_valid();
+  LLVMModuleRef mod_ref = LLVMGetGlobalParent(m_ref);
+  if (!mod_ref)
+    throw LLVMAssertionError("Function has no parent module");
+  LLVMContextRef ctx_ref = LLVMGetModuleContext(mod_ref);
+  // Return a non-owning (borrowed) wrapper for the function's context
+  return new LLVMContextWrapper(ctx_ref, m_context_token);
+}
+
+// =============================================================================
+// Implementation of LLVMValueWrapper parent navigation methods
+// =============================================================================
+
+inline LLVMFunctionWrapper LLVMValueWrapper::get_function() const {
+  check_valid();
+  // For instructions: get function via block
+  if (is_a_instruction()) {
+    LLVMBasicBlockRef bb = LLVMGetInstructionParent(m_ref);
+    if (!bb)
+      throw LLVMAssertionError("Instruction has no parent basic block");
+    LLVMValueRef fn = LLVMGetBasicBlockParent(bb);
+    if (!fn)
+      throw LLVMAssertionError("BasicBlock has no parent function");
+    return LLVMFunctionWrapper(fn, m_context_token);
+  }
+  // For parameters: use LLVMGetParamParent
+  if (is_a_argument()) {
+    LLVMValueRef fn = LLVMGetParamParent(m_ref);
+    if (!fn)
+      throw LLVMAssertionError("Parameter has no parent function");
+    return LLVMFunctionWrapper(fn, m_context_token);
+  }
+  // For globals: throw - they don't have a function parent
+  throw LLVMAssertionError(
+      "Cannot get function: value is not an instruction or parameter");
+}
+
+inline LLVMModuleWrapper *LLVMValueWrapper::get_module() const {
+  check_valid();
+  LLVMModuleRef mod_ref = nullptr;
+
+  // For instructions: get module via block -> function
+  if (is_a_instruction()) {
+    LLVMBasicBlockRef bb = LLVMGetInstructionParent(m_ref);
+    if (!bb)
+      throw LLVMAssertionError("Instruction has no parent basic block");
+    LLVMValueRef fn = LLVMGetBasicBlockParent(bb);
+    if (!fn)
+      throw LLVMAssertionError("BasicBlock has no parent function");
+    mod_ref = LLVMGetGlobalParent(fn);
+  }
+  // For parameters: get module via function
+  else if (is_a_argument()) {
+    LLVMValueRef fn = LLVMGetParamParent(m_ref);
+    if (!fn)
+      throw LLVMAssertionError("Parameter has no parent function");
+    mod_ref = LLVMGetGlobalParent(fn);
+  }
+  // For globals: use LLVMGetGlobalParent directly
+  else if (is_a_global_value()) {
+    mod_ref = LLVMGetGlobalParent(m_ref);
+  } else {
+    throw LLVMAssertionError(
+        "Cannot get module: value is not an instruction, parameter, or global");
+  }
+
+  if (!mod_ref)
+    throw LLVMAssertionError("Value has no parent module");
+  LLVMContextRef ctx_ref = LLVMGetModuleContext(mod_ref);
+  return LLVMModuleWrapper::create_borrowed(mod_ref, ctx_ref, m_context_token);
+}
+
+inline LLVMContextWrapper *LLVMValueWrapper::get_context() const {
+  check_valid();
+  LLVMModuleRef mod_ref = nullptr;
+
+  // For instructions: get module via block -> function
+  if (is_a_instruction()) {
+    LLVMBasicBlockRef bb = LLVMGetInstructionParent(m_ref);
+    if (!bb)
+      throw LLVMAssertionError("Instruction has no parent basic block");
+    LLVMValueRef fn = LLVMGetBasicBlockParent(bb);
+    if (!fn)
+      throw LLVMAssertionError("BasicBlock has no parent function");
+    mod_ref = LLVMGetGlobalParent(fn);
+  }
+  // For parameters: get module via function
+  else if (is_a_argument()) {
+    LLVMValueRef fn = LLVMGetParamParent(m_ref);
+    if (!fn)
+      throw LLVMAssertionError("Parameter has no parent function");
+    mod_ref = LLVMGetGlobalParent(fn);
+  }
+  // For globals: use LLVMGetGlobalParent directly
+  else if (is_a_global_value()) {
+    mod_ref = LLVMGetGlobalParent(m_ref);
+  } else {
+    throw LLVMAssertionError("Cannot get context: value is not an instruction, "
+                             "parameter, or global");
+  }
+
+  if (!mod_ref)
+    throw LLVMAssertionError("Value has no parent module");
+  LLVMContextRef ctx_ref = LLVMGetModuleContext(mod_ref);
+  return new LLVMContextWrapper(ctx_ref, m_context_token);
+}
+
+// =============================================================================
 // Module Registration
 // =============================================================================
 
@@ -7053,7 +7293,11 @@ NB_MODULE(llvm, m) {
       .def("vector", &LLVMTypeWrapper::vector, "count"_a,
            R"(Create a vector type with this element type.)")
       .def("pointer", &LLVMTypeWrapper::pointer, "address_space"_a = 0,
-           R"(Create a pointer type in this type's context.)");
+           R"(Create a pointer type in this type's context.)")
+      // Parent navigation
+      .def_prop_ro("context", &LLVMTypeWrapper::context,
+                   R"(Get the context this type belongs to.)",
+                   nb::rv_policy::take_ownership);
 
   // Use wrapper (represents a use edge in the use-def chain)
   nb::class_<LLVMUseWrapper>(
@@ -7312,9 +7556,23 @@ NB_MODULE(llvm, m) {
       .def_prop_ro("is_instruction", &LLVMValueWrapper::is_a_instruction)
       .def_prop_ro("is_terminator_inst",
                    &LLVMValueWrapper::is_a_terminator_inst)
+      .def_prop_ro("is_argument", &LLVMValueWrapper::is_a_argument)
+      // Parent navigation: value -> block -> function -> module -> context
+      .def_prop_ro(
+          "block", &LLVMValueWrapper::block,
+          R"(Get the basic block this instruction belongs to (throws if not an instruction).)")
+      .def_prop_ro(
+          "function", &LLVMValueWrapper::get_function,
+          R"(Get the function this value belongs to (works for instructions and parameters).)")
+      .def_prop_ro(
+          "module", &LLVMValueWrapper::get_module,
+          R"(Get the module this value belongs to (works for instructions, parameters, and globals).)",
+          nb::rv_policy::take_ownership)
+      .def_prop_ro(
+          "context", &LLVMValueWrapper::get_context,
+          R"(Get the context this value belongs to (works for instructions, parameters, and globals).)",
+          nb::rv_policy::take_ownership)
       // BasicBlock properties
-      .def_prop_ro("instruction_parent",
-                   &LLVMValueWrapper::get_instruction_parent)
       .def_prop_ro("normal_dest", &LLVMValueWrapper::get_normal_dest)
       .def_prop_ro("unwind_dest", &LLVMValueWrapper::get_unwind_dest)
       .def("get_successor", &LLVMValueWrapper::get_successor, "index"_a)
@@ -7386,7 +7644,15 @@ NB_MODULE(llvm, m) {
                    &LLVMBasicBlockWrapper::first_instruction)
       .def_prop_ro("last_instruction", &LLVMBasicBlockWrapper::last_instruction)
       .def_prop_ro("instructions", &LLVMBasicBlockWrapper::instructions)
-      .def_prop_ro("parent", &LLVMBasicBlockWrapper::parent)
+      // Parent navigation: block -> function -> module -> context
+      .def_prop_ro("function", &LLVMBasicBlockWrapper::function,
+                   R"(Get the function this basic block belongs to.)")
+      .def_prop_ro("module", &LLVMBasicBlockWrapper::module,
+                   R"(Get the module this basic block belongs to.)",
+                   nb::rv_policy::take_ownership)
+      .def_prop_ro("context", &LLVMBasicBlockWrapper::context,
+                   R"(Get the context this basic block belongs to.)",
+                   nb::rv_policy::take_ownership)
       .def_prop_ro("successors", &LLVMBasicBlockWrapper::successors)
       .def_prop_ro("predecessors", &LLVMBasicBlockWrapper::predecessors)
       .def("move_before", &LLVMBasicBlockWrapper::move_before, "other"_a)
@@ -7435,7 +7701,16 @@ NB_MODULE(llvm, m) {
       // Function API Refactor: Methods moved from global functions
       // =====================================================================
       .def("set_subprogram", &LLVMFunctionWrapper::set_subprogram, "sp"_a,
-           R"(Set subprogram metadata for this function.)");
+           R"(Set subprogram metadata for this function.)")
+      // =====================================================================
+      // Parent navigation: function -> module -> context
+      // =====================================================================
+      .def_prop_ro("module", &LLVMFunctionWrapper::module,
+                   R"(Get the module this function belongs to.)",
+                   nb::rv_policy::take_ownership)
+      .def_prop_ro("context", &LLVMFunctionWrapper::context,
+                   R"(Get the context this function belongs to.)",
+                   nb::rv_policy::take_ownership);
 
   // Builder wrapper
   nb::class_<LLVMBuilderWrapper>(m, "Builder")
