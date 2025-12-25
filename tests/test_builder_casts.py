@@ -24,18 +24,17 @@ def main():
 
             assert i8 == ctx.types.int_n(8), "oh nein"
 
-            with ctx.create_builder() as builder:
-                # ==========================================
-                # Function 1: Integer casts
-                # ==========================================
-                int_cast_ty = ctx.types.function(i8, [i64])
-                int_cast_func = mod.add_function("integer_casts", int_cast_ty)
-                i64_val = int_cast_func.get_param(0)
-                i64_val.name = "val"
+            # ==========================================
+            # Function 1: Integer casts
+            # ==========================================
+            int_cast_ty = ctx.types.function(i8, [i64])
+            int_cast_func = mod.add_function("integer_casts", int_cast_ty)
+            i64_val = int_cast_func.get_param(0)
+            i64_val.name = "val"
 
-                int_entry = int_cast_func.append_basic_block("entry")
-                builder.position_at_end(int_entry)
+            int_entry = int_cast_func.append_basic_block("entry")
 
+            with int_entry.create_builder() as builder:
                 # Truncate i64 -> i32 -> i16 -> i8
                 trunc_32 = builder.trunc(i64_val, i32, "trunc_32")
                 trunc_16 = builder.trunc(trunc_32, i16, "trunc_16")

@@ -37,12 +37,24 @@ def add_named_metadata_operand():
 def set_metadata():
     """Test setting metadata on instruction (no output expected)."""
     try:
-        # Create builder
+        # Create a builder manager but don't enter it (create unattached builder)
         with llvm.create_context() as ctx:
-            with ctx.create_builder() as builder:
-                # Create a return instruction (not in any function/block)
-                # This used to trigger an assertion
-                ret_inst = builder.ret_void()
+            with ctx.create_module("test") as mod:
+                func_ty = ctx.types.function(ctx.types.void, [])
+                func = mod.add_function("test", func_ty)
+                bb = func.append_basic_block("entry")
+
+                # Create builder manager but don't use it - we need to create
+                # an instruction without inserting it into a block
+                # This is a special case for testing
+                builder_mgr = bb.create_builder()
+                # Enter temporarily to get access to builder methods
+                with builder_mgr as builder:
+                    # Position at end, create instruction, then remove it
+                    ret_inst = builder.ret_void()
+
+                # Now remove the instruction from the basic block
+                ret_inst.remove_from_parent()
 
                 # Create metadata and set it on the instruction
                 i32 = ctx.types.i32

@@ -488,8 +488,7 @@ def test_dibuilder():
             mod.add_named_metadata_operand("ClassType", struct_p_ty)
 
             # Build IR instructions
-            with ctx.create_builder() as builder:
-                builder.position_at_end(foo_entry_block)
+            with foo_entry_block.create_builder() as builder:
                 builder.br(foo_var_block)
 
                 # Build another br with label
@@ -513,17 +512,18 @@ def test_dibuilder():
                 assert insert_pos is not None, (
                     "Expected at least one instruction in block"
                 )
-                builder.position_before_instr_and_dbg_records(insert_pos)
+                builder.position_before(insert_pos, before_dbg=True)
                 phi1 = builder.phi(i64_type, "p1")
                 phi1.add_incoming(zero_val, foo_entry_block)
 
                 # Do it again with the other positioning function
-                builder.position_before_dbg_records(foo_var_block, insert_pos)
+                builder.position_before(insert_pos, before_dbg=True)
                 phi2 = builder.phi(i64_type, "p2")
                 phi2.add_incoming(zero_val, foo_entry_block)
 
                 # Insert non-phi before ret
-                builder.position_before(ret_inst)
+                # TODO: settings before_dbg=True will crash the test here in LLVMGetFirstDbgRecord
+                builder.position_before(ret_inst, before_dbg=False)
                 add_inst = builder.add(phi1, phi2, "a")
 
                 # Iterate over debug records

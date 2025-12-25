@@ -21,9 +21,8 @@ with llvm.create_context() as ctx:
         src_func = mod.add_function("source", func_ty)
 
         # Add a basic block to source
-        with ctx.create_builder() as builder:
-            bb = src_func.append_basic_block("entry")
-            builder.position_at_end(bb)
+        bb = src_func.append_basic_block("entry")
+        with bb.create_builder() as builder:
             builder.ret_void()
 
         print("Source function created and works fine")

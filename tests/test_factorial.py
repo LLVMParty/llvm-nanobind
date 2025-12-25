@@ -27,25 +27,24 @@ def main():
             i64 = ctx.types.i64
             i1 = ctx.types.i1
 
-            with ctx.create_builder() as builder:
-                # ==========================================
-                # Function: i64 factorial(i64 n)
-                # Iterative implementation using alloca/load/store
-                # ==========================================
-                fact_ty = ctx.types.function(i64, [i64])
-                fact_func = mod.add_function("factorial", fact_ty)
+            # ==========================================
+            # Function: i64 factorial(i64 n)
+            # Iterative implementation using alloca/load/store
+            # ==========================================
+            fact_ty = ctx.types.function(i64, [i64])
+            fact_func = mod.add_function("factorial", fact_ty)
 
-                n = fact_func.get_param(0)
-                n.name = "n"
+            n = fact_func.get_param(0)
+            n.name = "n"
 
-                # Basic blocks
-                entry = fact_func.append_basic_block("entry")
-                loop_cond = fact_func.append_basic_block("loop_cond")
-                loop_body = fact_func.append_basic_block("loop_body")
-                exit_bb = fact_func.append_basic_block("exit")
+            # Basic blocks
+            entry = fact_func.append_basic_block("entry")
+            loop_cond = fact_func.append_basic_block("loop_cond")
+            loop_body = fact_func.append_basic_block("loop_body")
+            exit_bb = fact_func.append_basic_block("exit")
 
+            with entry.create_builder() as builder:
                 # Entry block: initialize result=1, i=1
-                builder.position_at_end(entry)
                 result_ptr = builder.alloca(i64, "result")
                 i_ptr = builder.alloca(i64, "i")
 

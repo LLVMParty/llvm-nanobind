@@ -30,9 +30,8 @@ def test_get_unwind_dest_returns_none_when_not_present():
             entry = fn.append_basic_block("entry")
             cleanup_block = fn.append_basic_block("cleanup")
 
-            with ctx.create_builder() as builder:
+            with entry.create_builder() as builder:
                 # Entry block - just branch to cleanup for simplicity
-                builder.position_at_end(entry)
                 builder.br(cleanup_block)
 
                 # Cleanup block with cleanuppad and cleanupret (no unwind)
@@ -73,9 +72,9 @@ def test_get_unwind_dest_returns_block_when_present():
             callee_ty = ctx.types.function(void_ty, [])
             callee = m.add_function("may_throw", callee_ty)
 
-            with ctx.create_builder() as builder:
-                builder.position_at_end(entry)
-                # Use invoke_with_operand_bundles with empty bundles
+            with (
+                entry.create_builder() as builder
+            ):  # Use invoke_with_operand_bundles with empty bundles
                 invoke = builder.invoke_with_operand_bundles(
                     callee_ty, callee, [], normal, unwind, [], ""
                 )

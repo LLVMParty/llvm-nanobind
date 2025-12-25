@@ -55,8 +55,7 @@ def test_module_outlives_context_no_crash():
             fn_ty = ctx.types.function(ctx.types.i32, [], False)
             fn = m.add_function("bar", fn_ty)
             bb = fn.append_basic_block("entry")
-            with ctx.create_builder() as builder:
-                builder.position_at_end(bb)
+            with bb.create_builder() as builder:
                 builder.ret(ctx.types.i32.constant(99, False))
 
         # Create another module directly (unsafe pattern - for testing)
@@ -97,8 +96,7 @@ def test_proper_cleanup_order():
                 fn_ty = ctx.types.function(ctx.types.i32, [], False)
                 fn = m.add_function("foo", fn_ty)
                 bb = fn.append_basic_block("entry")
-                with ctx.create_builder() as builder:
-                    builder.position_at_end(bb)
+                with bb.create_builder() as builder:
                     builder.ret(ctx.types.i32.constant(42, False))
 
                 # Module is valid here
@@ -174,8 +172,12 @@ def test_builder_outlives_context():
     escaped_builder = None
 
     with llvm.create_context() as ctx:
-        escaped_builder = ctx.create_builder()
-        # Don't use 'with' - let it escape
+        with ctx.create_module("test") as m:
+            fn_ty = ctx.types.function(ctx.types.i32, [], False)
+            fn = m.add_function("foo", fn_ty)
+            bb = fn.append_basic_block("entry")
+            # Create builder manager but don't enter it
+            escaped_builder = bb.create_builder()
 
     # Context destroyed
     gc.collect()

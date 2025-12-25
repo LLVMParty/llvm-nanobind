@@ -100,9 +100,7 @@ def handle_line(tokens):
             entry = func.append_basic_block("entry")
 
             # Create builder and build IR
-            with ctx.create_builder() as builder:
-                builder.position_at_end(entry)
-
+            with entry.create_builder() as builder:
                 result = build_from_tokens(expr_tokens, builder, param, i64_ty)
 
                 if result:

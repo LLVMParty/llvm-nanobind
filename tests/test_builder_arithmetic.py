@@ -26,10 +26,8 @@ def main():
             a.name = "a"
             b.name = "b"
 
-            with ctx.create_builder() as builder:
-                int_entry = int_func.append_basic_block("entry")
-                builder.position_at_end(int_entry)
-
+            int_entry = int_func.append_basic_block("entry")
+            with int_entry.create_builder() as builder:
                 # Basic arithmetic
                 add = builder.add(a, b, "add")
                 sub = builder.sub(a, b, "sub")
@@ -67,18 +65,16 @@ def main():
                 builder.ret(add)
 
             # Floating point arithmetic function: f64 float_arith(f64, f64)
-            with ctx.create_builder() as builder:
-                fp_func_ty = ctx.types.function(f64, [f64, f64])
-                fp_func = mod.add_function("float_arith", fp_func_ty)
+            fp_func_ty = ctx.types.function(f64, [f64, f64])
+            fp_func = mod.add_function("float_arith", fp_func_ty)
 
-                x = fp_func.get_param(0)
-                y = fp_func.get_param(1)
-                x.name = "x"
-                y.name = "y"
+            x = fp_func.get_param(0)
+            y = fp_func.get_param(1)
+            x.name = "x"
+            y.name = "y"
 
-                fp_entry = fp_func.append_basic_block("entry")
-                builder.position_at_end(fp_entry)
-
+            fp_entry = fp_func.append_basic_block("entry")
+            with fp_entry.create_builder() as builder:
                 # Floating point operations
                 fadd = builder.fadd(x, y, "fadd")
                 fsub = builder.fsub(x, y, "fsub")

@@ -77,10 +77,8 @@ def test_syncscope_clone():
                 dst_func = dst.add_function("test", func_ty)
 
                 # Clone the basic block and instruction
-                with ctx.create_builder() as builder:
-                    bb = dst_func.append_basic_block("")
-                    builder.position_at_end(bb)
-
+                bb = dst_func.append_basic_block("")
+                with bb.create_builder() as builder:
                     # Get destination parameter
                     dst_param = dst_func.first_param()
                     assert dst_param is not None, (

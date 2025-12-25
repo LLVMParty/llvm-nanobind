@@ -408,10 +408,8 @@ class FunCloner:
             raise RuntimeError("Expected an instruction")
 
         # Create the instruction in the right basic block
-        ctx = self.module.context
-        with ctx.create_builder() as builder:
-            bb = self.declare_bb(src.block)
-            builder.position_at_end(bb)
+        bb = self.declare_bb(src.block)
+        with bb.create_builder() as builder:
             return self.clone_instruction(src, builder)
 
     def clone_attrs(self, src: llvm.Value, dst: llvm.Value) -> None:
@@ -981,9 +979,7 @@ class FunCloner:
             return bb
 
         ctx = self.module.context
-        with ctx.create_builder() as builder:
-            builder.position_at_end(bb)
-
+        with bb.create_builder() as builder:
             cur = first
             while True:
                 self.clone_instruction(cur, builder)

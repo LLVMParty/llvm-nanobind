@@ -56,20 +56,19 @@ def main():
             f64 = ctx.types.f64
             void_ty = ctx.types.void
 
-            with ctx.create_builder() as builder:
-                # ==========================================
-                # Function 1: Integer comparisons
-                # ==========================================
-                icmp_ty = ctx.types.function(void_ty, [i32, i32])
-                icmp_func = mod.add_function("int_comparisons", icmp_ty)
-                a = icmp_func.get_param(0)
-                b = icmp_func.get_param(1)
-                a.name = "a"
-                b.name = "b"
+            # ==========================================
+            # Function 1: Integer comparisons
+            # ==========================================
+            icmp_ty = ctx.types.function(void_ty, [i32, i32])
+            icmp_func = mod.add_function("int_comparisons", icmp_ty)
+            a = icmp_func.get_param(0)
+            b = icmp_func.get_param(1)
+            a.name = "a"
+            b.name = "b"
 
-                icmp_entry = icmp_func.append_basic_block("entry")
-                builder.position_at_end(icmp_entry)
+            icmp_entry = icmp_func.append_basic_block("entry")
 
+            with icmp_entry.create_builder() as builder:
                 # All integer predicates
                 icmp_eq = builder.icmp(llvm.IntPredicate.EQ, a, b, "eq")
                 icmp_ne = builder.icmp(llvm.IntPredicate.NE, a, b, "ne")

@@ -16,28 +16,27 @@ def main():
             i1 = ctx.types.i1
             i32 = ctx.types.i32
 
-            with ctx.create_builder() as builder:
-                # ==========================================
-                # Function: simple diamond pattern with PHI
-                # i32 diamond(i1 cond, i32 a, i32 b)
-                # ==========================================
-                diamond_ty = ctx.types.function(i32, [i1, i32, i32])
-                diamond_func = mod.add_function("diamond", diamond_ty)
+            # ==========================================
+            # Function: simple diamond pattern with PHI
+            # i32 diamond(i1 cond, i32 a, i32 b)
+            # ==========================================
+            diamond_ty = ctx.types.function(i32, [i1, i32, i32])
+            diamond_func = mod.add_function("diamond", diamond_ty)
 
-                cond = diamond_func.get_param(0)
-                a = diamond_func.get_param(1)
-                b = diamond_func.get_param(2)
-                cond.name = "cond"
-                a.name = "a"
-                b.name = "b"
+            cond = diamond_func.get_param(0)
+            a = diamond_func.get_param(1)
+            b = diamond_func.get_param(2)
+            cond.name = "cond"
+            a.name = "a"
+            b.name = "b"
 
-                entry = diamond_func.append_basic_block("entry")
-                if_true = diamond_func.append_basic_block("if_true")
-                if_false = diamond_func.append_basic_block("if_false")
-                merge = diamond_func.append_basic_block("merge")
+            entry = diamond_func.append_basic_block("entry")
+            if_true = diamond_func.append_basic_block("if_true")
+            if_false = diamond_func.append_basic_block("if_false")
+            merge = diamond_func.append_basic_block("merge")
 
+            with entry.create_builder() as builder:
                 # Entry: conditional branch
-                builder.position_at_end(entry)
                 builder.cond_br(cond, if_true, if_false)
 
                 # True branch: compute a * 2

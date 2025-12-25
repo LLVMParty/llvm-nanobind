@@ -51,10 +51,8 @@ def main():
             # Count basic blocks
             bb_count = func.basic_block_count
 
-            # Create a builder to add instructions
-            with ctx.create_builder() as builder:
-                # Add instructions to entry block
-                builder.position_at_end(entry)
+            # Create a builder to add instructions to entry block
+            with entry.create_builder() as builder:
                 builder.br(middle)
 
                 # Add instructions to middle block

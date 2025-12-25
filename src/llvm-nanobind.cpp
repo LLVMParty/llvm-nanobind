@@ -1925,6 +1925,9 @@ struct LLVMValueWrapper {
   // Takes a context for converting metadata to value (needed for instructions)
   void set_metadata(unsigned kind, const LLVMMetadataWrapper &md,
                     LLVMContextWrapper &ctx);
+
+  // Create a builder positioned before this instruction
+  LLVMBuilderManager *create_builder(bool before_dbg) const;
 };
 
 // =============================================================================
@@ -2079,6 +2082,9 @@ struct LLVMBasicBlockWrapper {
     }
     return result;
   }
+
+  // Create a builder positioned at the end of this basic block
+  LLVMBuilderManager *create_builder() const;
 };
 
 // =============================================================================
@@ -2479,11 +2485,30 @@ struct LLVMBuilderWrapper : NoMoveCopy {
   std::shared_ptr<ValidityToken> m_context_token;
   std::shared_ptr<ValidityToken> m_token;
 
+  // Constructor with basic block (position at end)
   LLVMBuilderWrapper(LLVMContextRef ctx,
-                     std::shared_ptr<ValidityToken> context_token)
+                     std::shared_ptr<ValidityToken> context_token,
+                     LLVMBasicBlockRef bb)
       : m_context_token(std::move(context_token)),
         m_token(std::make_shared<ValidityToken>()) {
     m_ref = LLVMCreateBuilderInContext(ctx);
+    LLVMPositionBuilderAtEnd(m_ref, bb);
+  }
+
+  // Constructor with instruction (position before/after debug records)
+  LLVMBuilderWrapper(LLVMContextRef ctx,
+                     std::shared_ptr<ValidityToken> context_token,
+                     LLVMValueRef inst, bool before_dbg)
+      : m_context_token(std::move(context_token)),
+        m_token(std::make_shared<ValidityToken>()) {
+    m_ref = LLVMCreateBuilderInContext(ctx);
+    if (before_dbg) {
+      // Position before instruction and its debug records
+      LLVMPositionBuilderBeforeInstrAndDbgRecords(m_ref, inst);
+    } else {
+      // Position before instruction but after debug records
+      LLVMPositionBuilderBefore(m_ref, inst);
+    }
   }
 
   ~LLVMBuilderWrapper() {
@@ -2514,16 +2539,24 @@ struct LLVMBuilderWrapper : NoMoveCopy {
   }
 
   // Positioning
-  void position_at_end(const LLVMBasicBlockWrapper &bb) {
+  void position_at_end(const LLVMBasicBlockWrapper &bb, bool before_dbg) {
     check_valid();
     bb.check_valid();
-    LLVMPositionBuilderAtEnd(m_ref, bb.m_ref);
+    if (before_dbg) {
+      LLVMPositionBuilderBeforeDbgRecords(m_ref, bb.m_ref, nullptr);
+    } else {
+      LLVMPositionBuilderAtEnd(m_ref, bb.m_ref);
+    }
   }
 
-  void position_before(const LLVMValueWrapper &inst) {
+  void position_before(const LLVMValueWrapper &inst, bool before_dbg) {
     check_valid();
     inst.check_valid();
-    LLVMPositionBuilderBefore(m_ref, inst.m_ref);
+    if (before_dbg) {
+      LLVMPositionBuilderBeforeInstrAndDbgRecords(m_ref, inst.m_ref);
+    } else {
+      LLVMPositionBuilderBefore(m_ref, inst.m_ref);
+    }
   }
 
   std::optional<LLVMBasicBlockWrapper> insert_block() const {
@@ -3535,26 +3568,6 @@ struct LLVMBuilderWrapper : NoMoveCopy {
     instr.check_valid();
     LLVMAddMetadataToInst(m_ref, instr.m_ref);
   }
-
-  // =========================================================================
-  // Builder API Refactor: Methods moved from global functions
-  // =========================================================================
-
-  // Position builder before debug records
-  void position_before_dbg_records(const LLVMBasicBlockWrapper &block,
-                                   const LLVMValueWrapper &instr) {
-    check_valid();
-    block.check_valid();
-    instr.check_valid();
-    LLVMPositionBuilderBeforeDbgRecords(m_ref, block.m_ref, instr.m_ref);
-  }
-
-  // Position builder before instruction and debug records
-  void position_before_instr_and_dbg_records(const LLVMValueWrapper &instr) {
-    check_valid();
-    instr.check_valid();
-    LLVMPositionBuilderBeforeInstrAndDbgRecords(m_ref, instr.m_ref);
-  }
 };
 
 // =============================================================================
@@ -4349,14 +4362,13 @@ struct LLVMContextWrapper : NoMoveCopy {
   LLVMModuleManager *create_module(const std::string &name);
 
   // Builder creation (returns context manager) - defined after
-  // LLVMBuilderManager
-  LLVMBuilderManager *create_builder();
-
-  // Parsing methods - defined after LLVMModuleManager
+  // LLVMBuilderManager. Must be created with a position.
+  LLVMBuilderManager *create_builder(const LLVMBasicBlockWrapper &bb);
+  LLVMBuilderManager *create_builder(const LLVMValueWrapper &inst,
+                                     bool before_dbg);
   LLVMModuleManager *parse_bitcode_from_file(const fs::path &filename,
-                                             bool lazy = false);
-  LLVMModuleManager *parse_bitcode_from_bytes(nb::bytes data,
-                                              bool lazy = false);
+                                             bool lazy);
+  LLVMModuleManager *parse_bitcode_from_bytes(nb::bytes data, bool lazy);
   LLVMModuleManager *parse_ir(const std::string &source,
                               const std::string &mod_name);
 };
@@ -4464,6 +4476,11 @@ struct LLVMBuilderManager : NoMoveCopy {
   bool m_entered = false;
   bool m_disposed = false;
 
+  // Position: exactly one must be set
+  std::optional<LLVMBasicBlockRef> m_initial_bb;
+  std::optional<LLVMValueRef> m_initial_inst;
+  bool m_before_dbg = true; // Only used with m_initial_inst
+
   explicit LLVMBuilderManager(LLVMContextWrapper *context)
       : m_context(context),
         m_context_token(context ? context->m_token : nullptr) {}
@@ -4479,8 +4496,22 @@ struct LLVMBuilderManager : NoMoveCopy {
     if (!m_context_token || !m_context_token->is_valid())
       throw LLVMMemoryError("Builder's context has been destroyed");
     m_context->check_valid();
-    m_builder = std::make_unique<LLVMBuilderWrapper>(m_context->m_ref,
-                                                     m_context->m_token);
+
+    // Create builder with position
+    if (m_initial_bb) {
+      m_builder = std::make_unique<LLVMBuilderWrapper>(
+          m_context->m_ref, m_context->m_token, *m_initial_bb);
+    } else if (m_initial_inst) {
+      m_builder = std::make_unique<LLVMBuilderWrapper>(
+          m_context->m_ref, m_context->m_token, *m_initial_inst, m_before_dbg);
+    } else {
+      throw LLVMMemoryError(
+          "Builder must be created with a position (BasicBlock or "
+          "Instruction). "
+          "Use ctx.create_builder(bb), ctx.create_builder(inst), "
+          "bb.create_builder(), or inst.create_builder().");
+    }
+
     m_entered = true;
     return *m_builder;
   }
@@ -4515,9 +4546,50 @@ LLVMModuleManager *LLVMContextWrapper::create_module(const std::string &name) {
   return new LLVMModuleManager(name, this);
 }
 
-LLVMBuilderManager *LLVMContextWrapper::create_builder() {
+LLVMBuilderManager *
+LLVMContextWrapper::create_builder(const LLVMBasicBlockWrapper &bb) {
   check_valid();
-  return new LLVMBuilderManager(this);
+  bb.check_valid();
+  auto manager = new LLVMBuilderManager(this);
+  manager->m_initial_bb = bb.m_ref;
+  return manager;
+}
+
+LLVMBuilderManager *
+LLVMContextWrapper::create_builder(const LLVMValueWrapper &inst,
+                                   bool before_dbg) {
+  check_valid();
+  inst.check_valid();
+  auto manager = new LLVMBuilderManager(this);
+  manager->m_initial_inst = inst.m_ref;
+  manager->m_before_dbg = before_dbg;
+  return manager;
+}
+
+// =============================================================================
+// Convenience method implementations for BasicBlock and Value
+// =============================================================================
+
+LLVMBuilderManager *LLVMBasicBlockWrapper::create_builder() const {
+  check_valid();
+  // Get the context for this basic block via function -> module -> context
+  // Note: context() returns a new LLVMContextWrapper that we don't own
+  // The builder manager will hold a non-owning pointer
+  LLVMContextWrapper *ctx =
+      const_cast<LLVMBasicBlockWrapper *>(this)->context();
+  auto manager = new LLVMBuilderManager(ctx);
+  manager->m_initial_bb = m_ref;
+  return manager;
+}
+
+LLVMBuilderManager *LLVMValueWrapper::create_builder(bool before_dbg) const {
+  check_valid();
+  // Get the context for this value
+  LLVMContextWrapper *ctx = get_context();
+  auto manager = new LLVMBuilderManager(ctx);
+  manager->m_initial_inst = m_ref;
+  manager->m_before_dbg = before_dbg;
+  return manager;
 }
 
 LLVMModuleManager *
@@ -7622,7 +7694,26 @@ NB_MODULE(llvm, m) {
       .def(
           "set_metadata", &LLVMValueWrapper::set_metadata, "kind"_a, "md"_a,
           "ctx"_a,
-          R"(Set metadata on this value (works for both instructions and globals).)");
+          R"(Set metadata on this value (works for both instructions and globals).)")
+      // Builder creation for instructions
+      .def("create_builder", &LLVMValueWrapper::create_builder, nb::kw_only(),
+           "before_dbg"_a = false, nb::rv_policy::take_ownership,
+           R"(Create a Builder positioned before this Instruction.
+
+Only valid for instructions. For other value types, this will fail.
+
+Args:
+  before_dbg: If True, insert before debug records.
+              If False, insert after debug records but before the instruction.
+              Debug records (like llvm.dbg.value) are typically placed before
+              the instruction they describe.
+
+Returns:
+  A BuilderManager for use with Python's 'with' statement.
+
+Example:
+  with inst.create_builder(before_dbg=False) as builder:
+      builder.add(x, y, "result"))");
 
   // BasicBlock wrapper
   nb::class_<LLVMBasicBlockWrapper>(m, "BasicBlock")
@@ -7656,7 +7747,17 @@ NB_MODULE(llvm, m) {
       .def_prop_ro("successors", &LLVMBasicBlockWrapper::successors)
       .def_prop_ro("predecessors", &LLVMBasicBlockWrapper::predecessors)
       .def("move_before", &LLVMBasicBlockWrapper::move_before, "other"_a)
-      .def("move_after", &LLVMBasicBlockWrapper::move_after, "other"_a);
+      .def("move_after", &LLVMBasicBlockWrapper::move_after, "other"_a)
+      .def("create_builder", &LLVMBasicBlockWrapper::create_builder,
+           nb::rv_policy::take_ownership,
+           R"(Create a Builder positioned at the end of this BasicBlock.
+
+Returns:
+  A BuilderManager for use with Python's 'with' statement.
+
+Example:
+  with bb.create_builder() as builder:
+      builder.add(x, y, "result"))");
 
   // Function wrapper
   nb::class_<LLVMFunctionWrapper, LLVMValueWrapper>(m, "Function")
@@ -7714,8 +7815,10 @@ NB_MODULE(llvm, m) {
 
   // Builder wrapper
   nb::class_<LLVMBuilderWrapper>(m, "Builder")
-      .def("position_at_end", &LLVMBuilderWrapper::position_at_end, "bb"_a)
-      .def("position_before", &LLVMBuilderWrapper::position_before, "inst"_a)
+      .def("position_at_end", &LLVMBuilderWrapper::position_at_end, "bb"_a,
+           nb::kw_only(), "before_dbg"_a = false)
+      .def("position_before", &LLVMBuilderWrapper::position_before, "inst"_a,
+           nb::kw_only(), "before_dbg"_a = false)
       .def_prop_ro("insert_block", &LLVMBuilderWrapper::insert_block)
       // Arithmetic
       .def("add", &LLVMBuilderWrapper::add, "lhs"_a, "rhs"_a, "name"_a = "")
@@ -7902,17 +8005,7 @@ NB_MODULE(llvm, m) {
       .def("catch_switch", &LLVMBuilderWrapper::catch_switch, "parent_pad"_a,
            "unwind_bb"_a = nb::none(), "num_handlers"_a = 0, "name"_a = "")
       .def("cleanup_ret", &LLVMBuilderWrapper::cleanup_ret, "catch_pad"_a,
-           "bb"_a = nb::none())
-      // =====================================================================
-      // Builder API Refactor: Methods moved from global functions
-      // =====================================================================
-      .def("position_before_dbg_records",
-           &LLVMBuilderWrapper::position_before_dbg_records, "block"_a,
-           "instr"_a, R"(Position builder before debug records.)")
-      .def("position_before_instr_and_dbg_records",
-           &LLVMBuilderWrapper::position_before_instr_and_dbg_records,
-           "instr"_a,
-           R"(Position builder before instruction and debug records.)");
+           "bb"_a = nb::none());
 
   // Operand Bundle wrapper
   nb::class_<LLVMOperandBundleWrapper>(m, "OperandBundle")
@@ -8088,8 +8181,43 @@ Use with 'with' statement:
       // Module/Builder creation
       .def("create_module", &LLVMContextWrapper::create_module, "name"_a,
            nb::rv_policy::take_ownership)
-      .def("create_builder", &LLVMContextWrapper::create_builder,
-           nb::rv_policy::take_ownership)
+      .def("create_builder",
+           nb::overload_cast<const LLVMBasicBlockWrapper &>(
+               &LLVMContextWrapper::create_builder),
+           "bb"_a, nb::rv_policy::take_ownership,
+           R"(Create a Builder positioned at the end of a BasicBlock.
+
+Args:
+  bb: The BasicBlock to position at. New instructions will be appended
+     to the end of this block.
+
+Returns:
+  A BuilderManager for use with Python's 'with' statement.
+
+Example:
+  with ctx.create_builder(bb) as builder:
+      builder.add(x, y, "result"))")
+      .def("create_builder",
+           nb::overload_cast<const LLVMValueWrapper &, bool>(
+               &LLVMContextWrapper::create_builder),
+           "inst"_a, nb::kw_only(), "before_dbg"_a = false,
+           nb::rv_policy::take_ownership,
+           R"(Create a Builder positioned before an Instruction.
+
+Args:
+  inst: The Instruction to insert before. New instructions will be placed
+        immediately before this instruction.
+  before_dbg: If True, insert before debug records.
+              If False, insert after debug records but before the instruction.
+              Debug records (like llvm.dbg.value) are typically placed before
+              the instruction they describe.
+
+Returns:
+  A BuilderManager for use with Python's 'with' statement.
+
+Example:
+  with ctx.create_builder(inst, before_dbg=False) as builder:
+      builder.add(x, y, "result"))")
       .def("create_basic_block", &LLVMContextWrapper::create_basic_block,
            "name"_a)
       // Parsing methods
@@ -8794,12 +8922,6 @@ Use with 'with' statement:
 
   // NOTE: set_is_new_dbg_info_format and is_new_dbg_info_format have been
   // moved to Module.is_new_dbg_info_format property
-
-  // NOTE: position_builder_before_instr_and_dbg_records has been moved to
-  // Builder.position_before_instr_and_dbg_records() method
-
-  // NOTE: position_builder_before_dbg_records has been moved to
-  // Builder.position_before_dbg_records() method
 
   // Debug record iteration (opaque DbgRecord type - kept as global functions)
   m.def(

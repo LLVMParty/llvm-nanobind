@@ -17,14 +17,14 @@ def main():
             i1 = ctx.types.i1
             void_ty = ctx.types.void
 
-            with ctx.create_builder() as builder:
-                # ==========================================
-                # Function 1: void return
-                # ==========================================
-                void_func_ty = ctx.types.function(void_ty, [])
-                void_func = mod.add_function("return_void", void_func_ty)
-                void_entry = void_func.append_basic_block("entry")
-                builder.position_at_end(void_entry)
+            # ==========================================
+            # Function 1: void return
+            # ==========================================
+            void_func_ty = ctx.types.function(void_ty, [])
+            void_func = mod.add_function("return_void", void_func_ty)
+            void_entry = void_func.append_basic_block("entry")
+
+            with void_entry.create_builder() as builder:
                 builder.ret_void()
 
                 # ==========================================

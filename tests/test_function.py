@@ -67,9 +67,8 @@ def main():
             baz.linkage = llvm.Linkage.Internal
 
             # Add a basic block with return to make it a valid definition
-            with ctx.create_builder() as builder:
-                baz_entry = baz.append_basic_block("entry")
-                builder.position_at_end(baz_entry)
+            baz_entry = baz.append_basic_block("entry")
+            with baz_entry.create_builder() as builder:
                 builder.ret(i64.constant(0))
 
             # Function 4: varargs function - i32 printf(ptr, ...)

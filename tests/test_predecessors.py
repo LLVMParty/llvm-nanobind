@@ -90,9 +90,8 @@ def main():
             if_false = diamond_func.append_basic_block("if_false")
             merge = diamond_func.append_basic_block("merge")
 
-            with ctx.create_builder() as builder:
+            with entry.create_builder() as builder:
                 # Entry: conditional branch to if_true or if_false
-                builder.position_at_end(entry)
                 builder.cond_br(cond, if_true, if_false)
 
                 # True branch: branch to merge
@@ -122,9 +121,8 @@ def main():
             loop_body = loop_func.append_basic_block("loop")
             loop_exit = loop_func.append_basic_block("exit")
 
-            with ctx.create_builder() as builder:
+            with loop_entry.create_builder() as builder:
                 # Entry: branch to loop
-                builder.position_at_end(loop_entry)
                 builder.br(loop_body)
 
                 # Loop: PHI, compare, conditional branch back to loop or to exit

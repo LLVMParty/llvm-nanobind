@@ -23,23 +23,22 @@ def main():
             point_ty = ctx.types.opaque_struct("Point")
             point_ty.set_body([i32, i32], packed=False)
 
-            with ctx.create_builder() as builder:
-                # ==========================================
-                # Function: void point_init(Point* p, i32 x, i32 y)
-                # ==========================================
-                init_ty = ctx.types.function(void_ty, [ptr, i32, i32])
-                init_func = mod.add_function("point_init", init_ty)
+            # ==========================================
+            # Function: void point_init(Point* p, i32 x, i32 y)
+            # ==========================================
+            init_ty = ctx.types.function(void_ty, [ptr, i32, i32])
+            init_func = mod.add_function("point_init", init_ty)
 
-                p = init_func.get_param(0)
-                x = init_func.get_param(1)
-                y = init_func.get_param(2)
-                p.name = "p"
-                x.name = "x"
-                y.name = "y"
+            p = init_func.get_param(0)
+            x = init_func.get_param(1)
+            y = init_func.get_param(2)
+            p.name = "p"
+            x.name = "x"
+            y.name = "y"
 
-                init_entry = init_func.append_basic_block("entry")
-                builder.position_at_end(init_entry)
+            init_entry = init_func.append_basic_block("entry")
 
+            with init_entry.create_builder() as builder:
                 # Store x to p->x (field 0)
                 x_ptr = builder.struct_gep(point_ty, p, 0, "x_ptr")
                 builder.store(x, x_ptr)

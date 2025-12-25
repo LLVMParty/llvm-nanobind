@@ -28,10 +28,8 @@ def main():
             func_ty = ctx.types.function(void_ty, [])
             func = mod.add_function("memory_ops", func_ty)
 
-            with ctx.create_builder() as builder:
-                entry = func.append_basic_block("entry")
-                builder.position_at_end(entry)
-
+            entry = func.append_basic_block("entry")
+            with entry.create_builder() as builder:
                 # Basic alloca
                 alloca_i32 = builder.alloca(i32, "local_i32")
 
