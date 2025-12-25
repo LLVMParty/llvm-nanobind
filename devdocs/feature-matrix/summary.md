@@ -60,8 +60,8 @@ with llvm.create_context() as ctx:
 
 | Header | Total | ✅ Impl | 🚫 Skip | ❌ TODO | Coverage |
 |--------|-------|---------|---------|---------|----------|
-| **Core.h** | 640 | 445 | 44 | 151 | **70%** |
-| **DebugInfo.h** | 99 | ~50 | 0 | ~49 | ~50% |
+| **Core.h** | 640 | **472** | 45 | 123 | **74%** |
+| **DebugInfo.h** | 99 | **~75** | 0 | ~24 | **~76%** |
 | **Target.h** | 22 | 22 | 0 | 0 | **100%** |
 | **TargetMachine.h** | 29 | 14 | 9 | 6 | **79%** |
 | **Object.h** | 31 | 23 | 0 | 8 | 74% |
@@ -74,7 +74,7 @@ with llvm.create_context() as ctx:
 | **Linker.h** | 1 | 1 | 0 | 0 | **100%** |
 | **Error.h** | 7 | 0 | 7 | 0 | 0%* |
 | **Other** | 12 | 0 | 0 | 12 | 0% |
-| **Total** | **~880** | **~582** | **~69** | **~229** | **~74%** |
+| **Total** | **~880** | **~634** | **~71** | **~175** | **~80%** |
 
 *Error.h uses Python exceptions instead of C-style error handling.
 

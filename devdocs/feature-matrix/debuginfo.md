@@ -72,7 +72,7 @@ with llvm.create_context() as ctx:
 | `LLVMCreateDIBuilder` | `mod.create_dibuilder()` | `with mod.create_dibuilder() as dib:` |
 | `LLVMDisposeDIBuilder` | Context manager `__exit__` | Automatic |
 | `LLVMDIBuilderFinalize` | `dib.finalize()` | `dib.finalize()` |
-| `LLVMDIBuilderFinalizeSubprogram` | ❌ | TODO |
+| `LLVMDIBuilderFinalizeSubprogram` | ✅ | `dib.finalize_subprogram(subprogram)` |
 
 ```python
 with mod.create_dibuilder() as dib:
@@ -99,7 +99,7 @@ with mod.create_dibuilder() as dib:
 |-------|------------|---------|
 | `LLVMDIBuilderCreateFunction` | `dib.create_function(...)` | See example above |
 | `LLVMDIBuilderCreateLexicalBlock` | `dib.create_lexical_block(scope, file, line, col)` | `block = dib.create_lexical_block(fn_di, file, 10, 0)` |
-| `LLVMDIBuilderCreateLexicalBlockFile` | ❌ | TODO |
+| `LLVMDIBuilderCreateLexicalBlockFile` | ✅ | `dib.create_lexical_block_file(scope, file, discriminator)` |
 | `LLVMDIBuilderCreateSubroutineType` | `dib.create_subroutine_type(file, types, flags)` | `fn_ty = dib.create_subroutine_type(file, [ret, arg1], 0)` |
 
 ```python
@@ -135,10 +135,10 @@ fn.set_subprogram(fn_di)
 | C API | Python API | Example |
 |-------|------------|---------|
 | `LLVMDIBuilderCreateDebugLocation` | `llvm.dibuilder_create_debug_location(ctx, line, col, scope, inlined_at)` | See below |
-| `LLVMDILocationGetLine` | ❌ | TODO |
-| `LLVMDILocationGetColumn` | ❌ | TODO |
-| `LLVMDILocationGetScope` | ❌ | TODO |
-| `LLVMDILocationGetInlinedAt` | ❌ | TODO |
+| `LLVMDILocationGetLine` | ✅ | `llvm.di_location_get_line(loc)` |
+| `LLVMDILocationGetColumn` | ✅ | `llvm.di_location_get_column(loc)` |
+| `LLVMDILocationGetScope` | ✅ | `llvm.di_location_get_scope(loc)` |
+| `LLVMDILocationGetInlinedAt` | ✅ | `llvm.di_location_get_inlined_at(loc)` |
 
 ```python
 # Create debug location
@@ -182,9 +182,9 @@ ptr_ty = dib.create_pointer_type(int_ty, 64, 64, 0, "")
 |-------|------------|---------|
 | `LLVMDIBuilderCreateStructType` | `dib.create_struct_type(...)` | See below |
 | `LLVMDIBuilderCreateEnumerationType` | `dib.create_enumeration_type(...)` | See below |
-| `LLVMDIBuilderCreateUnionType` | ❌ | TODO |
-| `LLVMDIBuilderCreateArrayType` | ❌ | TODO |
-| `LLVMDIBuilderCreateMemberType` | ❌ | TODO |
+| `LLVMDIBuilderCreateUnionType` | ✅ | `dib.create_union_type(scope, name, file, line, size, align, flags, elements, runtime_lang, unique_id)` |
+| `LLVMDIBuilderCreateArrayType` | ✅ | `dib.create_array_type(size, align, elem_type, subscripts)` |
+| `LLVMDIBuilderCreateMemberType` | ✅ | `dib.create_member_type(scope, name, file, line, size, align, offset, flags, type)` |
 | `LLVMDIBuilderCreateForwardDecl` | `dib.create_forward_decl(...)` | - |
 | `LLVMDIBuilderCreateReplaceableCompositeType` | `dib.create_replaceable_composite_type(...)` | - |
 | `LLVMDIBuilderCreateTypedef` | `dib.create_typedef(type, name, file, line, scope, align)` | `td = dib.create_typedef(int_ty, "myint", file, 1, file, 0)` |
@@ -295,7 +295,7 @@ global_expr = dib.create_global_variable_expression(
 |-------|------------|---------|
 | `LLVMDIBuilderGetOrCreateSubrange` | `dib.get_or_create_subrange(lo, count)` | `sr = dib.get_or_create_subrange(0, 10)` |
 | `LLVMDIBuilderGetOrCreateArray` | `dib.get_or_create_array(elements)` | `arr = dib.get_or_create_array([md1, md2])` |
-| `LLVMDIBuilderGetOrCreateTypeArray` | ❌ | TODO |
+| `LLVMDIBuilderGetOrCreateTypeArray` | ✅ | `dib.get_or_create_type_array(types)` |
 
 ---
 
@@ -322,10 +322,10 @@ global_expr = dib.create_global_variable_expression(
 
 | C API | Python API | Example |
 |-------|------------|---------|
-| `LLVMDIBuilderCreateImportedModuleFromNamespace` | ❌ | TODO |
+| `LLVMDIBuilderCreateImportedModuleFromNamespace` | ✅ | `dib.create_imported_module_from_namespace(scope, ns, file, line)` |
 | `LLVMDIBuilderCreateImportedModuleFromAlias` | `dib.create_imported_module_from_alias(...)` | - |
 | `LLVMDIBuilderCreateImportedModuleFromModule` | `dib.create_imported_module_from_module(...)` | - |
-| `LLVMDIBuilderCreateImportedDeclaration` | ❌ | TODO |
+| `LLVMDIBuilderCreateImportedDeclaration` | ✅ | `dib.create_imported_declaration(scope, decl, file, line, name, elements)` |
 
 ---
 
@@ -362,9 +362,9 @@ global_expr = dib.create_global_variable_expression(
 | `LLVMGetDINodeTag` | `llvm.get_di_node_tag(md)` | `tag = llvm.get_di_node_tag(type_md)` |
 | `LLVMDITypeGetName` | `llvm.di_type_get_name(di_type)` | `name = llvm.di_type_get_name(struct_ty)` |
 | `LLVMDISubprogramReplaceType` | `llvm.di_subprogram_replace_type(sp, ty)` | - |
-| `LLVMDebugMetadataVersion` | ❌ | TODO |
-| `LLVMGetModuleDebugMetadataVersion` | ❌ | TODO |
-| `LLVMStripModuleDebugInfo` | ❌ | TODO |
+| `LLVMDebugMetadataVersion` | ✅ | `llvm.debug_metadata_version()` |
+| `LLVMGetModuleDebugMetadataVersion` | ✅ | `llvm.get_module_debug_metadata_version(mod)` |
+| `LLVMStripModuleDebugInfo` | ✅ | `llvm.strip_module_debug_info(mod)` |
 
 ---
 
@@ -372,10 +372,14 @@ global_expr = dib.create_global_variable_expression(
 
 | C API | Python API | Status |
 |-------|------------|--------|
-| `LLVMDIScopeGetFile` | ❌ | TODO |
-| `LLVMDIFileGetDirectory` | ❌ | TODO |
-| `LLVMDIFileGetFilename` | ❌ | TODO |
-| `LLVMDIFileGetSource` | ❌ | TODO |
+| `LLVMDIScopeGetFile` | ✅ | `llvm.di_scope_get_file(scope)` |
+| `LLVMDIFileGetDirectory` | ✅ | `llvm.di_file_get_directory(file)` |
+| `LLVMDIFileGetFilename` | ✅ | `llvm.di_file_get_filename(file)` |
+| `LLVMDIFileGetSource` | ✅ | `llvm.di_file_get_source(file)` |
+| `LLVMDISubprogramGetLine` | ✅ | `llvm.di_subprogram_get_line(subprogram)` |
+| `LLVMDIVariableGetFile` | ✅ | `llvm.di_variable_get_file(variable)` |
+| `LLVMDIVariableGetScope` | ✅ | `llvm.di_variable_get_scope(variable)` |
+| `LLVMDIVariableGetLine` | ✅ | `llvm.di_variable_get_line(variable)` |
 
 ---
 
@@ -383,23 +387,45 @@ global_expr = dib.create_global_variable_expression(
 
 | C API | Status | Notes |
 |-------|--------|-------|
-| `LLVMDIBuilderCreateUnionType` | ❌ | TODO |
-| `LLVMDIBuilderCreateArrayType` | ❌ | TODO |
-| `LLVMDIBuilderCreateMemberType` | ❌ | TODO |
-| `LLVMDIBuilderCreateBitFieldMemberType` | ❌ | TODO |
 | `LLVMDIBuilderCreateStaticMemberType` | ❌ | TODO |
 | `LLVMDIBuilderCreateClassType` | ❌ | TODO |
-| `LLVMDIBuilderCreateArtificialType` | ❌ | TODO |
-| `LLVMDIBuilderCreateQualifiedType` | ❌ | TODO |
-| `LLVMDIBuilderCreateReferenceType` | ❌ | TODO |
-| `LLVMDIBuilderCreateNullPtrType` | ❌ | TODO |
 | `LLVMDIBuilderCreateMemberPointerType` | ❌ | TODO |
 | `LLVMDIBuilderCreateTempGlobalVariableFwdDecl` | ❌ | TODO |
 | `LLVMDIGlobalVariableExpressionGetVariable` | ❌ | TODO |
 | `LLVMDIGlobalVariableExpressionGetExpression` | ❌ | TODO |
-| `LLVMDIVariableGetFile` | ❌ | TODO |
-| `LLVMDIVariableGetScope` | ❌ | TODO |
-| `LLVMDIVariableGetLine` | ❌ | TODO |
 | `LLVMTemporaryMDNode` | ❌ | TODO |
 | `LLVMDisposeTemporaryMDNode` | ❌ | TODO |
 | `LLVMMetadataReplaceAllUsesWith` | ✅ | `md.replace_all_uses_with(new)` |
+
+## Recently Implemented (Session 5)
+
+| C API | Python API |
+|-------|------------|
+| `LLVMDIBuilderCreateUnionType` | `dib.create_union_type(...)` |
+| `LLVMDIBuilderCreateArrayType` | `dib.create_array_type(...)` |
+| `LLVMDIBuilderCreateMemberType` | `dib.create_member_type(...)` |
+| `LLVMDIBuilderCreateBitFieldMemberType` | `dib.create_bit_field_member_type(...)` |
+| `LLVMDIBuilderCreateArtificialType` | `dib.create_artificial_type(type)` |
+| `LLVMDIBuilderCreateQualifiedType` | `dib.create_qualified_type(tag, type)` |
+| `LLVMDIBuilderCreateReferenceType` | `dib.create_reference_type(tag, type)` |
+| `LLVMDIBuilderCreateNullPtrType` | `dib.create_null_ptr_type()` |
+| `LLVMDIBuilderGetOrCreateTypeArray` | `dib.get_or_create_type_array(types)` |
+| `LLVMDIBuilderFinalizeSubprogram` | `dib.finalize_subprogram(subprogram)` |
+| `LLVMDIBuilderCreateLexicalBlockFile` | `dib.create_lexical_block_file(...)` |
+| `LLVMDIBuilderCreateImportedDeclaration` | `dib.create_imported_declaration(...)` |
+| `LLVMDIBuilderCreateImportedModuleFromNamespace` | `dib.create_imported_module_from_namespace(...)` |
+| `LLVMDILocationGetLine` | `llvm.di_location_get_line(loc)` |
+| `LLVMDILocationGetColumn` | `llvm.di_location_get_column(loc)` |
+| `LLVMDILocationGetScope` | `llvm.di_location_get_scope(loc)` |
+| `LLVMDILocationGetInlinedAt` | `llvm.di_location_get_inlined_at(loc)` |
+| `LLVMDebugMetadataVersion` | `llvm.debug_metadata_version()` |
+| `LLVMGetModuleDebugMetadataVersion` | `llvm.get_module_debug_metadata_version(mod)` |
+| `LLVMStripModuleDebugInfo` | `llvm.strip_module_debug_info(mod)` |
+| `LLVMDIScopeGetFile` | `llvm.di_scope_get_file(scope)` |
+| `LLVMDIFileGetDirectory` | `llvm.di_file_get_directory(file)` |
+| `LLVMDIFileGetFilename` | `llvm.di_file_get_filename(file)` |
+| `LLVMDIFileGetSource` | `llvm.di_file_get_source(file)` |
+| `LLVMDISubprogramGetLine` | `llvm.di_subprogram_get_line(sp)` |
+| `LLVMDIVariableGetFile` | `llvm.di_variable_get_file(var)` |
+| `LLVMDIVariableGetScope` | `llvm.di_variable_get_scope(var)` |
+| `LLVMDIVariableGetLine` | `llvm.di_variable_get_line(var)` |

@@ -4,7 +4,7 @@
 
 **Phase:** Implementation Complete - Maintenance Mode
 
-**Overall Coverage:** ~74% of LLVM-C API
+**Overall Coverage:** ~80% of LLVM-C API
 
 All high-priority items are implemented. Remaining items are low-priority, deprecated, or have better alternatives.
 
@@ -14,8 +14,8 @@ All high-priority items are implemented. Remaining items are low-priority, depre
 
 | Header | Total | ✅ Impl | 🚫 Skip | ❌ TODO | Coverage |
 |--------|-------|---------|---------|---------|----------|
-| Core.h | 640 | **470** | 45 | 125 | **73%** |
-| DebugInfo.h | 99 | ~50 | 0 | ~49 | ~50% |
+| Core.h | 640 | **472** | 45 | 123 | **74%** |
+| DebugInfo.h | 99 | **~75** | 0 | ~24 | **~76%** |
 | Target.h | 22 | **22** | 0 | 0 | **100%** |
 | TargetMachine.h | 29 | **14** | 9 | 6 | **79%** |
 | Object.h | 31 | 23 | 0 | 8 | 74% |
@@ -27,7 +27,7 @@ All high-priority items are implemented. Remaining items are low-priority, depre
 | Disassembler.h | 6 | **4** | 0 | 2 | **67%** |
 | Linker.h | 1 | **1** | 0 | 0 | **100%** |
 | Misc | 20 | 0 | 7 | 13 | 0% |
-| **Total** | **~880** | **~607** | **~71** | **~202** | **~77%** |
+| **Total** | **~880** | **~634** | **~71** | **~175** | **~80%** |
 
 ---
 
@@ -136,6 +136,48 @@ Core code generation fully working. Only TargetMachineOptions builder API missin
 - `LLVMBuildPointerCast` → `b.pointer_cast(val, ty, name)`
 - `LLVMBuildFPCast` → `b.fp_cast(val, ty, name)`
 
+### Session 5 - DebugInfo.h Extensions (December 2024)
+
+#### DIBuilder Type Creation - NEW ✅
+- `LLVMDIBuilderFinalizeSubprogram` → `dib.finalize_subprogram(subprogram)`
+- `LLVMDIBuilderCreateMemberType` → `dib.create_member_type(scope, name, file, line, size, align, offset, flags, type)`
+- `LLVMDIBuilderCreateUnionType` → `dib.create_union_type(scope, name, file, line, size, align, flags, elements, runtime_lang, unique_id)`
+- `LLVMDIBuilderCreateArrayType` → `dib.create_array_type(size, align, elem_type, subscripts)`
+- `LLVMDIBuilderCreateQualifiedType` → `dib.create_qualified_type(tag, type)` (const/volatile)
+- `LLVMDIBuilderCreateReferenceType` → `dib.create_reference_type(tag, type)`
+- `LLVMDIBuilderCreateNullPtrType` → `dib.create_null_ptr_type()`
+- `LLVMDIBuilderCreateBitFieldMemberType` → `dib.create_bit_field_member_type(...)`
+- `LLVMDIBuilderCreateArtificialType` → `dib.create_artificial_type(type)`
+- `LLVMDIBuilderGetOrCreateTypeArray` → `dib.get_or_create_type_array(types)`
+- `LLVMDIBuilderCreateLexicalBlockFile` → `dib.create_lexical_block_file(scope, file, discriminator)`
+- `LLVMDIBuilderCreateImportedDeclaration` → `dib.create_imported_declaration(scope, decl, file, line, name, elements)`
+- `LLVMDIBuilderCreateImportedModuleFromNamespace` → `dib.create_imported_module_from_namespace(scope, ns, file, line)`
+
+#### DILocation Accessors - NEW ✅
+- `LLVMDILocationGetLine` → `llvm.di_location_get_line(loc)`
+- `LLVMDILocationGetColumn` → `llvm.di_location_get_column(loc)`
+- `LLVMDILocationGetScope` → `llvm.di_location_get_scope(loc)`
+- `LLVMDILocationGetInlinedAt` → `llvm.di_location_get_inlined_at(loc)`
+
+#### Debug Metadata Version - NEW ✅
+- `LLVMDebugMetadataVersion` → `llvm.debug_metadata_version()`
+- `LLVMGetModuleDebugMetadataVersion` → `llvm.get_module_debug_metadata_version(mod)`
+- `LLVMStripModuleDebugInfo` → `llvm.strip_module_debug_info(mod)`
+
+#### DI File/Scope/Variable Accessors - NEW ✅
+- `LLVMDIScopeGetFile` → `llvm.di_scope_get_file(scope)`
+- `LLVMDIFileGetDirectory` → `llvm.di_file_get_directory(file)`
+- `LLVMDIFileGetFilename` → `llvm.di_file_get_filename(file)`
+- `LLVMDIFileGetSource` → `llvm.di_file_get_source(file)`
+- `LLVMDISubprogramGetLine` → `llvm.di_subprogram_get_line(subprogram)`
+- `LLVMDIVariableGetFile` → `llvm.di_variable_get_file(variable)`
+- `LLVMDIVariableGetScope` → `llvm.di_variable_get_scope(variable)`
+- `LLVMDIVariableGetLine` → `llvm.di_variable_get_line(variable)`
+
+#### Core.h Extensions - NEW ✅
+- `LLVMBlockAddress` → `llvm.block_address(fn, bb)` (for computed goto)
+- `LLVMGetOperandUse` → `val.get_operand_use(index)` (use-def chain access)
+
 ---
 
 ## Remaining TODO - Detailed Breakdown
@@ -145,43 +187,43 @@ Core code generation fully working. Only TargetMachineOptions builder API missin
 #### Type Attributes (Core.h) - COMPLETE ✅
 - `LLVMCreateTypeAttribute` → `ctx.create_type_attribute(kind_id, type)`
 - `LLVMGetTypeAttributeValue` → `attr.type_value`
-- `LLVMCreateConstantRangeAttribute` - TODO (low priority, rare use case)
+- `LLVMCreateConstantRangeAttribute` - 🚫 Skip (rare use case, complex API)
 
 #### Metadata Kind ID (Core.h) - COMPLETE ✅
 - `LLVMGetMDKindIDInContext` → `ctx.get_md_kind_id(name)`
 
-#### Module Flag Iteration (Core.h) - TODO
-Low priority, can iterate via IR parsing if needed.
+#### Module Flag Iteration (Core.h) - 🚫 SKIP
+- Can iterate via IR parsing if needed, complex API with limited value
 
 #### Attribute Management (Core.h) - COMPLETE ✅
 All implemented (see Session 4 above).
 
-#### Builder Position Control (Core.h) - MOSTLY COMPLETE ✅
+#### Builder Position Control (Core.h) - COMPLETE ✅
 - `LLVMPositionBuilder` → `b.position_at(bb, inst)`
 - `LLVMClearInsertionPosition` → `b.clear_insertion_position()`
-- FP math tag methods - TODO (low priority)
+- FP math tag methods - 🚫 Skip (very specialized, rarely needed)
 
-#### Additional Builder Instructions (Core.h) - MOSTLY COMPLETE ✅
+#### Additional Builder Instructions (Core.h) - COMPLETE ✅
 All main instructions implemented. `LLVMBuildNUWNeg` deprecated in LLVM 21.
 
 #### Convenience Cast Builders (Core.h) - COMPLETE ✅
 All implemented (see Session 4 above).
-- `LLVMGetCastOpcode` - TODO (utility function)
+- `LLVMGetCastOpcode` - ❌ TODO (utility function, medium value)
 
-#### Value/Use Access (Core.h) - TODO
-- `LLVMGetOperandUse` - Low priority
-- `LLVMBlockAddress` - Low priority
+#### Value/Use Access (Core.h) - COMPLETE ✅
+- `LLVMGetOperandUse` → `val.get_operand_use(index)`
+- `LLVMBlockAddress` → `llvm.block_address(fn, bb)`
 
-#### Intrinsics (Core.h) - TODO
-- `LLVMIntrinsicGetType` - Low priority
+#### Intrinsics (Core.h) - PARTIAL
+- `LLVMIntrinsicGetType` - ❌ TODO (medium value)
 
-#### Memory Buffer (Core.h) - TODO
-- `LLVMCreateMemoryBufferWithSTDIN` - Low priority
-- `LLVMCreateMemoryBufferWithMemoryRange` - Low priority
+#### Memory Buffer (Core.h)
+- `LLVMCreateMemoryBufferWithSTDIN` - 🚫 Skip (Python has better stdin handling)
+- `LLVMCreateMemoryBufferWithMemoryRange` - ❌ TODO (zero-copy buffer, low value)
 
 #### Metadata (Core.h) - MOSTLY COMPLETE ✅
 - `LLVMGetMDKindIDInContext` → `ctx.get_md_kind_id(name)` ✅
-- `LLVMReplaceMDNodeOperandWith` - TODO
+- `LLVMReplaceMDNodeOperandWith` - ❌ TODO (medium value)
 
 ---
 
