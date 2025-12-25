@@ -14,7 +14,7 @@ All high-priority items are implemented. Remaining items are low-priority, depre
 
 | Header | Total | ✅ Impl | 🚫 Skip | ❌ TODO | Coverage |
 |--------|-------|---------|---------|---------|----------|
-| Core.h | 640 | **445** | 44 | 151 | **70%** |
+| Core.h | 640 | **470** | 45 | 125 | **73%** |
 | DebugInfo.h | 99 | ~50 | 0 | ~49 | ~50% |
 | Target.h | 22 | **22** | 0 | 0 | **100%** |
 | TargetMachine.h | 29 | **14** | 9 | 6 | **79%** |
@@ -27,7 +27,7 @@ All high-priority items are implemented. Remaining items are low-priority, depre
 | Disassembler.h | 6 | **4** | 0 | 2 | **67%** |
 | Linker.h | 1 | **1** | 0 | 0 | **100%** |
 | Misc | 20 | 0 | 7 | 13 | 0% |
-| **Total** | **~880** | **~582** | **~69** | **~229** | **~74%** |
+| **Total** | **~880** | **~607** | **~71** | **~202** | **~77%** |
 
 ---
 
@@ -87,120 +87,134 @@ Core code generation fully working. Only TargetMachineOptions builder API missin
 - `LLVMBuildAddrSpaceCast` → `b.addr_space_cast(val, ty, name)`
 - `LLVMBuildFence` → `b.fence(ordering, single_thread, name)`
 
+### Session 3 - Low Priority Items (December 2024)
+
+#### Global IFunc Management
+- `LLVMEraseGlobalIFunc` → `val.erase_from_parent_ifunc()`
+- `LLVMRemoveGlobalIFunc` → `val.remove_from_parent_ifunc()`
+
+#### DLL Storage Class
+- `LLVMGetDLLStorageClass` → `val.dll_storage_class` (getter)
+- `LLVMSetDLLStorageClass` → `val.dll_storage_class = ...` (setter)
+- `LLVMDLLStorageClass` enum → `llvm.DLLStorageClass`
+
+#### Sync Scope
+- `LLVMGetSyncScopeID` → `ctx.get_sync_scope_id(name)`
+
+### Session 4 - Medium Priority Items (December 2024)
+
+#### Type Attributes
+- `LLVMCreateTypeAttribute` → `ctx.create_type_attribute(kind_id, type)`
+- `LLVMGetTypeAttributeValue` → `attr.type_value`
+
+#### Metadata Kind ID
+- `LLVMGetMDKindIDInContext` → `ctx.get_md_kind_id(name)`
+
+#### Attribute Management
+- `LLVMGetAttributesAtIndex` → `fn.get_attributes(idx)`
+- `LLVMGetStringAttributeAtIndex` → `fn.get_string_attribute(idx, key)`
+- `LLVMRemoveEnumAttributeAtIndex` → `fn.remove_enum_attribute(idx, kind)`
+- `LLVMRemoveStringAttributeAtIndex` → `fn.remove_string_attribute(idx, key)`
+- `LLVMAddTargetDependentFunctionAttr` → `fn.add_target_attribute(key, value)`
+
+#### Builder Position Control
+- `LLVMPositionBuilder` → `b.position_at(bb, inst)`
+- `LLVMClearInsertionPosition` → `b.clear_insertion_position()`
+
+#### Additional Builder Instructions
+- `LLVMBuildExactUDiv` → `b.exact_udiv(lhs, rhs, name)`
+- `LLVMBuildIndirectBr` → `b.indirect_br(addr, num_dests)`
+- `LLVMAddDestination` → `ibr.add_destination(bb)`
+- `LLVMBuildAtomicRMW` → `b.atomic_rmw(op, ptr, val, ordering, single_thread)`
+- `LLVMBuildAtomicCmpXchg` → `b.atomic_cmpxchg(ptr, cmp, new, succ_ord, fail_ord, single_thread)`
+
+#### Convenience Cast Builders
+- `LLVMBuildZExtOrBitCast` → `b.zext_or_bitcast(val, ty, name)`
+- `LLVMBuildSExtOrBitCast` → `b.sext_or_bitcast(val, ty, name)`
+- `LLVMBuildTruncOrBitCast` → `b.trunc_or_bitcast(val, ty, name)`
+- `LLVMBuildCast` → `b.cast(op, val, ty, name)`
+- `LLVMBuildPointerCast` → `b.pointer_cast(val, ty, name)`
+- `LLVMBuildFPCast` → `b.fp_cast(val, ty, name)`
+
 ---
 
 ## Remaining TODO - Detailed Breakdown
 
-### Medium Priority - Could Be Useful
+### Medium Priority - Most Now Implemented
 
-#### Type Attributes (Core.h)
-| Function | Description | Proposed API |
-|----------|-------------|--------------|
-| `LLVMCreateTypeAttribute` | Create attribute with type value | `ctx.create_type_attribute(kind, ty)` |
-| `LLVMGetTypeAttributeValue` | Get type from type attribute | `attr.type_value` |
-| `LLVMCreateConstantRangeAttribute` | Create range attribute | `ctx.create_range_attribute(kind, bits, lo, hi)` |
+#### Type Attributes (Core.h) - COMPLETE ✅
+- `LLVMCreateTypeAttribute` → `ctx.create_type_attribute(kind_id, type)`
+- `LLVMGetTypeAttributeValue` → `attr.type_value`
+- `LLVMCreateConstantRangeAttribute` - TODO (low priority, rare use case)
 
-#### Module Flag Iteration (Core.h)
-| Function | Description | Proposed API |
-|----------|-------------|--------------|
-| `LLVMCopyModuleFlagsMetadata` | Get all module flags | `mod.get_all_module_flags()` |
-| `LLVMDisposeModuleFlagsMetadata` | Free flag entries | Automatic |
-| `LLVMModuleFlagEntriesGetFlagBehavior` | Get flag behavior | Via iterator |
-| `LLVMModuleFlagEntriesGetKey` | Get flag key | Via iterator |
-| `LLVMModuleFlagEntriesGetMetadata` | Get flag metadata | Via iterator |
+#### Metadata Kind ID (Core.h) - COMPLETE ✅
+- `LLVMGetMDKindIDInContext` → `ctx.get_md_kind_id(name)`
 
-#### Attribute Management (Core.h)
-| Function | Description | Proposed API |
-|----------|-------------|--------------|
-| `LLVMGetAttributesAtIndex` | Get all attributes at index | `fn.get_attributes(index)` |
-| `LLVMGetStringAttributeAtIndex` | Get string attribute | `fn.get_string_attribute(index, key)` |
-| `LLVMRemoveEnumAttributeAtIndex` | Remove enum attribute | `fn.remove_attribute(index, kind)` |
-| `LLVMRemoveStringAttributeAtIndex` | Remove string attribute | `fn.remove_string_attribute(index, key)` |
-| `LLVMAddTargetDependentFunctionAttr` | Add target-specific attr | `fn.add_target_attribute(key, val)` |
+#### Module Flag Iteration (Core.h) - TODO
+Low priority, can iterate via IR parsing if needed.
 
-#### Builder Position Control (Core.h)
-| Function | Description | Proposed API |
-|----------|-------------|--------------|
-| `LLVMPositionBuilder` | Position at instruction | `b.position_at(bb, inst)` |
-| `LLVMClearInsertionPosition` | Clear position | `b.clear_position()` |
-| `LLVMBuilderGetDefaultFPMathTag` | Get FP math tag | `b.default_fp_math_tag` |
-| `LLVMBuilderSetDefaultFPMathTag` | Set FP math tag | `b.default_fp_math_tag = tag` |
+#### Attribute Management (Core.h) - COMPLETE ✅
+All implemented (see Session 4 above).
 
-#### Additional Builder Instructions (Core.h)
-| Function | Description | Proposed API |
-|----------|-------------|--------------|
-| `LLVMBuildExactUDiv` | Exact unsigned division | `b.exact_udiv(lhs, rhs, name)` |
-| `LLVMBuildNUWNeg` | No unsigned wrap negation | `b.nuw_neg(val, name)` |
-| `LLVMBuildIndirectBr` | Indirect branch | `b.indirect_br(addr, num_dests)` |
-| `LLVMAddDestination` | Add indirect branch dest | `indirect_br.add_destination(bb)` |
-| `LLVMBuildAtomicRMW` | Atomic RMW (no sync scope) | Use `b.atomic_rmw_sync_scope()` |
-| `LLVMBuildAtomicCmpXchg` | Atomic cmpxchg (no sync scope) | Use `b.atomic_cmpxchg_sync_scope()` |
+#### Builder Position Control (Core.h) - MOSTLY COMPLETE ✅
+- `LLVMPositionBuilder` → `b.position_at(bb, inst)`
+- `LLVMClearInsertionPosition` → `b.clear_insertion_position()`
+- FP math tag methods - TODO (low priority)
 
-#### Convenience Cast Builders (Core.h)
-| Function | Description | Proposed API |
-|----------|-------------|--------------|
-| `LLVMBuildZExtOrBitCast` | Zero extend or bitcast | `b.zext_or_bitcast(val, ty, name)` |
-| `LLVMBuildSExtOrBitCast` | Sign extend or bitcast | `b.sext_or_bitcast(val, ty, name)` |
-| `LLVMBuildTruncOrBitCast` | Truncate or bitcast | `b.trunc_or_bitcast(val, ty, name)` |
-| `LLVMBuildCast` | Generic cast | `b.cast(op, val, ty, name)` |
-| `LLVMBuildPointerCast` | Pointer cast | `b.pointer_cast(val, ty, name)` |
-| `LLVMBuildFPCast` | FP cast | `b.fp_cast(val, ty, name)` |
-| `LLVMGetCastOpcode` | Get cast opcode | `llvm.get_cast_opcode(src, dst, ...)` |
+#### Additional Builder Instructions (Core.h) - MOSTLY COMPLETE ✅
+All main instructions implemented. `LLVMBuildNUWNeg` deprecated in LLVM 21.
 
-#### Value/Use Access (Core.h)
-| Function | Description | Proposed API |
-|----------|-------------|--------------|
-| `LLVMGetOperandUse` | Get use at operand index | `val.get_operand_use(index)` |
-| `LLVMBlockAddress` | Get block address constant | `llvm.block_address(fn, bb)` |
+#### Convenience Cast Builders (Core.h) - COMPLETE ✅
+All implemented (see Session 4 above).
+- `LLVMGetCastOpcode` - TODO (utility function)
 
-#### Intrinsics (Core.h)
-| Function | Description | Proposed API |
-|----------|-------------|--------------|
-| `LLVMIntrinsicGetType` | Get intrinsic function type | `llvm.intrinsic_get_type(ctx, id, params)` |
+#### Value/Use Access (Core.h) - TODO
+- `LLVMGetOperandUse` - Low priority
+- `LLVMBlockAddress` - Low priority
 
-#### Memory Buffer (Core.h)
-| Function | Description | Proposed API |
-|----------|-------------|--------------|
-| `LLVMCreateMemoryBufferWithSTDIN` | Read from stdin | `llvm.MemoryBuffer.from_stdin()` |
-| `LLVMCreateMemoryBufferWithMemoryRange` | From memory range | `llvm.MemoryBuffer.from_bytes(data, name, copy)` |
+#### Intrinsics (Core.h) - TODO
+- `LLVMIntrinsicGetType` - Low priority
 
-#### Metadata (Core.h)
-| Function | Description | Proposed API |
-|----------|-------------|--------------|
-| `LLVMReplaceMDNodeOperandWith` | Replace MD operand | `md.replace_operand(index, new_md)` |
-| `LLVMGetMDKindIDInContext` | Get metadata kind ID | `ctx.get_md_kind_id(name)` |
+#### Memory Buffer (Core.h) - TODO
+- `LLVMCreateMemoryBufferWithSTDIN` - Low priority
+- `LLVMCreateMemoryBufferWithMemoryRange` - Low priority
+
+#### Metadata (Core.h) - MOSTLY COMPLETE ✅
+- `LLVMGetMDKindIDInContext` → `ctx.get_md_kind_id(name)` ✅
+- `LLVMReplaceMDNodeOperandWith` - TODO
 
 ---
 
-### Low Priority - Rarely Needed
+### Low Priority - Now Implemented ✅
 
-#### Global IFunc (Core.h)
-| Function | Description | Notes |
-|----------|-------------|-------|
-| `LLVMEraseGlobalIFunc` | Erase IFunc | Rare use case |
-| `LLVMRemoveGlobalIFunc` | Remove IFunc | Rare use case |
+#### Global IFunc (Core.h) - COMPLETE ✅
+| Function | Python API | Notes |
+|----------|------------|-------|
+| `LLVMEraseGlobalIFunc` | `val.erase_from_parent_ifunc()` | Safe, deletes IFunc |
+| `LLVMRemoveGlobalIFunc` | `val.remove_from_parent_ifunc()` | Advanced, keeps IFunc alive (use with care) |
 
-#### DLL Storage Class (Core.h)
-| Function | Description | Notes |
-|----------|-------------|-------|
-| `LLVMGetDLLStorageClass` | Get DLL storage | Windows-specific |
-| `LLVMSetDLLStorageClass` | Set DLL storage | Windows-specific |
+#### DLL Storage Class (Core.h) - COMPLETE ✅
+| Function | Python API | Notes |
+|----------|------------|-------|
+| `LLVMGetDLLStorageClass` | `val.dll_storage_class` | Windows-specific property |
+| `LLVMSetDLLStorageClass` | `val.dll_storage_class = ...` | Windows-specific property |
+| `LLVMDLLStorageClass` enum | `llvm.DLLStorageClass` | Default, DLLImport, DLLExport |
 
-#### Sync Scope (Core.h)
-| Function | Description | Notes |
-|----------|-------------|-------|
-| `LLVMGetSyncScopeID` | Get sync scope ID | Advanced atomics |
+#### Sync Scope (Core.h) - COMPLETE ✅
+| Function | Python API | Notes |
+|----------|------------|-------|
+| `LLVMGetSyncScopeID` | `ctx.get_sync_scope_id(name)` | Maps scope name to ID |
 
 #### X86-Specific Types (Core.h)
-| Function | Description | Notes |
-|----------|-------------|-------|
-| `LLVMX86MMXTypeInContext` | X86 MMX type | x86-specific, legacy |
-| `LLVMX86AMXTypeInContext` | X86 AMX type | x86-specific |
+| Function | Python API | Notes |
+|----------|------------|-------|
+| `LLVMX86MMXTypeInContext` | 🚫 | Removed in LLVM 21, deprecated |
+| `LLVMX86AMXTypeInContext` | `ctx.types.x86_amx` | Already implemented |
 
 #### Arbitrary Precision Constants (Core.h)
 | Function | Description | Notes |
 |----------|-------------|-------|
-| `LLVMConstIntOfArbitraryPrecision` | Arbitrary precision int | Use `constant_from_string` |
+| `LLVMConstIntOfArbitraryPrecision` | Arbitrary precision int | Use `constant_from_string` instead |
 | `LLVMConstVector` | Create constant vector | Can use array + bitcast |
 
 ---

@@ -299,6 +299,11 @@ struct LLVMAttributeWrapper {
     const char *val = LLVMGetStringAttributeValue(m_ref, &len);
     return std::string(val, len);
   }
+
+  /// Get the type attribute value.
+  /// Wraps LLVMGetTypeAttributeValue.
+  /// Returns the type wrapped in this type attribute.
+  LLVMTypeWrapper get_type_value() const;
 };
 
 // =============================================================================
@@ -664,6 +669,16 @@ struct LLVMTypeWrapper {
   // Get the context this type belongs to
   LLVMContextWrapper *context() const;
 };
+
+// Implementation of LLVMAttributeWrapper::get_type_value() - needs
+// LLVMTypeWrapper
+inline LLVMTypeWrapper LLVMAttributeWrapper::get_type_value() const {
+  check_valid();
+  if (!LLVMIsTypeAttribute(m_ref))
+    throw LLVMError("Attribute is not a type attribute");
+  LLVMTypeRef ty = LLVMGetTypeAttributeValue(m_ref);
+  return LLVMTypeWrapper(ty, m_context_token);
+}
 
 // =============================================================================
 // Type Factory Wrapper (property-based namespace for type creation)
@@ -1166,6 +1181,20 @@ struct LLVMValueWrapper {
     check_valid();
     resolver.check_valid();
     LLVMSetGlobalIFuncResolver(m_ref, resolver.m_ref);
+  }
+
+  // Erase global IFunc from parent module and delete it
+  void erase_from_parent_ifunc() {
+    check_valid();
+    LLVMEraseGlobalIFunc(m_ref);
+    m_ref = nullptr; // IFunc is now deleted
+  }
+
+  // Remove global IFunc from parent module but keep it alive
+  void remove_from_parent_ifunc() {
+    check_valid();
+    LLVMRemoveGlobalIFunc(m_ref);
+    // IFunc is still alive, just unlinked from module
   }
 
   // Global properties for echo command
@@ -2350,6 +2379,48 @@ struct LLVMFunctionWrapper : LLVMValueWrapper {
     LLVMAddAttributeAtIndex(m_ref, static_cast<unsigned>(idx), attr.m_ref);
   }
 
+  std::vector<LLVMAttributeWrapper> get_attributes(int idx) const {
+    check_valid();
+    unsigned count =
+        LLVMGetAttributeCountAtIndex(m_ref, static_cast<unsigned>(idx));
+    if (count == 0)
+      return {};
+    std::vector<LLVMAttributeRef> refs(count);
+    LLVMGetAttributesAtIndex(m_ref, static_cast<unsigned>(idx), refs.data());
+    std::vector<LLVMAttributeWrapper> result;
+    result.reserve(count);
+    for (auto ref : refs) {
+      result.emplace_back(ref, m_context_token);
+    }
+    return result;
+  }
+
+  std::optional<LLVMAttributeWrapper>
+  get_string_attribute(int idx, const std::string &key) const {
+    check_valid();
+    LLVMAttributeRef ref = LLVMGetStringAttributeAtIndex(
+        m_ref, static_cast<unsigned>(idx), key.c_str(), key.size());
+    if (!ref)
+      return std::nullopt;
+    return LLVMAttributeWrapper(ref, m_context_token);
+  }
+
+  void remove_enum_attribute(int idx, unsigned kind_id) {
+    check_valid();
+    LLVMRemoveEnumAttributeAtIndex(m_ref, static_cast<unsigned>(idx), kind_id);
+  }
+
+  void remove_string_attribute(int idx, const std::string &key) {
+    check_valid();
+    LLVMRemoveStringAttributeAtIndex(m_ref, static_cast<unsigned>(idx),
+                                     key.c_str(), key.size());
+  }
+
+  void add_target_attribute(const std::string &key, const std::string &value) {
+    check_valid();
+    LLVMAddTargetDependentFunctionAttr(m_ref, key.c_str(), value.c_str());
+  }
+
   // =========================================================================
   // Function API Refactor: Methods moved from global functions
   // =========================================================================
@@ -2763,6 +2834,19 @@ struct LLVMBuilderWrapper : NoMoveCopy {
     return LLVMBasicBlockWrapper(bb, m_context_token);
   }
 
+  void position_at(const LLVMBasicBlockWrapper &bb,
+                   const LLVMValueWrapper &inst) {
+    check_valid();
+    bb.check_valid();
+    inst.check_valid();
+    LLVMPositionBuilder(m_ref, bb.m_ref, inst.m_ref);
+  }
+
+  void clear_insertion_position() {
+    check_valid();
+    LLVMClearInsertionPosition(m_ref);
+  }
+
   // Arithmetic operations
   LLVMValueWrapper add(const LLVMValueWrapper &lhs, const LLVMValueWrapper &rhs,
                        const std::string &name = "") {
@@ -2890,6 +2974,17 @@ struct LLVMBuilderWrapper : NoMoveCopy {
     rhs.check_valid();
     return LLVMValueWrapper(
         LLVMBuildExactSDiv(m_ref, lhs.m_ref, rhs.m_ref, name.c_str()),
+        m_context_token);
+  }
+
+  LLVMValueWrapper exact_udiv(const LLVMValueWrapper &lhs,
+                              const LLVMValueWrapper &rhs,
+                              const std::string &name = "") {
+    check_valid();
+    lhs.check_valid();
+    rhs.check_valid();
+    return LLVMValueWrapper(
+        LLVMBuildExactUDiv(m_ref, lhs.m_ref, rhs.m_ref, name.c_str()),
         m_context_token);
   }
 
@@ -3358,6 +3453,73 @@ struct LLVMBuilderWrapper : NoMoveCopy {
         m_context_token);
   }
 
+  // Convenience cast operations
+  LLVMValueWrapper zext_or_bitcast(const LLVMValueWrapper &val,
+                                   const LLVMTypeWrapper &ty,
+                                   const std::string &name = "") {
+    check_valid();
+    val.check_valid();
+    ty.check_valid();
+    return LLVMValueWrapper(
+        LLVMBuildZExtOrBitCast(m_ref, val.m_ref, ty.m_ref, name.c_str()),
+        m_context_token);
+  }
+
+  LLVMValueWrapper sext_or_bitcast(const LLVMValueWrapper &val,
+                                   const LLVMTypeWrapper &ty,
+                                   const std::string &name = "") {
+    check_valid();
+    val.check_valid();
+    ty.check_valid();
+    return LLVMValueWrapper(
+        LLVMBuildSExtOrBitCast(m_ref, val.m_ref, ty.m_ref, name.c_str()),
+        m_context_token);
+  }
+
+  LLVMValueWrapper trunc_or_bitcast(const LLVMValueWrapper &val,
+                                    const LLVMTypeWrapper &ty,
+                                    const std::string &name = "") {
+    check_valid();
+    val.check_valid();
+    ty.check_valid();
+    return LLVMValueWrapper(
+        LLVMBuildTruncOrBitCast(m_ref, val.m_ref, ty.m_ref, name.c_str()),
+        m_context_token);
+  }
+
+  LLVMValueWrapper pointer_cast(const LLVMValueWrapper &val,
+                                const LLVMTypeWrapper &ty,
+                                const std::string &name = "") {
+    check_valid();
+    val.check_valid();
+    ty.check_valid();
+    return LLVMValueWrapper(
+        LLVMBuildPointerCast(m_ref, val.m_ref, ty.m_ref, name.c_str()),
+        m_context_token);
+  }
+
+  LLVMValueWrapper fp_cast(const LLVMValueWrapper &val,
+                           const LLVMTypeWrapper &ty,
+                           const std::string &name = "") {
+    check_valid();
+    val.check_valid();
+    ty.check_valid();
+    return LLVMValueWrapper(
+        LLVMBuildFPCast(m_ref, val.m_ref, ty.m_ref, name.c_str()),
+        m_context_token);
+  }
+
+  LLVMValueWrapper cast(LLVMOpcode op, const LLVMValueWrapper &val,
+                        const LLVMTypeWrapper &ty,
+                        const std::string &name = "") {
+    check_valid();
+    val.check_valid();
+    ty.check_valid();
+    return LLVMValueWrapper(
+        LLVMBuildCast(m_ref, op, val.m_ref, ty.m_ref, name.c_str()),
+        m_context_token);
+  }
+
   // Control flow
   LLVMValueWrapper ret(const LLVMValueWrapper &val) {
     check_valid();
@@ -3397,6 +3559,14 @@ struct LLVMBuilderWrapper : NoMoveCopy {
     return LLVMValueWrapper(
         LLVMBuildSwitch(m_ref, val.m_ref, else_bb.m_ref, num_cases),
         m_context_token);
+  }
+
+  LLVMValueWrapper indirect_br(const LLVMValueWrapper &addr,
+                               unsigned num_dests) {
+    check_valid();
+    addr.check_valid();
+    return LLVMValueWrapper(LLVMBuildIndirectBr(m_ref, addr.m_ref, num_dests),
+                            m_context_token);
   }
 
   LLVMValueWrapper call(const LLVMTypeWrapper &func_ty,
@@ -3722,6 +3892,20 @@ struct LLVMBuilderWrapper : NoMoveCopy {
         m_context_token);
   }
 
+  // Atomic RMW (single-thread version)
+  LLVMValueWrapper atomic_rmw(LLVMAtomicRMWBinOp op,
+                              const LLVMValueWrapper &ptr,
+                              const LLVMValueWrapper &val,
+                              LLVMAtomicOrdering ordering,
+                              bool single_thread = false) {
+    check_valid();
+    ptr.check_valid();
+    val.check_valid();
+    return LLVMValueWrapper(LLVMBuildAtomicRMW(m_ref, op, ptr.m_ref, val.m_ref,
+                                               ordering, single_thread),
+                            m_context_token);
+  }
+
   // Atomic RMW with sync scope
   LLVMValueWrapper atomic_rmw_sync_scope(LLVMAtomicRMWBinOp op,
                                          const LLVMValueWrapper &ptr,
@@ -3735,6 +3919,24 @@ struct LLVMBuilderWrapper : NoMoveCopy {
                                                         val.m_ref, ordering,
                                                         sync_scope_id),
                             m_context_token);
+  }
+
+  // Atomic CmpXchg (single-thread version)
+  LLVMValueWrapper atomic_cmpxchg(const LLVMValueWrapper &ptr,
+                                  const LLVMValueWrapper &cmp,
+                                  const LLVMValueWrapper &new_val,
+                                  LLVMAtomicOrdering success_ordering,
+                                  LLVMAtomicOrdering failure_ordering,
+                                  bool single_thread = false) {
+    check_valid();
+    ptr.check_valid();
+    cmp.check_valid();
+    new_val.check_valid();
+    return LLVMValueWrapper(
+        LLVMBuildAtomicCmpXchg(m_ref, ptr.m_ref, cmp.m_ref, new_val.m_ref,
+                               success_ordering, failure_ordering,
+                               single_thread),
+        m_context_token);
   }
 
   // Atomic CmpXchg with sync scope
@@ -4664,6 +4866,23 @@ struct LLVMContextWrapper : NoMoveCopy {
     return LLVMAttributeWrapper(ref, m_token);
   }
 
+  /// Create a type attribute.
+  /// Wraps LLVMCreateTypeAttribute.
+  LLVMAttributeWrapper create_type_attribute(unsigned kind_id,
+                                             const LLVMTypeWrapper &type_ref);
+
+  // Get metadata kind ID for a named metadata kind
+  unsigned get_md_kind_id(const std::string &name) {
+    check_valid();
+    return LLVMGetMDKindIDInContext(m_ref, name.c_str(), name.size());
+  }
+
+  // Get sync scope ID for a named synchronization scope
+  unsigned get_sync_scope_id(const std::string &name) {
+    check_valid();
+    return LLVMGetSyncScopeID(m_ref, name.c_str(), name.size());
+  }
+
   // Metadata creation methods - declared here, implemented after
   // LLVMMetadataWrapper
   LLVMMetadataWrapper md_string(const std::string &str);
@@ -5261,6 +5480,20 @@ void switch_add_case(LLVMValueWrapper &switch_inst, const LLVMValueWrapper &val,
   LLVMAddCase(switch_inst.m_ref, val.m_ref, bb.m_ref);
 }
 
+// Helper for indirect branch
+void indirect_br_add_destination(LLVMValueWrapper &indirect_br,
+                                 const LLVMBasicBlockWrapper &dest) {
+  indirect_br.check_valid();
+  dest.check_valid();
+
+  // Assert this is an indirect branch instruction
+  if (LLVMGetInstructionOpcode(indirect_br.m_ref) != LLVMIndirectBr)
+    throw LLVMAssertionError(
+        "add_destination() requires an indirect branch instruction");
+
+  LLVMAddDestination(indirect_br.m_ref, dest.m_ref);
+}
+
 // Helper for globals
 void global_set_initializer(LLVMValueWrapper &global,
                             const LLVMValueWrapper &init) {
@@ -5300,6 +5533,18 @@ void global_set_visibility(LLVMValueWrapper &global, LLVMVisibility vis) {
 LLVMVisibility global_get_visibility(const LLVMValueWrapper &global) {
   global.check_valid();
   return LLVMGetVisibility(global.m_ref);
+}
+
+LLVMDLLStorageClass
+global_get_dll_storage_class(const LLVMValueWrapper &global) {
+  global.check_valid();
+  return LLVMGetDLLStorageClass(global.m_ref);
+}
+
+void global_set_dll_storage_class(LLVMValueWrapper &global,
+                                  LLVMDLLStorageClass storage_class) {
+  global.check_valid();
+  LLVMSetDLLStorageClass(global.m_ref, storage_class);
 }
 
 void global_set_section(LLVMValueWrapper &global, const std::string &section) {
@@ -6785,6 +7030,18 @@ LLVMContextWrapper::md_node(const std::vector<LLVMMetadataWrapper> &mds) {
       LLVMMDNodeInContext2(m_ref, refs.data(), refs.size()), m_token);
 }
 
+// Implementation of LLVMContextWrapper::create_type_attribute() - needs
+// LLVMTypeWrapper
+inline LLVMAttributeWrapper
+LLVMContextWrapper::create_type_attribute(unsigned kind_id,
+                                          const LLVMTypeWrapper &type_ref) {
+  check_valid();
+  type_ref.check_valid();
+  LLVMAttributeRef ref =
+      LLVMCreateTypeAttribute(m_ref, kind_id, type_ref.m_ref);
+  return LLVMAttributeWrapper(ref, m_token);
+}
+
 // Implementation of LLVMModuleWrapper::add_named_metadata_operand() - needs
 // LLVMMetadataWrapper
 inline void
@@ -7805,6 +8062,15 @@ NB_MODULE(llvm, m) {
       .value("Global", LLVMGlobalUnnamedAddr)
       .export_values();
 
+  nb::enum_<LLVMDLLStorageClass>(
+      m, "DLLStorageClass", "DLL storage class for Windows PE/COFF targets.")
+      .value("Default", LLVMDefaultStorageClass)
+      .value("DLLImport", LLVMDLLImportStorageClass,
+             "Function/variable to be imported from DLL.")
+      .value("DLLExport", LLVMDLLExportStorageClass,
+             "Function/variable to be accessible from DLL.")
+      .export_values();
+
   nb::enum_<LLVMCallConv>(m, "CallConv")
       .value("C", LLVMCCallConv)
       .value("Fast", LLVMFastCallConv)
@@ -8152,12 +8418,17 @@ Wraps LLVMConstRealOfStringAndSize.)")
       .def_prop_ro("prev_global", &LLVMValueWrapper::prev_global)
       .def("add_incoming", &phi_add_incoming, "val"_a, "bb"_a)
       .def("add_case", &switch_add_case, "val"_a, "bb"_a)
+      .def("add_destination", &indirect_br_add_destination, "dest"_a,
+           R"(Add a destination to an indirect branch instruction.)")
       .def_prop_rw("initializer", &global_get_initializer,
                    &global_set_initializer)
       .def("set_constant", &global_set_constant, "is_const"_a)
       .def_prop_ro("is_global_constant", &global_is_constant)
       .def_prop_rw("linkage", &global_get_linkage, &global_set_linkage)
       .def_prop_rw("visibility", &global_get_visibility, &global_set_visibility)
+      .def_prop_rw("dll_storage_class", &global_get_dll_storage_class,
+                   &global_set_dll_storage_class,
+                   "DLL storage class for Windows PE/COFF targets.")
       .def_prop_rw("alignment", &LLVMValueWrapper::get_alignment,
                    &LLVMValueWrapper::set_alignment)
       .def_prop_rw("section", &global_get_section, &global_set_section)
@@ -8270,6 +8541,19 @@ Wraps LLVMSetOperand.)")
                    &LLVMValueWrapper::get_global_ifunc_resolver)
       .def("set_global_ifunc_resolver",
            &LLVMValueWrapper::set_global_ifunc_resolver, "resolver"_a)
+      .def("erase_from_parent_ifunc",
+           &LLVMValueWrapper::erase_from_parent_ifunc,
+           R"(Erase this global IFunc from its parent module and delete it.
+
+After calling this, the IFunc value is no longer valid and should not be used.)")
+      .def("remove_from_parent_ifunc",
+           &LLVMValueWrapper::remove_from_parent_ifunc,
+           R"(Remove this global IFunc from its parent module but keep it alive.
+
+WARNING: This is a low-level API for advanced use cases like moving an IFunc
+between modules. The removed IFunc will still hold references to values in the
+original module. If those values are deleted before the IFunc, LLVM will crash.
+Prefer using erase_from_parent_ifunc() for most use cases.)")
       // Global properties
       .def_prop_ro("global_value_type",
                    &LLVMValueWrapper::global_get_value_type)
@@ -8550,6 +8834,21 @@ Example:
           R"(Get an enum attribute at the given index. Returns None if not found.)")
       .def("add_attribute", &LLVMFunctionWrapper::add_attribute, "idx"_a,
            "attr"_a, R"(Add an attribute to this function at the given index.)")
+      .def("get_attributes", &LLVMFunctionWrapper::get_attributes, "idx"_a,
+           R"(Get all attributes at the given index.)")
+      .def(
+          "get_string_attribute", &LLVMFunctionWrapper::get_string_attribute,
+          "idx"_a, "key"_a,
+          R"(Get a string attribute at the given index by key. Returns None if not found.)")
+      .def("remove_enum_attribute", &LLVMFunctionWrapper::remove_enum_attribute,
+           "idx"_a, "kind_id"_a,
+           R"(Remove an enum attribute at the given index.)")
+      .def("remove_string_attribute",
+           &LLVMFunctionWrapper::remove_string_attribute, "idx"_a, "key"_a,
+           R"(Remove a string attribute at the given index by key.)")
+      .def("add_target_attribute", &LLVMFunctionWrapper::add_target_attribute,
+           "key"_a, "value"_a,
+           R"(Add a target-dependent attribute to this function.)")
       // =====================================================================
       // Function API Refactor: Methods moved from global functions
       // =====================================================================
@@ -8624,6 +8923,12 @@ Example:
            nb::kw_only(), "before_dbg"_a = false)
       .def("position_before", &LLVMBuilderWrapper::position_before, "inst"_a,
            nb::kw_only(), "before_dbg"_a = false)
+      .def(
+          "position_at", &LLVMBuilderWrapper::position_at, "bb"_a, "inst"_a,
+          R"(Position the builder at a specific instruction in a basic block.)")
+      .def("clear_insertion_position",
+           &LLVMBuilderWrapper::clear_insertion_position,
+           R"(Clear the insertion position.)")
       .def_prop_ro("insert_block", &LLVMBuilderWrapper::insert_block)
       // Arithmetic
       .def("add", &LLVMBuilderWrapper::add, "lhs"_a, "rhs"_a, "name"_a = "")
@@ -8644,6 +8949,8 @@ Example:
       .def("sdiv", &LLVMBuilderWrapper::sdiv, "lhs"_a, "rhs"_a, "name"_a = "")
       .def("udiv", &LLVMBuilderWrapper::udiv, "lhs"_a, "rhs"_a, "name"_a = "")
       .def("exact_sdiv", &LLVMBuilderWrapper::exact_sdiv, "lhs"_a, "rhs"_a,
+           "name"_a = "")
+      .def("exact_udiv", &LLVMBuilderWrapper::exact_udiv, "lhs"_a, "rhs"_a,
            "name"_a = "")
       .def("srem", &LLVMBuilderWrapper::srem, "lhs"_a, "rhs"_a, "name"_a = "")
       .def("urem", &LLVMBuilderWrapper::urem, "lhs"_a, "rhs"_a, "name"_a = "")
@@ -8714,6 +9021,23 @@ Example:
            R"(Cast a pointer to a different address space.
 
 Wraps LLVMBuildAddrSpaceCast.)")
+      // Convenience casts
+      .def("zext_or_bitcast", &LLVMBuilderWrapper::zext_or_bitcast, "val"_a,
+           "ty"_a, "name"_a = "",
+           R"(Zero extend or bitcast depending on type sizes.)")
+      .def("sext_or_bitcast", &LLVMBuilderWrapper::sext_or_bitcast, "val"_a,
+           "ty"_a, "name"_a = "",
+           R"(Sign extend or bitcast depending on type sizes.)")
+      .def("trunc_or_bitcast", &LLVMBuilderWrapper::trunc_or_bitcast, "val"_a,
+           "ty"_a, "name"_a = "",
+           R"(Truncate or bitcast depending on type sizes.)")
+      .def("pointer_cast", &LLVMBuilderWrapper::pointer_cast, "val"_a, "ty"_a,
+           "name"_a = "", R"(Cast a pointer to a different pointer type.)")
+      .def("fp_cast", &LLVMBuilderWrapper::fp_cast, "val"_a, "ty"_a,
+           "name"_a = "",
+           R"(Cast a floating-point value to a different floating-point type.)")
+      .def("cast", &LLVMBuilderWrapper::cast, "op"_a, "val"_a, "ty"_a,
+           "name"_a = "", R"(Build a generic cast instruction.)")
       // Control flow
       .def("ret", &LLVMBuilderWrapper::ret, "val"_a)
       .def("ret_void", &LLVMBuilderWrapper::ret_void)
@@ -8722,6 +9046,8 @@ Wraps LLVMBuildAddrSpaceCast.)")
            "else_bb"_a)
       .def("switch_", &LLVMBuilderWrapper::switch_, "val"_a, "else_bb"_a,
            "num_cases"_a)
+      .def("indirect_br", &LLVMBuilderWrapper::indirect_br, "addr"_a,
+           "num_dests"_a, R"(Build an indirect branch instruction.)")
       .def("call", &LLVMBuilderWrapper::call, "func_ty"_a, "func"_a, "args"_a,
            "name"_a = "")
       .def("unreachable", &LLVMBuilderWrapper::unreachable)
@@ -8749,8 +9075,15 @@ Wraps LLVMBuildAddrSpaceCast.)")
       .def("gep_with_no_wrap_flags",
            &LLVMBuilderWrapper::gep_with_no_wrap_flags, "ty"_a, "ptr"_a,
            "indices"_a, "flags"_a, "name"_a = "")
+      .def("atomic_rmw", &LLVMBuilderWrapper::atomic_rmw, "op"_a, "ptr"_a,
+           "val"_a, "ordering"_a, "single_thread"_a = false,
+           R"(Build an atomic read-modify-write instruction.)")
       .def("atomic_rmw_sync_scope", &LLVMBuilderWrapper::atomic_rmw_sync_scope,
            "op"_a, "ptr"_a, "val"_a, "ordering"_a, "sync_scope_id"_a)
+      .def("atomic_cmpxchg", &LLVMBuilderWrapper::atomic_cmpxchg, "ptr"_a,
+           "cmp"_a, "new_val"_a, "success_ordering"_a, "failure_ordering"_a,
+           "single_thread"_a = false,
+           R"(Build an atomic compare-and-exchange instruction.)")
       .def("atomic_cmpxchg_sync_scope",
            &LLVMBuilderWrapper::atomic_cmpxchg_sync_scope, "ptr"_a, "cmp"_a,
            "new_val"_a, "success_ordering"_a, "failure_ordering"_a,
@@ -8855,7 +9188,10 @@ Wraps LLVMBuildFence.)")
                    "string attribute).")
       .def_prop_ro("string_value", &LLVMAttributeWrapper::get_string_value,
                    "Get the value of this string attribute (raises if not a "
-                   "string attribute).");
+                   "string attribute).")
+      .def_prop_ro("type_value", &LLVMAttributeWrapper::get_type_value,
+                   "Get the type of this type attribute (raises if not a type "
+                   "attribute).");
 
   // Value metadata entries wrapper (for global/instruction metadata copying)
   nb::class_<LLVMValueMetadataEntriesWrapper>(m, "ValueMetadataEntries")
@@ -9146,11 +9482,46 @@ Returns:
     A new string attribute.
 
 Wraps LLVMCreateStringAttribute.)")
+      .def("create_type_attribute", &LLVMContextWrapper::create_type_attribute,
+           "kind_id"_a, "type"_a,
+           R"(Create a type attribute.
+
+Args:
+    kind_id: The attribute kind ID
+    type: The type to attach to the attribute
+
+Returns:
+    A new type attribute.
+
+Wraps LLVMCreateTypeAttribute.)")
+      .def("get_md_kind_id", &LLVMContextWrapper::get_md_kind_id, "name"_a,
+           R"(Get the metadata kind ID for a named metadata kind.
+
+Maps a metadata kind name to an ID unique within this context.
+
+Args:
+    name: The metadata kind name.
+
+Returns:
+    The metadata kind ID.)")
       // Metadata creation methods (moved from global functions)
       .def("md_string", &LLVMContextWrapper::md_string, "str"_a,
            R"(Create metadata string in context.)")
       .def("md_node", &LLVMContextWrapper::md_node, "mds"_a,
-           R"(Create metadata node in context from metadata refs.)");
+           R"(Create metadata node in context from metadata refs.)")
+      // Sync scope
+      .def("get_sync_scope_id", &LLVMContextWrapper::get_sync_scope_id,
+           "name"_a,
+           R"(Get the sync scope ID for a named synchronization scope.
+
+Maps a synchronization scope name to an ID unique within this context.
+Common scope names include "singlethread" for thread-local synchronization.
+
+Args:
+    name: The synchronization scope name.
+
+Returns:
+    The sync scope ID for use with atomic operations.)");
 
   // Context manager
   nb::class_<LLVMContextManager>(m, "ContextManager")

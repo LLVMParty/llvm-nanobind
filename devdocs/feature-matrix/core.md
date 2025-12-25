@@ -75,7 +75,7 @@ except llvm.LLVMParseError:
 |-------|------------|--------|
 | `LLVMGetMDKindIDInContext` | ❌ | Not exposed directly |
 | `LLVMGetMDKindID` | 🚫 | Uses global context |
-| `LLVMGetSyncScopeID` | ❌ | TODO |
+| `LLVMGetSyncScopeID` | `ctx.get_sync_scope_id(name)` | Maps scope name to ID |
 
 ### Attributes
 
@@ -601,8 +601,8 @@ Most constant expression APIs are not exposed. Use Builder APIs instead for most
 | `LLVMSetUnnamedAddress` | `gv.unnamed_addr = UnnamedAddr` | `gv.unnamed_addr = llvm.Global` |
 | `LLVMGetSection` | `gv.section` | `sec = gv.section` |
 | `LLVMSetSection` | `gv.section = str` | `gv.section = ".text"` |
-| `LLVMGetDLLStorageClass` | ❌ | TODO |
-| `LLVMSetDLLStorageClass` | ❌ | TODO |
+| `LLVMGetDLLStorageClass` | `gv.dll_storage_class` | `dsc = gv.dll_storage_class` |
+| `LLVMSetDLLStorageClass` | `gv.dll_storage_class = ...` | `gv.dll_storage_class = llvm.DLLStorageClass.DLLExport` |
 | `LLVMGetAlignment` | `gv.alignment` | `align = gv.alignment` |
 | `LLVMSetAlignment` | `gv.alignment = int` | `gv.alignment = 16` |
 
@@ -677,8 +677,8 @@ alias = mod.add_alias(fn_ty.pointer(), 0, fn, "alias_name")
 | `LLVMGetPreviousGlobalIFunc` | `ifunc.prev_global_ifunc` | - |
 | `LLVMGetGlobalIFuncResolver` | `ifunc.resolver` | `resolver = ifunc.resolver` |
 | `LLVMSetGlobalIFuncResolver` | `ifunc.resolver = fn` | `ifunc.resolver = resolver_fn` |
-| `LLVMEraseGlobalIFunc` | ❌ | TODO |
-| `LLVMRemoveGlobalIFunc` | ❌ | TODO |
+| `LLVMEraseGlobalIFunc` | `ifunc.erase_from_parent_ifunc()` | Deletes IFunc from module |
+| `LLVMRemoveGlobalIFunc` | `ifunc.remove_from_parent_ifunc()` | Removes but keeps alive (advanced) |
 
 ---
 
