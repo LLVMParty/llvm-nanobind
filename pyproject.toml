@@ -43,7 +43,6 @@ editable.mode = "redirect"
 wheel.packages = ["llvm_c_test"]
 
 [tool.uv]
-no-build-isolation-package = ["llvm-nanobind"]
 cache-keys = [
     { file = "CMakeLists.txt" },
     { file = "src/**/*.cpp" },
