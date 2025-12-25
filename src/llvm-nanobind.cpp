@@ -1482,9 +1482,19 @@ struct LLVMValueWrapper {
     return LLVMGetAlignment(m_ref);
   }
 
+  void set_alignment(unsigned align) {
+    check_valid();
+    LLVMSetAlignment(m_ref, align);
+  }
+
   bool get_volatile() const {
     check_valid();
     return LLVMGetVolatile(m_ref);
+  }
+
+  void set_volatile(bool is_volatile) {
+    check_valid();
+    LLVMSetVolatile(m_ref, is_volatile);
   }
 
   LLVMAtomicOrdering get_ordering() const {
@@ -1649,11 +1659,6 @@ struct LLVMValueWrapper {
     LLVMSetOrdering(m_ref, ordering);
   }
 
-  void set_volatile(bool is_volatile) {
-    check_valid();
-    LLVMSetVolatile(m_ref, is_volatile);
-  }
-
   // Atomic properties
   bool is_atomic() const {
     check_valid();
@@ -1728,6 +1733,12 @@ struct LLVMValueWrapper {
   LLVMValueWrapper get_condition() const {
     check_valid();
     return LLVMValueWrapper(LLVMGetCondition(m_ref), m_context_token);
+  }
+
+  // Branch successors
+  unsigned get_num_successors() const {
+    check_valid();
+    return LLVMGetNumSuccessors(m_ref);
   }
 
   // Landing pad properties
@@ -4974,15 +4985,8 @@ void global_set_linkage(LLVMValueWrapper &global, LLVMLinkage linkage) {
   LLVMSetLinkage(global.m_ref, linkage);
 }
 
-void global_set_alignment(LLVMValueWrapper &global, unsigned align) {
-  global.check_valid();
-  LLVMSetAlignment(global.m_ref, align);
-}
-
-unsigned global_get_alignment(const LLVMValueWrapper &global) {
-  global.check_valid();
-  return LLVMGetAlignment(global.m_ref);
-}
+// Removed duplicate global_set_alignment and global_get_alignment
+// - these are now available directly on LLVMValueWrapper
 
 bool global_is_constant(const LLVMValueWrapper &global) {
   global.check_valid();
@@ -5051,17 +5055,8 @@ void global_delete(LLVMValueWrapper &global) {
 }
 
 // PHI node helpers
-unsigned phi_count_incoming(const LLVMValueWrapper &phi) {
-  phi.check_valid();
-  return LLVMCountIncoming(phi.m_ref);
-}
-
-LLVMValueWrapper phi_get_incoming_value(const LLVMValueWrapper &phi,
-                                        unsigned index) {
-  phi.check_valid();
-  return LLVMValueWrapper(LLVMGetIncomingValue(phi.m_ref, index),
-                          phi.m_context_token);
-}
+// Removed duplicate phi_count_incoming - now available directly as
+// LLVMValueWrapper::count_incoming()
 
 LLVMBasicBlockWrapper phi_get_incoming_block(const LLVMValueWrapper &phi,
                                              unsigned index) {
@@ -5071,57 +5066,6 @@ LLVMBasicBlockWrapper phi_get_incoming_block(const LLVMValueWrapper &phi,
 }
 
 // Instruction property helpers
-bool instruction_is_conditional(const LLVMValueWrapper &inst) {
-  inst.check_valid();
-  return LLVMIsConditional(inst.m_ref);
-}
-
-LLVMValueWrapper instruction_get_condition(const LLVMValueWrapper &inst) {
-  inst.check_valid();
-  return LLVMValueWrapper(LLVMGetCondition(inst.m_ref), inst.m_context_token);
-}
-
-unsigned instruction_get_num_successors(const LLVMValueWrapper &inst) {
-  inst.check_valid();
-  return LLVMGetNumSuccessors(inst.m_ref);
-}
-
-LLVMBasicBlockWrapper instruction_get_successor(const LLVMValueWrapper &inst,
-                                                unsigned index) {
-  inst.check_valid();
-  return LLVMBasicBlockWrapper(LLVMGetSuccessor(inst.m_ref, index),
-                               inst.m_context_token);
-}
-
-void instruction_set_volatile(LLVMValueWrapper &inst, bool is_volatile) {
-  inst.check_valid();
-  LLVMSetVolatile(inst.m_ref, is_volatile);
-}
-
-bool instruction_get_volatile(const LLVMValueWrapper &inst) {
-  inst.check_valid();
-  return LLVMGetVolatile(inst.m_ref);
-}
-
-void instruction_set_alignment(LLVMValueWrapper &inst, unsigned align) {
-  inst.check_valid();
-  LLVMSetAlignment(inst.m_ref, align);
-}
-
-unsigned instruction_get_alignment(const LLVMValueWrapper &inst) {
-  inst.check_valid();
-  return LLVMGetAlignment(inst.m_ref);
-}
-
-LLVMIntPredicate instruction_get_icmp_predicate(const LLVMValueWrapper &inst) {
-  inst.check_valid();
-  return LLVMGetICmpPredicate(inst.m_ref);
-}
-
-LLVMRealPredicate instruction_get_fcmp_predicate(const LLVMValueWrapper &inst) {
-  inst.check_valid();
-  return LLVMGetFCmpPredicate(inst.m_ref);
-}
 
 // Type helpers
 unsigned type_count_struct_element_types(const LLVMTypeWrapper &ty) {
@@ -7418,7 +7362,8 @@ NB_MODULE(llvm, m) {
       .def_prop_ro("is_global_constant", &global_is_constant)
       .def_prop_rw("linkage", &global_get_linkage, &global_set_linkage)
       .def_prop_rw("visibility", &global_get_visibility, &global_set_visibility)
-      .def_prop_rw("alignment", &global_get_alignment, &global_set_alignment)
+      .def_prop_rw("alignment", &LLVMValueWrapper::get_alignment,
+                   &LLVMValueWrapper::set_alignment)
       .def_prop_rw("section", &global_get_section, &global_set_section)
       .def("set_thread_local", &global_set_thread_local, "is_tls"_a)
       .def_prop_ro("is_thread_local", &global_is_thread_local)
@@ -7429,23 +7374,24 @@ NB_MODULE(llvm, m) {
       .def("delete_global", &global_delete)
       .def("delete", &global_delete) // Alias for delete_global
       // PHI helpers
-      .def_prop_ro("num_incoming", &phi_count_incoming)
-      .def("get_incoming_value", &phi_get_incoming_value, "index"_a)
+      .def_prop_ro("num_incoming", &LLVMValueWrapper::count_incoming)
+      .def("get_incoming_value", &LLVMValueWrapper::get_incoming_value,
+           "index"_a)
       .def("get_incoming_block", &phi_get_incoming_block, "index"_a)
       // Branch instruction helpers
-      .def_prop_ro("is_conditional", &instruction_is_conditional)
-      .def_prop_ro("condition", &instruction_get_condition)
-      .def_prop_ro("num_successors", &instruction_get_num_successors)
-      .def("get_successor", &instruction_get_successor, "index"_a)
+      .def_prop_ro("is_conditional", &LLVMValueWrapper::is_conditional)
+      .def_prop_ro("condition", &LLVMValueWrapper::get_condition)
+      .def_prop_ro("num_successors", &LLVMValueWrapper::get_num_successors)
+      .def("get_successor", &LLVMValueWrapper::get_successor, "index"_a)
       .def_prop_ro("successors", &LLVMValueWrapper::successors)
-      // Load/Store helpers
-      .def("set_volatile", &instruction_set_volatile, "is_volatile"_a)
-      .def_prop_ro("is_volatile", &instruction_get_volatile)
-      .def("set_inst_alignment", &instruction_set_alignment, "align"_a)
-      .def_prop_ro("inst_alignment", &instruction_get_alignment)
-      // Comparison helpers
-      .def_prop_ro("icmp_predicate", &instruction_get_icmp_predicate)
-      .def_prop_ro("fcmp_predicate", &instruction_get_fcmp_predicate)
+      // Load/Store helpers - use LLVMValueWrapper methods
+      .def("set_volatile", &LLVMValueWrapper::set_volatile, "is_volatile"_a)
+      .def_prop_ro("is_volatile", &LLVMValueWrapper::get_volatile)
+      .def("set_inst_alignment", &LLVMValueWrapper::set_alignment, "align"_a)
+      .def_prop_ro("inst_alignment", &LLVMValueWrapper::get_alignment)
+      // Comparison helpers - use LLVMValueWrapper methods
+      .def_prop_ro("icmp_predicate", &LLVMValueWrapper::get_icmp_predicate)
+      .def_prop_ro("fcmp_predicate", &LLVMValueWrapper::get_fcmp_predicate)
       // Instruction iteration
       .def_prop_ro("next_instruction", &LLVMValueWrapper::next_instruction)
       .def_prop_ro("prev_instruction", &LLVMValueWrapper::prev_instruction)
