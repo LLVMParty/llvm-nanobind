@@ -565,6 +565,118 @@ if(NOT CMKR_VS_STARTUP_PROJECT)
 	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT test_predecessors)
 endif()
 
+# Target: test_target_codegen
+set(test_target_codegen_SOURCES
+	cmake.toml
+	"tests/test_target_codegen.cpp"
+)
+
+add_executable(test_target_codegen)
+
+target_sources(test_target_codegen PRIVATE ${test_target_codegen_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${test_target_codegen_SOURCES})
+
+target_compile_features(test_target_codegen PRIVATE
+	cxx_std_20
+)
+
+if(NOT TARGET LLVM-C-Wrapper)
+	message(FATAL_ERROR "Target \"LLVM-C-Wrapper\" referenced by \"test_target_codegen\" does not exist!")
+endif()
+
+target_link_libraries(test_target_codegen PRIVATE
+	LLVM-C-Wrapper
+)
+
+get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+if(NOT CMKR_VS_STARTUP_PROJECT)
+	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT test_target_codegen)
+endif()
+
+# Target: test_bitcode_linker
+set(test_bitcode_linker_SOURCES
+	cmake.toml
+	"tests/test_bitcode_linker.cpp"
+)
+
+add_executable(test_bitcode_linker)
+
+target_sources(test_bitcode_linker PRIVATE ${test_bitcode_linker_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${test_bitcode_linker_SOURCES})
+
+target_compile_features(test_bitcode_linker PRIVATE
+	cxx_std_20
+)
+
+if(NOT TARGET LLVM-C-Wrapper)
+	message(FATAL_ERROR "Target \"LLVM-C-Wrapper\" referenced by \"test_bitcode_linker\" does not exist!")
+endif()
+
+target_link_libraries(test_bitcode_linker PRIVATE
+	LLVM-C-Wrapper
+)
+
+get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+if(NOT CMKR_VS_STARTUP_PROJECT)
+	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT test_bitcode_linker)
+endif()
+
+# Target: test_passbuilder
+set(test_passbuilder_SOURCES
+	cmake.toml
+	"tests/test_passbuilder.cpp"
+)
+
+add_executable(test_passbuilder)
+
+target_sources(test_passbuilder PRIVATE ${test_passbuilder_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${test_passbuilder_SOURCES})
+
+target_compile_features(test_passbuilder PRIVATE
+	cxx_std_20
+)
+
+if(NOT TARGET LLVM-C-Wrapper)
+	message(FATAL_ERROR "Target \"LLVM-C-Wrapper\" referenced by \"test_passbuilder\" does not exist!")
+endif()
+
+target_link_libraries(test_passbuilder PRIVATE
+	LLVM-C-Wrapper
+)
+
+get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+if(NOT CMKR_VS_STARTUP_PROJECT)
+	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT test_passbuilder)
+endif()
+
+# Target: test_function_extended
+set(test_function_extended_SOURCES
+	cmake.toml
+	"tests/test_function_extended.cpp"
+)
+
+add_executable(test_function_extended)
+
+target_sources(test_function_extended PRIVATE ${test_function_extended_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${test_function_extended_SOURCES})
+
+target_compile_features(test_function_extended PRIVATE
+	cxx_std_20
+)
+
+if(NOT TARGET LLVM-C-Wrapper)
+	message(FATAL_ERROR "Target \"LLVM-C-Wrapper\" referenced by \"test_function_extended\" does not exist!")
+endif()
+
+target_link_libraries(test_function_extended PRIVATE
+	LLVM-C-Wrapper
+)
+
+get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+if(NOT CMKR_VS_STARTUP_PROJECT)
+	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT test_function_extended)
+endif()
+
 # Target: test_symbol_size_crash
 set(test_symbol_size_crash_SOURCES
 	cmake.toml

@@ -14,11 +14,14 @@
 
 #include <llvm-c/Analysis.h>
 #include <llvm-c/BitReader.h>
+#include <llvm-c/BitWriter.h>
 #include <llvm-c/Core.h>
 #include <llvm-c/DebugInfo.h>
 #include <llvm-c/Disassembler.h>
 #include <llvm-c/IRReader.h>
+#include <llvm-c/Linker.h>
 #include <llvm-c/Object.h>
+#include <llvm-c/Transforms/PassBuilder.h>
 #include <llvm-c/Target.h>
 #include <llvm-c/TargetMachine.h>
 
@@ -2295,6 +2298,90 @@ struct LLVMFunctionWrapper : LLVMValueWrapper {
 
   // Get the context this function belongs to (derived via module)
   LLVMContextWrapper *context() const;
+
+  // =========================================================================
+  // Function verification (Analysis.h)
+  // =========================================================================
+
+  /// Verify this function.
+  /// Returns true if the function is valid, false otherwise.
+  /// Wraps LLVMVerifyFunction with LLVMReturnStatusAction.
+  bool verify() const {
+    check_valid();
+    return !LLVMVerifyFunction(m_ref, LLVMReturnStatusAction);
+  }
+
+  /// Verify this function and print any errors to stderr.
+  /// Wraps LLVMVerifyFunction with LLVMPrintMessageAction.
+  bool verify_and_print() const {
+    check_valid();
+    return !LLVMVerifyFunction(m_ref, LLVMPrintMessageAction);
+  }
+
+  // =========================================================================
+  // Intrinsic functions
+  // =========================================================================
+
+  /// Get the intrinsic ID for this function.
+  /// Returns 0 if the function is not an intrinsic.
+  /// Wraps LLVMGetIntrinsicID.
+  unsigned intrinsic_id() const {
+    check_valid();
+    return LLVMGetIntrinsicID(m_ref);
+  }
+
+  /// Check if this function is an intrinsic.
+  bool is_intrinsic() const {
+    return intrinsic_id() != 0;
+  }
+
+  // =========================================================================
+  // Personality function (for exception handling)
+  // =========================================================================
+
+  /// Check if this function has a personality function.
+  /// Wraps LLVMHasPersonalityFn.
+  bool has_personality_fn() const {
+    check_valid();
+    return LLVMHasPersonalityFn(m_ref);
+  }
+
+  /// Get the personality function.
+  /// Wraps LLVMGetPersonalityFn.
+  std::optional<LLVMValueWrapper> get_personality_fn() const {
+    check_valid();
+    if (!has_personality_fn())
+      return std::nullopt;
+    return LLVMValueWrapper(LLVMGetPersonalityFn(m_ref), m_context_token);
+  }
+
+  /// Set the personality function.
+  /// Wraps LLVMSetPersonalityFn.
+  void set_personality_fn(const LLVMValueWrapper &fn) {
+    check_valid();
+    fn.check_valid();
+    LLVMSetPersonalityFn(m_ref, fn.m_ref);
+  }
+
+  // =========================================================================
+  // GC name
+  // =========================================================================
+
+  /// Get the GC name for this function.
+  /// Wraps LLVMGetGC.
+  std::optional<std::string> get_gc() const {
+    check_valid();
+    const char *gc = LLVMGetGC(m_ref);
+    if (!gc) return std::nullopt;
+    return std::string(gc);
+  }
+
+  /// Set the GC name for this function.
+  /// Wraps LLVMSetGC.
+  void set_gc(const std::string &gc) {
+    check_valid();
+    LLVMSetGC(m_ref, gc.c_str());
+  }
 };
 
 // =============================================================================
@@ -3841,6 +3928,73 @@ struct LLVMModuleWrapper : NoMoveCopy {
     return result;
   }
 
+  // ==========================================================================
+  // BitWriter - Bitcode writing functionality
+  // ==========================================================================
+
+  /// Write bitcode to file.
+  /// Wraps LLVMWriteBitcodeToFile.
+  void write_bitcode_to_file(const std::string &path) {
+    check_valid();
+    if (LLVMWriteBitcodeToFile(m_ref, path.c_str())) {
+      throw LLVMError("Failed to write bitcode to file: " + path);
+    }
+  }
+
+  /// Write bitcode to memory and return as bytes.
+  /// Wraps LLVMWriteBitcodeToMemoryBuffer.
+  nb::bytes write_bitcode_to_memory_buffer() {
+    check_valid();
+    LLVMMemoryBufferRef buf = LLVMWriteBitcodeToMemoryBuffer(m_ref);
+    if (!buf) {
+      throw LLVMError("Failed to write bitcode to memory buffer");
+    }
+    const char *data = LLVMGetBufferStart(buf);
+    size_t size = LLVMGetBufferSize(buf);
+    nb::bytes result(data, size);
+    LLVMDisposeMemoryBuffer(buf);
+    return result;
+  }
+
+  // ==========================================================================
+  // Linker - Module linking functionality  
+  // ==========================================================================
+
+  /// Link another module into this module.
+  /// The source module is destroyed after linking.
+  /// Wraps LLVMLinkModules2.
+  void link_module(LLVMModuleWrapper &src) {
+    check_valid();
+    src.check_valid();
+    if (LLVMLinkModules2(m_ref, src.m_ref)) {
+      throw LLVMError("Failed to link modules");
+    }
+    // LLVMLinkModules2 destroys the source module, so mark it as disposed
+    src.m_ref = nullptr;
+    if (src.m_token) {
+      src.m_token->invalidate();
+    }
+  }
+
+
+
+  // ==========================================================================
+  // Module printing to file
+  // ==========================================================================
+
+  /// Print the module IR to a file.
+  /// Wraps LLVMPrintModuleToFile.
+  void print_to_file(const std::string &filename) {
+    check_valid();
+    char *error = nullptr;
+    if (LLVMPrintModuleToFile(m_ref, filename.c_str(), &error)) {
+      std::string msg = error ? error : "Unknown error";
+      if (error) LLVMDisposeMessage(error);
+      throw LLVMError("Failed to print module to file: " + msg);
+    }
+    if (error) LLVMDisposeMessage(error);
+  }
+
   // Global alias support for echo command
   std::optional<LLVMValueWrapper> first_global_alias() {
     check_valid();
@@ -4035,10 +4189,11 @@ struct LLVMModuleWrapper : NoMoveCopy {
   LLVMDIBuilderManager *create_dibuilder();
 
   // Clone - returns a ModuleManager that must be used with 'with' or .dispose()
+  // Wraps LLVMCloneModule.
   LLVMModuleManager *clone() const;
 
 private:
-  // Private constructor for clone
+  // Private constructor for borrowing
   LLVMModuleWrapper() = default;
   friend struct LLVMModuleManager;
 };
@@ -5158,6 +5313,422 @@ std::optional<LLVMTargetWrapper> get_first_target() {
   if (ref)
     return LLVMTargetWrapper(ref);
   return std::nullopt;
+}
+
+// Get target from triple
+std::optional<LLVMTargetWrapper> get_target_from_triple(const std::string &triple) {
+  LLVMTargetRef ref = nullptr;
+  char *error = nullptr;
+  if (LLVMGetTargetFromTriple(triple.c_str(), &ref, &error)) {
+    std::string msg = error ? error : "Unknown error";
+    if (error) LLVMDisposeMessage(error);
+    throw LLVMError("Failed to get target from triple: " + msg);
+  }
+  if (error) LLVMDisposeMessage(error);
+  if (ref)
+    return LLVMTargetWrapper(ref);
+  return std::nullopt;
+}
+
+// Get target from name
+std::optional<LLVMTargetWrapper> get_target_from_name(const std::string &name) {
+  LLVMTargetRef ref = LLVMGetTargetFromName(name.c_str());
+  if (ref)
+    return LLVMTargetWrapper(ref);
+  return std::nullopt;
+}
+
+// Host target queries
+std::string get_default_target_triple() {
+  char *triple = LLVMGetDefaultTargetTriple();
+  std::string result(triple);
+  LLVMDisposeMessage(triple);
+  return result;
+}
+
+std::string normalize_target_triple(const std::string &triple) {
+  char *normalized = LLVMNormalizeTargetTriple(triple.c_str());
+  std::string result(normalized);
+  LLVMDisposeMessage(normalized);
+  return result;
+}
+
+std::string get_host_cpu_name() {
+  char *cpu = LLVMGetHostCPUName();
+  std::string result(cpu);
+  LLVMDisposeMessage(cpu);
+  return result;
+}
+
+std::string get_host_cpu_features() {
+  char *features = LLVMGetHostCPUFeatures();
+  std::string result(features);
+  LLVMDisposeMessage(features);
+  return result;
+}
+
+// Native target initialization
+bool initialize_native_target() {
+  return LLVMInitializeNativeTarget() == 0;
+}
+
+bool initialize_native_asm_printer() {
+  return LLVMInitializeNativeAsmPrinter() == 0;
+}
+
+bool initialize_native_asm_parser() {
+  return LLVMInitializeNativeAsmParser() == 0;
+}
+
+bool initialize_native_disassembler() {
+  return LLVMInitializeNativeDisassembler() == 0;
+}
+
+// =============================================================================
+// Target Data Wrapper
+// =============================================================================
+
+struct LLVMTargetDataWrapper : NoMoveCopy {
+  LLVMTargetDataRef m_ref = nullptr;
+  bool m_owned = true;
+
+  LLVMTargetDataWrapper() = default;
+  explicit LLVMTargetDataWrapper(LLVMTargetDataRef ref, bool owned = true) 
+      : m_ref(ref), m_owned(owned) {}
+
+  ~LLVMTargetDataWrapper() {
+    if (m_ref && m_owned) {
+      LLVMDisposeTargetData(m_ref);
+      m_ref = nullptr;
+    }
+  }
+
+  void check_valid() const {
+    if (!m_ref)
+      throw LLVMMemoryError("TargetData is null");
+  }
+
+  std::string to_string() const {
+    check_valid();
+    char *str = LLVMCopyStringRepOfTargetData(m_ref);
+    std::string result(str);
+    LLVMDisposeMessage(str);
+    return result;
+  }
+
+  LLVMByteOrdering byte_order() const {
+    check_valid();
+    return LLVMByteOrder(m_ref);
+  }
+
+  unsigned pointer_size(unsigned address_space = 0) const {
+    check_valid();
+    return LLVMPointerSizeForAS(m_ref, address_space);
+  }
+
+  unsigned long long size_of_type_in_bits(const LLVMTypeWrapper &ty) const {
+    check_valid();
+    ty.check_valid();
+    return LLVMSizeOfTypeInBits(m_ref, ty.m_ref);
+  }
+
+  unsigned long long store_size_of_type(const LLVMTypeWrapper &ty) const {
+    check_valid();
+    ty.check_valid();
+    return LLVMStoreSizeOfType(m_ref, ty.m_ref);
+  }
+
+  unsigned long long abi_size_of_type(const LLVMTypeWrapper &ty) const {
+    check_valid();
+    ty.check_valid();
+    return LLVMABISizeOfType(m_ref, ty.m_ref);
+  }
+
+  unsigned abi_alignment_of_type(const LLVMTypeWrapper &ty) const {
+    check_valid();
+    ty.check_valid();
+    return LLVMABIAlignmentOfType(m_ref, ty.m_ref);
+  }
+
+  unsigned call_frame_alignment_of_type(const LLVMTypeWrapper &ty) const {
+    check_valid();
+    ty.check_valid();
+    return LLVMCallFrameAlignmentOfType(m_ref, ty.m_ref);
+  }
+
+  unsigned preferred_alignment_of_type(const LLVMTypeWrapper &ty) const {
+    check_valid();
+    ty.check_valid();
+    return LLVMPreferredAlignmentOfType(m_ref, ty.m_ref);
+  }
+
+  unsigned preferred_alignment_of_global(const LLVMValueWrapper &gv) const {
+    check_valid();
+    gv.check_valid();
+    return LLVMPreferredAlignmentOfGlobal(m_ref, gv.m_ref);
+  }
+
+  unsigned element_at_offset(const LLVMTypeWrapper &struct_ty, 
+                             unsigned long long offset) const {
+    check_valid();
+    struct_ty.check_valid();
+    return LLVMElementAtOffset(m_ref, struct_ty.m_ref, offset);
+  }
+
+  unsigned long long offset_of_element(const LLVMTypeWrapper &struct_ty,
+                                       unsigned elem) const {
+    check_valid();
+    struct_ty.check_valid();
+    return LLVMOffsetOfElement(m_ref, struct_ty.m_ref, elem);
+  }
+};
+
+LLVMTargetDataWrapper *create_target_data(const std::string &string_rep) {
+  return new LLVMTargetDataWrapper(LLVMCreateTargetData(string_rep.c_str()));
+}
+
+// =============================================================================
+// Target Machine Wrapper
+// =============================================================================
+
+struct LLVMTargetMachineWrapper : NoMoveCopy {
+  LLVMTargetMachineRef m_ref = nullptr;
+
+  LLVMTargetMachineWrapper() = default;
+  explicit LLVMTargetMachineWrapper(LLVMTargetMachineRef ref) : m_ref(ref) {}
+
+  ~LLVMTargetMachineWrapper() {
+    if (m_ref) {
+      LLVMDisposeTargetMachine(m_ref);
+      m_ref = nullptr;
+    }
+  }
+
+  void check_valid() const {
+    if (!m_ref)
+      throw LLVMMemoryError("TargetMachine is null");
+  }
+
+  LLVMTargetWrapper get_target() const {
+    check_valid();
+    return LLVMTargetWrapper(LLVMGetTargetMachineTarget(m_ref));
+  }
+
+  std::string get_triple() const {
+    check_valid();
+    char *triple = LLVMGetTargetMachineTriple(m_ref);
+    std::string result(triple);
+    LLVMDisposeMessage(triple);
+    return result;
+  }
+
+  std::string get_cpu() const {
+    check_valid();
+    char *cpu = LLVMGetTargetMachineCPU(m_ref);
+    std::string result(cpu);
+    LLVMDisposeMessage(cpu);
+    return result;
+  }
+
+  std::string get_feature_string() const {
+    check_valid();
+    char *features = LLVMGetTargetMachineFeatureString(m_ref);
+    std::string result(features);
+    LLVMDisposeMessage(features);
+    return result;
+  }
+
+  LLVMTargetDataWrapper *create_data_layout() const {
+    check_valid();
+    return new LLVMTargetDataWrapper(LLVMCreateTargetDataLayout(m_ref));
+  }
+
+  void set_asm_verbosity(bool verbose) {
+    check_valid();
+    LLVMSetTargetMachineAsmVerbosity(m_ref, verbose);
+  }
+
+  void set_fast_isel(bool enable) {
+    check_valid();
+    LLVMSetTargetMachineFastISel(m_ref, enable);
+  }
+
+  void set_global_isel(bool enable) {
+    check_valid();
+    LLVMSetTargetMachineGlobalISel(m_ref, enable);
+  }
+
+  void set_global_isel_abort(LLVMGlobalISelAbortMode mode) {
+    check_valid();
+    LLVMSetTargetMachineGlobalISelAbort(m_ref, mode);
+  }
+
+  void set_machine_outliner(bool enable) {
+    check_valid();
+    LLVMSetTargetMachineMachineOutliner(m_ref, enable);
+  }
+
+  // Emit to file
+  void emit_to_file(LLVMModuleWrapper &mod, const std::string &filename,
+                    LLVMCodeGenFileType file_type) {
+    check_valid();
+    mod.check_valid();
+    char *error = nullptr;
+    if (LLVMTargetMachineEmitToFile(m_ref, mod.m_ref, filename.c_str(),
+                                    file_type, &error)) {
+      std::string msg = error ? error : "Unknown error";
+      if (error) LLVMDisposeMessage(error);
+      throw LLVMError("Failed to emit to file: " + msg);
+    }
+    if (error) LLVMDisposeMessage(error);
+  }
+
+  // Emit to memory buffer - returns bytes
+  nb::bytes emit_to_memory_buffer(LLVMModuleWrapper &mod,
+                                  LLVMCodeGenFileType file_type) {
+    check_valid();
+    mod.check_valid();
+    LLVMMemoryBufferRef buf = nullptr;
+    char *error = nullptr;
+    if (LLVMTargetMachineEmitToMemoryBuffer(m_ref, mod.m_ref, file_type, &error,
+                                            &buf)) {
+      std::string msg = error ? error : "Unknown error";
+      if (error) LLVMDisposeMessage(error);
+      throw LLVMError("Failed to emit to memory buffer: " + msg);
+    }
+    if (error) LLVMDisposeMessage(error);
+    
+    const char *data = LLVMGetBufferStart(buf);
+    size_t size = LLVMGetBufferSize(buf);
+    nb::bytes result(data, size);
+    LLVMDisposeMemoryBuffer(buf);
+    return result;
+  }
+};
+
+// Create target machine from target
+LLVMTargetMachineWrapper *create_target_machine(
+    const LLVMTargetWrapper &target, const std::string &triple,
+    const std::string &cpu, const std::string &features,
+    LLVMCodeGenOptLevel opt_level, LLVMRelocMode reloc_mode,
+    LLVMCodeModel code_model) {
+  target.check_valid();
+  LLVMTargetMachineRef ref = LLVMCreateTargetMachine(
+      target.m_ref, triple.c_str(), cpu.c_str(), features.c_str(),
+      opt_level, reloc_mode, code_model);
+  if (!ref) {
+    throw LLVMError("Failed to create target machine");
+  }
+  return new LLVMTargetMachineWrapper(ref);
+}
+
+// =============================================================================
+// Pass Builder Options Wrapper
+// =============================================================================
+
+struct LLVMPassBuilderOptionsWrapper : NoMoveCopy {
+  LLVMPassBuilderOptionsRef m_ref = nullptr;
+
+  LLVMPassBuilderOptionsWrapper() {
+    m_ref = LLVMCreatePassBuilderOptions();
+  }
+
+  ~LLVMPassBuilderOptionsWrapper() {
+    if (m_ref) {
+      LLVMDisposePassBuilderOptions(m_ref);
+      m_ref = nullptr;
+    }
+  }
+
+  void check_valid() const {
+    if (!m_ref)
+      throw LLVMMemoryError("PassBuilderOptions is null");
+  }
+
+  void set_verify_each(bool verify) {
+    check_valid();
+    LLVMPassBuilderOptionsSetVerifyEach(m_ref, verify);
+  }
+
+  void set_debug_logging(bool enable) {
+    check_valid();
+    LLVMPassBuilderOptionsSetDebugLogging(m_ref, enable);
+  }
+
+  void set_loop_interleaving(bool enable) {
+    check_valid();
+    LLVMPassBuilderOptionsSetLoopInterleaving(m_ref, enable);
+  }
+
+  void set_loop_vectorization(bool enable) {
+    check_valid();
+    LLVMPassBuilderOptionsSetLoopVectorization(m_ref, enable);
+  }
+
+  void set_slp_vectorization(bool enable) {
+    check_valid();
+    LLVMPassBuilderOptionsSetSLPVectorization(m_ref, enable);
+  }
+
+  void set_loop_unrolling(bool enable) {
+    check_valid();
+    LLVMPassBuilderOptionsSetLoopUnrolling(m_ref, enable);
+  }
+
+  void set_forget_all_scev_in_loop_unroll(bool forget) {
+    check_valid();
+    LLVMPassBuilderOptionsSetForgetAllSCEVInLoopUnroll(m_ref, forget);
+  }
+
+  void set_licm_mssa_opt_cap(unsigned cap) {
+    check_valid();
+    LLVMPassBuilderOptionsSetLicmMssaOptCap(m_ref, cap);
+  }
+
+  void set_licm_mssa_no_acc_for_promotion_cap(unsigned cap) {
+    check_valid();
+    LLVMPassBuilderOptionsSetLicmMssaNoAccForPromotionCap(m_ref, cap);
+  }
+
+  void set_call_graph_profile(bool enable) {
+    check_valid();
+    LLVMPassBuilderOptionsSetCallGraphProfile(m_ref, enable);
+  }
+
+  void set_merge_functions(bool enable) {
+    check_valid();
+    LLVMPassBuilderOptionsSetMergeFunctions(m_ref, enable);
+  }
+
+  void set_inliner_threshold(int threshold) {
+    check_valid();
+    LLVMPassBuilderOptionsSetInlinerThreshold(m_ref, threshold);
+  }
+};
+
+// Run passes on module
+void run_passes(LLVMModuleWrapper &mod, const std::string &passes,
+                LLVMTargetMachineWrapper *tm,
+                LLVMPassBuilderOptionsWrapper *opts) {
+  mod.check_valid();
+  LLVMTargetMachineRef tm_ref = nullptr;
+  if (tm) {
+    tm->check_valid();
+    tm_ref = tm->m_ref;
+  }
+  LLVMPassBuilderOptionsRef opts_ref = nullptr;
+  if (opts) {
+    opts->check_valid();
+    opts_ref = opts->m_ref;
+  }
+  
+  LLVMErrorRef err = LLVMRunPasses(mod.m_ref, passes.c_str(), tm_ref, opts_ref);
+  if (err) {
+    char *msg = LLVMGetErrorMessage(err);
+    std::string error_msg = msg ? msg : "Unknown error";
+    LLVMDisposeErrorMessage(msg);
+    throw LLVMError("Failed to run passes: " + error_msg);
+  }
 }
 
 // =============================================================================
@@ -7763,7 +8334,58 @@ Example:
                    nb::rv_policy::take_ownership)
       .def_prop_ro("context", &LLVMFunctionWrapper::context,
                    R"(Get the context this function belongs to.)",
-                   nb::rv_policy::take_ownership);
+                   nb::rv_policy::take_ownership)
+      // =====================================================================
+      // Function verification (Analysis.h)
+      // =====================================================================
+      .def("verify", &LLVMFunctionWrapper::verify,
+           R"(Verify this function.
+           
+           Returns True if the function is valid, False otherwise.
+           Wraps LLVMVerifyFunction.)")
+      .def("verify_and_print", &LLVMFunctionWrapper::verify_and_print,
+           R"(Verify this function and print any errors to stderr.
+           
+           Returns True if the function is valid, False otherwise.
+           Wraps LLVMVerifyFunction with LLVMPrintMessageAction.)")
+      // =====================================================================
+      // Intrinsic functions
+      // =====================================================================
+      .def_prop_ro("intrinsic_id", &LLVMFunctionWrapper::intrinsic_id,
+           R"(Get the intrinsic ID for this function.
+           
+           Returns 0 if the function is not an intrinsic.
+           Wraps LLVMGetIntrinsicID.)")
+      .def_prop_ro("is_intrinsic", &LLVMFunctionWrapper::is_intrinsic,
+           R"(Check if this function is an intrinsic.)")
+      // =====================================================================
+      // Personality function (for exception handling)
+      // =====================================================================
+      .def_prop_ro("has_personality_fn", &LLVMFunctionWrapper::has_personality_fn,
+           R"(Check if this function has a personality function.
+           
+           Wraps LLVMHasPersonalityFn.)")
+      .def("get_personality_fn", &LLVMFunctionWrapper::get_personality_fn,
+           R"(Get the personality function.
+           
+           Returns None if no personality function is set.
+           Wraps LLVMGetPersonalityFn.)")
+      .def("set_personality_fn", &LLVMFunctionWrapper::set_personality_fn, "fn"_a,
+           R"(Set the personality function.
+           
+           Wraps LLVMSetPersonalityFn.)")
+      // =====================================================================
+      // GC name
+      // =====================================================================
+      .def("get_gc", &LLVMFunctionWrapper::get_gc,
+           R"(Get the GC name for this function.
+           
+           Returns None if no GC is set.
+           Wraps LLVMGetGC.)")
+      .def("set_gc", &LLVMFunctionWrapper::set_gc, "gc"_a,
+           R"(Set the GC name for this function.
+           
+           Wraps LLVMSetGC.)");
 
   // Builder wrapper
   nb::class_<LLVMBuilderWrapper>(m, "Builder")
@@ -8054,7 +8676,44 @@ Example:
       // Inline assembly support
       .def_prop_rw("inline_asm", &LLVMModuleWrapper::get_inline_asm,
                    &LLVMModuleWrapper::set_inline_asm)
-      .def("clone", &LLVMModuleWrapper::clone, nb::rv_policy::take_ownership)
+      .def("clone", &LLVMModuleWrapper::clone, nb::rv_policy::take_ownership,
+           R"(Create a copy of this module.
+           
+           Wraps LLVMCloneModule.)")
+      // BitWriter methods
+      .def("write_bitcode_to_file", &LLVMModuleWrapper::write_bitcode_to_file,
+           "path"_a,
+           R"(Write the module as bitcode to a file.
+           
+           Args:
+               path: Output file path
+               
+           Wraps LLVMWriteBitcodeToFile.)")
+      .def("write_bitcode_to_memory_buffer", &LLVMModuleWrapper::write_bitcode_to_memory_buffer,
+           R"(Write the module as bitcode to a bytes object.
+           
+           Returns:
+               bytes: The bitcode data.
+               
+           Wraps LLVMWriteBitcodeToMemoryBuffer.)")
+      // Linker methods
+      .def("link_module", &LLVMModuleWrapper::link_module, "src"_a,
+           R"(Link another module into this module.
+           
+           The source module is destroyed after linking.
+           
+           Args:
+               src: Source module to link in
+               
+           Wraps LLVMLinkModules2.)")
+      // Module printing to file
+      .def("print_to_file", &LLVMModuleWrapper::print_to_file, "filename"_a,
+           R"(Print the module IR to a file.
+           
+           Args:
+               filename: Output file path
+               
+           Wraps LLVMPrintModuleToFile.)")
       // Named metadata operand (moved from global function)
       .def("add_named_metadata_operand",
            &LLVMModuleWrapper::add_named_metadata_operand, "name"_a, "md"_a,
@@ -8325,19 +8984,297 @@ Example:
 
   // Target functions
   m.def("initialize_all_target_infos", &initialize_all_target_infos,
-        R"(Initialize all target infos.)");
+        R"(Initialize all target infos.
+        
+        Wraps LLVMInitializeAllTargetInfos.)");
   m.def("initialize_all_targets", &initialize_all_targets,
-        R"(Initialize all targets.)");
+        R"(Initialize all targets.
+        
+        Wraps LLVMInitializeAllTargets.)");
   m.def("initialize_all_target_mcs", &initialize_all_target_mcs,
-        R"(Initialize all target MCs.)");
+        R"(Initialize all target MCs.
+        
+        Wraps LLVMInitializeAllTargetMCs.)");
   m.def("initialize_all_asm_printers", &initialize_all_asm_printers,
-        R"(Initialize all ASM printers.)");
+        R"(Initialize all ASM printers.
+        
+        Wraps LLVMInitializeAllAsmPrinters.)");
   m.def("initialize_all_asm_parsers", &initialize_all_asm_parsers,
-        R"(Initialize all ASM parsers.)");
+        R"(Initialize all ASM parsers.
+        
+        Wraps LLVMInitializeAllAsmParsers.)");
   m.def("initialize_all_disassemblers", &initialize_all_disassemblers,
-        R"(Initialize all disassemblers.)");
+        R"(Initialize all disassemblers.
+        
+        Wraps LLVMInitializeAllDisassemblers.)");
   m.def("get_first_target", &get_first_target,
-        R"(Get the first registered target (returns None if no targets).)");
+        R"(Get the first registered target (returns None if no targets).
+        
+        Wraps LLVMGetFirstTarget.)");
+  
+  // Native target initialization
+  m.def("initialize_native_target", &initialize_native_target,
+        R"(Initialize the native target.
+        
+        Returns True on success, False on failure.
+        Wraps LLVMInitializeNativeTarget.)");
+  m.def("initialize_native_asm_printer", &initialize_native_asm_printer,
+        R"(Initialize the native ASM printer.
+        
+        Returns True on success, False on failure.
+        Wraps LLVMInitializeNativeAsmPrinter.)");
+  m.def("initialize_native_asm_parser", &initialize_native_asm_parser,
+        R"(Initialize the native ASM parser.
+        
+        Returns True on success, False on failure.
+        Wraps LLVMInitializeNativeAsmParser.)");
+  m.def("initialize_native_disassembler", &initialize_native_disassembler,
+        R"(Initialize the native disassembler.
+        
+        Returns True on success, False on failure.
+        Wraps LLVMInitializeNativeDisassembler.)");
+
+  // Host target queries
+  m.def("get_default_target_triple", &get_default_target_triple,
+        R"(Get the default target triple for the current host.
+        
+        Wraps LLVMGetDefaultTargetTriple.)");
+  m.def("normalize_target_triple", &normalize_target_triple, "triple"_a,
+        R"(Normalize a target triple string.
+        
+        Wraps LLVMNormalizeTargetTriple.)");
+  m.def("get_host_cpu_name", &get_host_cpu_name,
+        R"(Get the host CPU name.
+        
+        Wraps LLVMGetHostCPUName.)");
+  m.def("get_host_cpu_features", &get_host_cpu_features,
+        R"(Get the host CPU features as a feature string.
+        
+        Wraps LLVMGetHostCPUFeatures.)");
+
+  // Target lookup
+  m.def("get_target_from_triple", &get_target_from_triple, "triple"_a,
+        R"(Get a target from a target triple string.
+        
+        Raises LLVMError if the target is not found.
+        Wraps LLVMGetTargetFromTriple.)");
+  m.def("get_target_from_name", &get_target_from_name, "name"_a,
+        R"(Get a target from its name.
+        
+        Returns None if the target is not found.
+        Wraps LLVMGetTargetFromName.)");
+
+  // ==========================================================================
+  // Target Machine Enums
+  // ==========================================================================
+
+  nb::enum_<LLVMCodeGenOptLevel>(m, "CodeGenOptLevel",
+        R"(Code generation optimization level.)")
+      .value("None_", LLVMCodeGenLevelNone, "No optimization")
+      .value("Less", LLVMCodeGenLevelLess, "Less optimization (O1)")
+      .value("Default", LLVMCodeGenLevelDefault, "Default optimization (O2)")
+      .value("Aggressive", LLVMCodeGenLevelAggressive, "Aggressive optimization (O3)");
+
+  nb::enum_<LLVMRelocMode>(m, "RelocMode",
+        R"(Relocation model for code generation.)")
+      .value("Default", LLVMRelocDefault, "Default relocation model")
+      .value("Static", LLVMRelocStatic, "Static relocation model")
+      .value("PIC", LLVMRelocPIC, "Position-independent code")
+      .value("DynamicNoPic", LLVMRelocDynamicNoPic, "Dynamic, no PIC");
+
+  nb::enum_<LLVMCodeModel>(m, "CodeModel",
+        R"(Code model for code generation.)")
+      .value("Default", LLVMCodeModelDefault, "Default code model")
+      .value("JITDefault", LLVMCodeModelJITDefault, "JIT default code model")
+      .value("Tiny", LLVMCodeModelTiny, "Tiny code model")
+      .value("Small", LLVMCodeModelSmall, "Small code model")
+      .value("Kernel", LLVMCodeModelKernel, "Kernel code model")
+      .value("Medium", LLVMCodeModelMedium, "Medium code model")
+      .value("Large", LLVMCodeModelLarge, "Large code model");
+
+  nb::enum_<LLVMCodeGenFileType>(m, "CodeGenFileType",
+        R"(Type of file to generate.)")
+      .value("AssemblyFile", LLVMAssemblyFile, "Assembly file (.s)")
+      .value("ObjectFile", LLVMObjectFile, "Object file (.o)");
+
+  nb::enum_<LLVMGlobalISelAbortMode>(m, "GlobalISelAbortMode",
+        R"(Global instruction selection abort mode.)")
+      .value("Enable", LLVMGlobalISelAbortEnable)
+      .value("Disable", LLVMGlobalISelAbortDisable)
+      .value("DisableWithDiag", LLVMGlobalISelAbortDisableWithDiag);
+
+  nb::enum_<LLVMByteOrdering>(m, "ByteOrdering",
+        R"(Byte ordering (endianness).)")
+      .value("BigEndian", LLVMBigEndian)
+      .value("LittleEndian", LLVMLittleEndian);
+
+  // ==========================================================================
+  // Target Data Wrapper
+  // ==========================================================================
+
+  nb::class_<LLVMTargetDataWrapper>(m, "TargetData",
+        R"(Target data layout information.
+        
+        Provides information about type sizes and alignment for a specific target.)")
+      .def("__str__", &LLVMTargetDataWrapper::to_string)
+      .def_prop_ro("byte_order", &LLVMTargetDataWrapper::byte_order,
+           R"(Get the byte ordering (endianness).)")
+      .def("pointer_size", &LLVMTargetDataWrapper::pointer_size, 
+           "address_space"_a = 0,
+           R"(Get pointer size in bytes for the given address space.)")
+      .def("size_of_type_in_bits", &LLVMTargetDataWrapper::size_of_type_in_bits,
+           "ty"_a, R"(Get size of type in bits.)")
+      .def("store_size_of_type", &LLVMTargetDataWrapper::store_size_of_type,
+           "ty"_a, R"(Get store size of type in bytes.)")
+      .def("abi_size_of_type", &LLVMTargetDataWrapper::abi_size_of_type,
+           "ty"_a, R"(Get ABI size of type in bytes.)")
+      .def("abi_alignment_of_type", &LLVMTargetDataWrapper::abi_alignment_of_type,
+           "ty"_a, R"(Get ABI alignment of type in bytes.)")
+      .def("call_frame_alignment_of_type", &LLVMTargetDataWrapper::call_frame_alignment_of_type,
+           "ty"_a, R"(Get call frame alignment of type in bytes.)")
+      .def("preferred_alignment_of_type", &LLVMTargetDataWrapper::preferred_alignment_of_type,
+           "ty"_a, R"(Get preferred alignment of type in bytes.)")
+      .def("preferred_alignment_of_global", &LLVMTargetDataWrapper::preferred_alignment_of_global,
+           "gv"_a, R"(Get preferred alignment of global variable in bytes.)")
+      .def("element_at_offset", &LLVMTargetDataWrapper::element_at_offset,
+           "struct_ty"_a, "offset"_a, R"(Get element index at byte offset in struct.)")
+      .def("offset_of_element", &LLVMTargetDataWrapper::offset_of_element,
+           "struct_ty"_a, "elem"_a, R"(Get byte offset of element in struct.)");
+
+  m.def("create_target_data", &create_target_data, "string_rep"_a,
+        nb::rv_policy::take_ownership,
+        R"(Create a target data layout from a string representation.
+        
+        Wraps LLVMCreateTargetData.)");
+
+  // ==========================================================================
+  // Target Machine Wrapper
+  // ==========================================================================
+
+  nb::class_<LLVMTargetMachineWrapper>(m, "TargetMachine",
+        R"(Target machine for code generation.
+        
+        Use create_target_machine() to create a TargetMachine.)")
+      .def_prop_ro("target", &LLVMTargetMachineWrapper::get_target,
+           R"(Get the target for this machine.)")
+      .def_prop_ro("triple", &LLVMTargetMachineWrapper::get_triple,
+           R"(Get the target triple.)")
+      .def_prop_ro("cpu", &LLVMTargetMachineWrapper::get_cpu,
+           R"(Get the CPU name.)")
+      .def_prop_ro("feature_string", &LLVMTargetMachineWrapper::get_feature_string,
+           R"(Get the feature string.)")
+      .def("create_data_layout", &LLVMTargetMachineWrapper::create_data_layout,
+           nb::rv_policy::take_ownership,
+           R"(Create a TargetData from this target machine.)")
+      .def("set_asm_verbosity", &LLVMTargetMachineWrapper::set_asm_verbosity,
+           "verbose"_a, R"(Set verbosity of ASM output.)")
+      .def("set_fast_isel", &LLVMTargetMachineWrapper::set_fast_isel,
+           "enable"_a, R"(Enable/disable fast instruction selection.)")
+      .def("set_global_isel", &LLVMTargetMachineWrapper::set_global_isel,
+           "enable"_a, R"(Enable/disable global instruction selection.)")
+      .def("set_global_isel_abort", &LLVMTargetMachineWrapper::set_global_isel_abort,
+           "mode"_a, R"(Set global instruction selection abort mode.)")
+      .def("set_machine_outliner", &LLVMTargetMachineWrapper::set_machine_outliner,
+           "enable"_a, R"(Enable/disable machine outliner.)")
+      .def("emit_to_file", &LLVMTargetMachineWrapper::emit_to_file,
+           "mod"_a, "filename"_a, "file_type"_a,
+           R"(Emit the module to a file.
+           
+           Args:
+               mod: Module to emit
+               filename: Output filename
+               file_type: Type of file (AssemblyFile or ObjectFile)
+               
+           Wraps LLVMTargetMachineEmitToFile.)")
+      .def("emit_to_memory_buffer", &LLVMTargetMachineWrapper::emit_to_memory_buffer,
+           "mod"_a, "file_type"_a,
+           R"(Emit the module to a memory buffer.
+           
+           Args:
+               mod: Module to emit
+               file_type: Type of output (AssemblyFile or ObjectFile)
+               
+           Returns:
+               bytes: The generated output.
+               
+           Wraps LLVMTargetMachineEmitToMemoryBuffer.)");
+
+  m.def("create_target_machine", &create_target_machine,
+        "target"_a, "triple"_a, "cpu"_a = "", "features"_a = "",
+        "opt_level"_a = LLVMCodeGenLevelDefault,
+        "reloc_mode"_a = LLVMRelocDefault,
+        "code_model"_a = LLVMCodeModelDefault,
+        nb::rv_policy::take_ownership,
+        R"(Create a target machine for code generation.
+        
+        Args:
+            target: Target to create machine for
+            triple: Target triple string
+            cpu: CPU name (default: "")
+            features: Feature string (default: "")
+            opt_level: Optimization level (default: Default)
+            reloc_mode: Relocation mode (default: Default)
+            code_model: Code model (default: Default)
+            
+        Returns:
+            TargetMachine instance
+            
+        Wraps LLVMCreateTargetMachine.)");
+
+  // ==========================================================================
+  // Pass Builder Options Wrapper
+  // ==========================================================================
+
+  nb::class_<LLVMPassBuilderOptionsWrapper>(m, "PassBuilderOptions",
+        R"(Options for the pass builder.
+        
+        Used to configure optimization passes when calling run_passes().)")
+      .def(nb::init<>())
+      .def("set_verify_each", &LLVMPassBuilderOptionsWrapper::set_verify_each,
+           "verify"_a, R"(Verify the module after each pass.)")
+      .def("set_debug_logging", &LLVMPassBuilderOptionsWrapper::set_debug_logging,
+           "enable"_a, R"(Enable debug logging for passes.)")
+      .def("set_loop_interleaving", &LLVMPassBuilderOptionsWrapper::set_loop_interleaving,
+           "enable"_a, R"(Enable loop interleaving.)")
+      .def("set_loop_vectorization", &LLVMPassBuilderOptionsWrapper::set_loop_vectorization,
+           "enable"_a, R"(Enable loop vectorization.)")
+      .def("set_slp_vectorization", &LLVMPassBuilderOptionsWrapper::set_slp_vectorization,
+           "enable"_a, R"(Enable SLP (Superword-Level Parallelism) vectorization.)")
+      .def("set_loop_unrolling", &LLVMPassBuilderOptionsWrapper::set_loop_unrolling,
+           "enable"_a, R"(Enable loop unrolling.)")
+      .def("set_forget_all_scev_in_loop_unroll", &LLVMPassBuilderOptionsWrapper::set_forget_all_scev_in_loop_unroll,
+           "forget"_a, R"(Forget all SCEV information during loop unrolling.)")
+      .def("set_licm_mssa_opt_cap", &LLVMPassBuilderOptionsWrapper::set_licm_mssa_opt_cap,
+           "cap"_a, R"(Set LICM MSSA optimization cap.)")
+      .def("set_licm_mssa_no_acc_for_promotion_cap", &LLVMPassBuilderOptionsWrapper::set_licm_mssa_no_acc_for_promotion_cap,
+           "cap"_a, R"(Set LICM MSSA no-acc-for-promotion cap.)")
+      .def("set_call_graph_profile", &LLVMPassBuilderOptionsWrapper::set_call_graph_profile,
+           "enable"_a, R"(Enable call graph profile.)")
+      .def("set_merge_functions", &LLVMPassBuilderOptionsWrapper::set_merge_functions,
+           "enable"_a, R"(Enable function merging.)")
+      .def("set_inliner_threshold", &LLVMPassBuilderOptionsWrapper::set_inliner_threshold,
+           "threshold"_a, R"(Set the inliner threshold.)");
+
+  m.def("run_passes", &run_passes,
+        "mod"_a, "passes"_a, "target_machine"_a.none() = nullptr,
+        "options"_a.none() = nullptr,
+        R"doc(Run optimization passes on a module.
+        
+        Args:
+            mod: Module to optimize
+            passes: Pass pipeline string (e.g., 'default<O2>', 'function(simplifycfg)')
+            target_machine: Optional target machine for target-specific passes
+            options: Optional PassBuilderOptions
+            
+        Common pass pipelines:
+            - 'default<O0>': No optimization
+            - 'default<O1>': Light optimization
+            - 'default<O2>': Standard optimization  
+            - 'default<O3>': Aggressive optimization
+            - 'default<Os>': Size optimization
+            - 'default<Oz>': Aggressive size optimization
+            
+        Wraps LLVMRunPasses.)doc");
 
   // Memory buffer is internal only - not exposed to Python
 
@@ -8839,6 +9776,50 @@ Example:
         return std::string(name, len);
       },
       "di_type"_a, R"(Get name from debug info type.)");
+
+  // ==========================================================================
+  // Intrinsic lookup
+  // ==========================================================================
+
+  m.def(
+      "lookup_intrinsic_id",
+      [](const std::string &name) -> unsigned {
+        return LLVMLookupIntrinsicID(name.c_str(), name.size());
+      },
+      "name"_a,
+      R"(Look up an intrinsic ID by name.
+      
+      Args:
+          name: Intrinsic name (e.g., "llvm.memcpy")
+          
+      Returns:
+          Intrinsic ID (0 if not found).
+          
+      Wraps LLVMLookupIntrinsicID.)");
+
+  m.def(
+      "intrinsic_is_overloaded",
+      [](unsigned id) -> bool {
+        return LLVMIntrinsicIsOverloaded(id);
+      },
+      "id"_a,
+      R"(Check if an intrinsic is overloaded.
+      
+      Overloaded intrinsics require type parameters to get a declaration.
+      
+      Wraps LLVMIntrinsicIsOverloaded.)");
+
+  m.def(
+      "intrinsic_get_name",
+      [](unsigned id) -> std::string {
+        size_t len;
+        const char *name = LLVMIntrinsicGetName(id, &len);
+        return std::string(name, len);
+      },
+      "id"_a,
+      R"(Get the name of an intrinsic by ID.
+      
+      Wraps LLVMIntrinsicGetName.)");
 
   m.def(
       "dibuilder_create_debug_location",
