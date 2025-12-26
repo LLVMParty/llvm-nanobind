@@ -74,6 +74,7 @@ The `archive/` directory contains summaries of completed work:
 | File | Summary |
 |------|---------|
 | `bindings.md` | Core Python bindings: ownership model, exception hierarchy, wrapper patterns |
+| `feature-matrix.md` | LLVM-C API coverage: ~85% implemented, skip justifications, test suite |
 | `fixing-tests.md` | Test fixing work: borrowed contexts, diagnostic registry, syncscope gotchas |
 | `llvm-c-test.md` | Python port of llvm-c-test: 22 commands, echo architecture, testing |
 | `module-api.md` | API refactor: moving global functions to Module/Builder/Function methods |
