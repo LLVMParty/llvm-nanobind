@@ -37,7 +37,7 @@ def test_instruction_aliases_and_movement():
 
             # Old name should be gone (project policy: no backward compatibility).
             try:
-                _ = term.is_terminator_inst
+                _ = term.is_terminator_inst  # type: ignore[attr-defined]
                 assert False, "Expected AttributeError for removed property"
             except AttributeError:
                 pass

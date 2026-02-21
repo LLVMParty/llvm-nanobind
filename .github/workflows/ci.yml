@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      # ── Install LLVM (Windows) ──────────────────────────────────────
+      - name: Cache LLVM (Windows)
+        if: runner.os == 'Windows'
+        id: cache-llvm-windows
+        uses: actions/cache@v4
+        with:
+          path: llvm-windows
+          key: llvm-windows-21.1.1-clang-21.1.1
+
+      - name: Install LLVM (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          if [ ! -d "llvm-windows/llvm" ]; then
+            mkdir -p llvm-windows
+            curl -sL https://github.com/vovkos/llvm-package-windows/releases/download/llvm-21.1.1/llvm-21.1.1-windows-amd64-msvc17-msvcrt.7z -o llvm-windows/llvm.7z
+            7z x llvm-windows/llvm.7z -ollvm-windows/llvm
+            curl -sL https://github.com/vovkos/llvm-package-windows/releases/download/clang-21.1.1/clang-21.1.1-windows-amd64-msvc17-msvcrt.7z -o llvm-windows/clang.7z
+            7z x llvm-windows/clang.7z -ollvm-windows/llvm -aoa
+            rm -f llvm-windows/llvm.7z llvm-windows/clang.7z
+          fi
+          # 7z extracts into a versioned subdirectory — find it
+          LLVM_PREFIX=$(ls -d llvm-windows/llvm/llvm-*)
+          # Write .llvm-prefix for cmake and test scripts
+          echo "$(cygpath -w "$(pwd)/$LLVM_PREFIX")" > .llvm-prefix
+          # Add bin/ to PATH so DLLs are found at runtime
+          echo "$(pwd)/$LLVM_PREFIX/bin" >> "$GITHUB_PATH"
+
+      # ── Install LLVM (Linux) ────────────────────────────────────────
+      - name: Install LLVM (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+          sudo add-apt-repository -y "deb http://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-21 main"
+          sudo apt-get update
+          sudo apt-get install -y llvm-21-dev llvm-21-tools clang-21 lld-21
+          echo "/usr/lib/llvm-21" > .llvm-prefix
+
+      # ── Install LLVM (macOS) ────────────────────────────────────────
+      - name: Install LLVM (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install llvm
+          echo "$(brew --prefix llvm)" > .llvm-prefix
+
+      # ── Setup MSVC (Windows) ────────────────────────────────────────
+      - name: Setup MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # ── Build C++ test executables ──────────────────────────────────
+      - name: Build C++ test executables
+        shell: bash
+        run: |
+          CMAKE_EXTRA=""
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            CMAKE_EXTRA="-DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl"
+          fi
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release $CMAKE_EXTRA && cmake --build build
+
+      # ── Build Python package ────────────────────────────────────────
+      - name: Build Python package
+        run: uv sync
+
+      # ── Tests ───────────────────────────────────────────────────────
+      - name: Golden master tests
+        run: uv run python run_tests.py
+
+      - name: Regression tests
+        run: uv run python run_tests.py --regressions
+
+      - name: Lit tests (C binary)
+        if: runner.os != 'Windows'
+        run: uv run python run_llvm_c_tests.py -v
+
+      - name: Lit tests (Python)
+        if: runner.os != 'Windows'
+        run: uv run python run_llvm_c_tests.py --use-python -v
+
+      - name: Type checking
+        run: uvx ty check

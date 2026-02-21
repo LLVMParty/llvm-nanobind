@@ -164,7 +164,7 @@ def exercise_2_iteration():
                             if hasattr(inst.opcode, "name")
                             else str(inst.opcode)
                         )
-                        is_term = " (TERMINATOR)" if inst.is_terminator_inst else ""
+                        is_term = " (TERMINATOR)" if inst.is_terminator else ""
                         print(f"    {op_name}: {inst}{is_term}")
 
     explain("""

@@ -2449,6 +2449,18 @@ struct LLVMValueWrapper {
     return LLVMValueWrapper(LLVMGetCalledValue(m_ref), m_context_token);
   }
 
+  LLVMCallConv get_instruction_call_conv() const {
+    check_valid();
+    require_call_like_instruction("instruction_call_conv");
+    return static_cast<LLVMCallConv>(LLVMGetInstructionCallConv(m_ref));
+  }
+
+  void set_instruction_call_conv(LLVMCallConv cc) {
+    check_valid();
+    require_call_like_instruction("instruction_call_conv");
+    LLVMSetInstructionCallConv(m_ref, cc);
+  }
+
   void set_called_operand(const LLVMValueWrapper &val) {
     check_valid();
     require_call_like_instruction("set_called_operand");
@@ -7811,6 +7823,8 @@ struct LLVMDisasmContextWrapper : NoMoveCopy {
         m_ref, const_cast<uint8_t *>(bytes.data() + offset),
         bytes.size() - offset, pc, outline, sizeof(outline));
 
+    if (consumed == 0)
+      return {0, ""};
     return {consumed, std::string(outline)};
   }
 
@@ -10245,6 +10259,17 @@ NB_MODULE(llvm, m) {
       .value("Cold", LLVMColdCallConv)
       .value("X86Stdcall", LLVMX86StdcallCallConv)
       .value("X86Fastcall", LLVMX86FastcallCallConv)
+      .value("GHC", LLVMGHCCallConv)
+      .value("HiPE", LLVMHiPECallConv)
+      .value("PreserveMost", LLVMPreserveMostCallConv)
+      .value("PreserveAll", LLVMPreserveAllCallConv)
+      .value("Swift", LLVMSwiftCallConv)
+      .value("CXX_FAST_TLS", LLVMCXXFASTTLSCallConv)
+      .value("X86ThisCall", LLVMX86ThisCallCallConv)
+      .value("X86_64_SysV", LLVMX8664SysVCallConv)
+      .value("Win64", LLVMWin64CallConv)
+      .value("X86VectorCall", LLVMX86VectorCallCallConv)
+      .value("X86RegCall", LLVMX86RegCallCallConv)
       .export_values()
       .def("__str__", [](LLVMCallConv v) {
         switch (v) {
@@ -10253,6 +10278,17 @@ NB_MODULE(llvm, m) {
         case LLVMColdCallConv: return "coldcc";
         case LLVMX86StdcallCallConv: return "x86_stdcallcc";
         case LLVMX86FastcallCallConv: return "x86_fastcallcc";
+        case LLVMGHCCallConv: return "ghccc";
+        case LLVMHiPECallConv: return "cc11";
+        case LLVMPreserveMostCallConv: return "preserve_mostcc";
+        case LLVMPreserveAllCallConv: return "preserve_allcc";
+        case LLVMSwiftCallConv: return "swiftcc";
+        case LLVMCXXFASTTLSCallConv: return "cxx_fast_tlscc";
+        case LLVMX86ThisCallCallConv: return "x86_thiscallcc";
+        case LLVMX8664SysVCallConv: return "x86_64_sysvcc";
+        case LLVMWin64CallConv: return "win64cc";
+        case LLVMX86VectorCallCallConv: return "x86_vectorcallcc";
+        case LLVMX86RegCallCallConv: return "x86_regcallcc";
         default: return "unknown";
         }
       });
@@ -11679,6 +11715,12 @@ Valid when:
 The callee is the last operand of a CallBase instruction.
 
 <sub>C API: LLVMSetOperand</sub>)")
+      .def_prop_rw("instruction_call_conv",
+          &LLVMValueWrapper::get_instruction_call_conv,
+          &LLVMValueWrapper::set_instruction_call_conv,
+          R"(Get/set the calling convention of a call/invoke instruction.
+
+<sub>C API: LLVMGetInstructionCallConv, LLVMSetInstructionCallConv</sub>)")
       // Landing pad properties
       .def_prop_ro("num_clauses", &LLVMValueWrapper::get_num_clauses,
                    R"(Get number of clauses.

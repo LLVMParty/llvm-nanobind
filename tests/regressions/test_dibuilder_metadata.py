@@ -80,10 +80,10 @@ def test_dibuilder_metadata_ids():
     print(f"C function !dbg ID: !{c_id}")
 
     if py_id == c_id:
-        print("\n✓ Metadata IDs match!")
+        print("\nPASS: Metadata IDs match!")
         return True
     else:
-        print(f"\n✗ Metadata IDs differ: Python !{py_id} vs C !{c_id}")
+        print(f"\nFAIL: Metadata IDs differ: Python !{py_id} vs C !{c_id}")
         diff = abs(int(py_id or 0) - int(c_id or 0))
         print(f"  Difference: {diff} metadata node(s)")
         return False

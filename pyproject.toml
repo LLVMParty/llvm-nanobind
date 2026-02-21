@@ -56,6 +56,9 @@ cache-keys = [
     { file = "llvm-c/llvm-c-test/*.h" },
 ]
 
+[tool.ty.src]
+exclude = ["llvm-windows"]
+
 [tool.ty.environment]
 # Don't include src/ in first-party search path so ty finds the installed
 # package (with .pyi stubs) in .venv/lib/python3.12/site-packages/ instead

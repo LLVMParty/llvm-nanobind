@@ -649,6 +649,34 @@ if(NOT CMKR_VS_STARTUP_PROJECT)
 	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT test_passbuilder)
 endif()
 
+# Target: test_call_conv
+set(test_call_conv_SOURCES
+	cmake.toml
+	"tests/test_call_conv.cpp"
+)
+
+add_executable(test_call_conv)
+
+target_sources(test_call_conv PRIVATE ${test_call_conv_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${test_call_conv_SOURCES})
+
+target_compile_features(test_call_conv PRIVATE
+	cxx_std_20
+)
+
+if(NOT TARGET LLVM-C-Wrapper)
+	message(FATAL_ERROR "Target \"LLVM-C-Wrapper\" referenced by \"test_call_conv\" does not exist!")
+endif()
+
+target_link_libraries(test_call_conv PRIVATE
+	LLVM-C-Wrapper
+)
+
+get_directory_property(CMKR_VS_STARTUP_PROJECT DIRECTORY ${PROJECT_SOURCE_DIR} DEFINITION VS_STARTUP_PROJECT)
+if(NOT CMKR_VS_STARTUP_PROJECT)
+	set_property(DIRECTORY ${PROJECT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT test_call_conv)
+endif()
+
 # Target: test_function_extended
 set(test_function_extended_SOURCES
 	cmake.toml

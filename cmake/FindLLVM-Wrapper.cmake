@@ -148,10 +148,16 @@ endif()
 
 add_library(LLVM-C-Wrapper INTERFACE)
 target_include_directories(LLVM-C-Wrapper SYSTEM INTERFACE ${LLVM_INCLUDE_DIRS})
-if(NOT TARGET LLVM-C)
+if(TARGET LLVM-C)
+    target_link_libraries(LLVM-C-Wrapper INTERFACE LLVM-C)
+elseif(LLVM_LINK_LLVM_DYLIB)
+    # apt.llvm.org packages don't build libLLVM-C, but all C API symbols
+    # are available in the monolithic libLLVM.so shared library.
+    message(STATUS "LLVM-C target not found, falling back to LLVM (LLVM_LINK_LLVM_DYLIB=ON)")
+    target_link_libraries(LLVM-C-Wrapper INTERFACE LLVM)
+else()
     message(FATAL_ERROR "LLVM-C target not found. Make sure LLVM is built with the C bindings.")
 endif()
-target_link_libraries(LLVM-C-Wrapper INTERFACE LLVM-C)
 
 set(CMAKE_FOLDER "${CMAKE_FOLDER_LLVM}")
 unset(CMAKE_FOLDER_LLVM)

@@ -119,6 +119,10 @@ sources = ["tests/test_bitcode_linker.cpp"]
 type = "test"
 sources = ["tests/test_passbuilder.cpp"]
 
+[target.test_call_conv]
+type = "test"
+sources = ["tests/test_call_conv.cpp"]
+
 [target.test_function_extended]
 type = "test"
 sources = ["tests/test_function_extended.cpp"]

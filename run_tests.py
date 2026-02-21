@@ -46,6 +46,7 @@ TESTS = [
     "test_factorial",
     "test_struct",
     "test_predecessors",
+    "test_call_conv",
 ]
 
 # Mapping of C++ test names to Python test files (only tests with Python equivalents)
@@ -66,6 +67,7 @@ PYTHON_TESTS = {
     "test_factorial": Path("tests/test_factorial.py"),
     "test_struct": Path("tests/test_struct.py"),
     "test_predecessors": Path("tests/test_predecessors.py"),
+    "test_call_conv": Path("tests/test_call_conv.py"),
 }
 
 
