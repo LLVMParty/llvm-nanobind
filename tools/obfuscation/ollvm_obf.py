@@ -1201,7 +1201,9 @@ def unfold_constants_module(mod: llvm.Module, seed: int, cfg: FilterConfig) -> N
             new_val = builder.xor(cur_val, noise, "")
             builder.store(new_val, anchor)
 
-        r_init = anchor.initializer.const_zext_value
+        anchor_init = anchor.initializer
+        assert anchor_init is not None
+        r_init = anchor_init.const_zext_value
         for cand in work:
             if not should_transform(rng, cfg):
                 continue
@@ -2182,6 +2184,7 @@ def outline_block(bb: llvm.BasicBlock, live_in: list[llvm.Value], live_out: list
         elif len(live_out) == 1:
             builder.ret(vmap.get(live_out[0], live_out[0]))
         else:
+            assert struct_ty is not None
             agg = struct_ty.undef()
             for i, value in enumerate(live_out):
                 agg = builder.insert_value(agg, vmap.get(value, value), i, "")
@@ -2310,8 +2313,8 @@ def _clone_loop_blocks_into_helper(
     exit_bb: llvm.BasicBlock,
     phis: list[llvm.Value],
     live_ins: list[llvm.Value],
-):
-    vmap: dict[object, object] = {}
+) -> tuple[dict[llvm.BasicBlock, llvm.BasicBlock], llvm.BasicBlock, dict[llvm.Value, llvm.Value]]:
+    vmap: dict[llvm.Value, llvm.Value] = {}
     for i, phi in enumerate(phis):
         vmap[phi] = helper.get_param(i)
     for i, val in enumerate(live_ins):
@@ -2338,9 +2341,8 @@ def _clone_loop_blocks_into_helper(
         for inst in list(new_bb.instructions):
             for i in range(inst.num_operands):
                 op = inst.get_operand(i)
-                mapped = vmap.get(op)
-                if mapped is not None:
-                    inst.set_operand(i, mapped)
+                if op in vmap:
+                    inst.set_operand(i, vmap[op])
 
     return new_blocks, exit_in_helper, vmap
 
@@ -2446,6 +2448,7 @@ def loop_to_recursion_module(mod: llvm.Module, seed: int, cfg: FilterConfig) -> 
             elif len(exit_phis) == 1:
                 builder.ret(vmap.get(exit_phis[0].value_from_loop, exit_phis[0].value_from_loop))
             else:
+                assert struct_ty is not None
                 agg = struct_ty.undef()
                 for i, ep in enumerate(exit_phis):
                     agg = builder.insert_value(agg, vmap.get(ep.value_from_loop, ep.value_from_loop), i, "")

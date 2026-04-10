@@ -477,6 +477,19 @@ def find_clang() -> Path | None:
     return None
 
 
+@lru_cache(maxsize=1)
+def clang_target_triple(clang_exe: Path) -> str:
+    proc = subprocess.run(
+        [str(clang_exe), "-dumpmachine"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return ""
+    return proc.stdout.strip().lower()
+
+
 @pytest.fixture(scope="module")
 def clang_exe() -> Path:
     clang = find_clang()
@@ -522,6 +535,11 @@ def compile_and_run(
 def test_ollvm_obf_semantic_preservation(
     clang_exe: Path, tmp_path: Path, case: SemanticCase
 ) -> None:
+    if case.clang_flags:
+        target = clang_target_triple(clang_exe)
+        if not any(arch in target for arch in ("x86_64", "amd64", "i386", "i686")):
+            pytest.skip(f"{case.name} requires an x86 clang target (got {target or 'unknown'})")
+
     input_path = tmp_path / "input.ll"
     driver_path = tmp_path / "driver.c"
     input_path.write_text(textwrap.dedent(case.input_ir).strip() + "\n", encoding="utf-8")
