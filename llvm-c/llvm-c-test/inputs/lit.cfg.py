@@ -110,5 +110,12 @@ def get_llvm_targets():
 
 config.targets = get_llvm_targets()
 
+# Expose host/tool mode features for selective test gating.
+config.available_features.add(f"host-{sys.platform}")
+if "-m llvm_c_test" in llvm_c_test_cmd:
+    config.available_features.add("llvm-c-test-python")
+else:
+    config.available_features.add("llvm-c-test-c-binary")
+
 # Make targets available to lit.local.cfg files
 config.root.targets = config.targets
