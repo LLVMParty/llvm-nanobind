@@ -1,0 +1,9 @@
+{
+  "name": "code-clone+schedule/internal-helper",
+  "args": [
+    "--code-clone",
+    "--schedule-instructions",
+    "--seed=123"
+  ],
+  "cleanup_pipeline": null
+}

@@ -1,0 +1,8 @@
+{
+  "name": "bmi-mutate/bextr-mask-window",
+  "args": [
+    "--bmi-mutate",
+    "--seed=7"
+  ],
+  "cleanup_pipeline": null
+}

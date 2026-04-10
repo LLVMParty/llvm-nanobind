@@ -1,0 +1,9 @@
+{
+  "name": "if-convert+schedule/diamond",
+  "args": [
+    "--if-convert",
+    "--schedule-instructions",
+    "--seed=7"
+  ],
+  "cleanup_pipeline": "simplifycfg,adce,instnamer"
+}

@@ -1,0 +1,8 @@
+{
+  "name": "schedule-instructions/simple-block",
+  "args": [
+    "--schedule-instructions",
+    "--seed=7"
+  ],
+  "cleanup_pipeline": null
+}

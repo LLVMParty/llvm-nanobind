@@ -4,6 +4,70 @@ Standalone command-line tools for obfuscating LLVM bitcode.
 
 ## Tools
 
+### ollvm_obf.py - Python port of `omill/tools/ollvm-obf`
+
+A nanobind-based Python driver that implements the public
+`omill/tools/ollvm-obf` pipeline:
+
+- `--string-encrypt`
+- `--code-clone`
+- `--substitute`
+- `--if-convert`
+- `--loop-to-recursion`
+- `--flatten`
+- `--opaque-predicates`
+- `--bogus-control-flow`
+- `--bmi-mutate`
+- `--const-unfold`
+- `--schedule-instructions`
+- `--outline-functions`
+- `--arith-encode`
+- `--stack-randomize`
+- `--vectorize`
+- `--reg-pressure`
+
+Example:
+
+```bash
+uv run tools/obfuscation/ollvm_obf.py \
+  --code-clone --substitute --if-convert --flatten \
+  --opaque-predicates --bogus-control-flow --const-unfold \
+  --schedule-instructions --verify-each input.ll -o output.ll
+```
+
+The CLI also supports `--vectorize-data`, `--vectorize-bitwise`,
+`--vectorize-i64`, and `--vectorize-percent=N` for the vectorization stage.
+
+Stored golden-master fixtures live under `tests/golden/ollvm_obf/`. The test
+suite compares Python output against those checked-in public-pass `ollvm-obf`
+reference files, so normal repo tests do **not** require a local `omill`
+checkout or C++ `ollvm-obf` binary.
+
+Canonical golden-master coverage includes selected parity cases for instruction
+scheduling, if-conversion, BMI mutation, loop-to-recursion, and code cloning:
+
+```bash
+uv run pytest tests/regressions/test_ollvm_obf_golden_master.py -q
+```
+
+A second-tier semantic suite is also available for passes whose IR shape is
+expected to differ while runtime behavior should remain equivalent (for example
+substitution, string encryption, flattening, loop-to-recursion, BMI codegen,
+vectorization, stack/register-liveness transforms, and a broad full-public-
+pipeline mixed-module case):
+
+```bash
+uv run pytest tests/regressions/test_ollvm_obf_semantic_parity.py -q
+```
+
+To regenerate the checked-in golden files from an external C++ `ollvm-obf`
+build, use:
+
+```bash
+uv run tools/obfuscation/generate_ollvm_obf_goldens.py \
+  --ollvm-obf /path/to/ollvm-obf
+```
+
 ### mba_sub - Mixed Boolean Arithmetic Substitution
 
 Replaces arithmetic operations (`add`, `sub`, `mul`, `xor`, `or`) with 

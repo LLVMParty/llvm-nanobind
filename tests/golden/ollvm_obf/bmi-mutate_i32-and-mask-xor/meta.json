@@ -1,0 +1,8 @@
+{
+  "name": "bmi-mutate/i32-and-mask-xor",
+  "args": [
+    "--bmi-mutate",
+    "--seed=7"
+  ],
+  "cleanup_pipeline": null
+}

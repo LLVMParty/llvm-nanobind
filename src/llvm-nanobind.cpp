@@ -2201,6 +2201,22 @@ struct LLVMValueWrapper {
     return LLVMTypeWrapper(LLVMGetAllocatedType(m_ref), m_context_token);
   }
 
+  LLVMValueWrapper get_array_size() const {
+    check_valid();
+    require_instruction_opcodes<LLVMAlloca>("array_size");
+    return LLVMValueWrapper(LLVMGetOperand(m_ref, 0), m_context_token);
+  }
+
+  bool is_array_allocation() const {
+    check_valid();
+    require_instruction_opcodes<LLVMAlloca>("is_array_allocation");
+    LLVMValueRef size = LLVMGetOperand(m_ref, 0);
+    if (auto *ci = LLVMIsAConstantInt(size)) {
+      return LLVMConstIntGetZExtValue(ci) != 1;
+    }
+    return true;
+  }
+
   LLVMTypeWrapper get_function_type() const {
     check_valid();
     if (!is_a_function()) {
@@ -2952,6 +2968,30 @@ struct LLVMValueWrapper {
     LLVMReplaceAllUsesWith(m_ref, new_value.m_ref);
   }
 
+  // Replace occurrences of one operand with another within this instruction.
+  // Mirrors llvm::User::replaceUsesOfWith for instruction users.
+  void replace_uses_of_with(const LLVMValueWrapper &from_value,
+                            const LLVMValueWrapper &to_value) {
+    check_valid();
+    require_instruction_value("replace_uses_of_with");
+    from_value.check_valid();
+    to_value.check_valid();
+    if (m_context_token != from_value.m_context_token ||
+        m_context_token != to_value.m_context_token) {
+      throw LLVMAssertionError(
+          "replace_uses_of_with requires values from the same context");
+    }
+    if (LLVMTypeOf(from_value.m_ref) != LLVMTypeOf(to_value.m_ref)) {
+      throw LLVMAssertionError(
+          "replace_uses_of_with requires replacement value of identical type");
+    }
+    unsigned count = LLVMGetNumOperands(m_ref);
+    for (unsigned i = 0; i < count; ++i) {
+      if (LLVMGetOperand(m_ref, i) == from_value.m_ref)
+        LLVMSetOperand(m_ref, i, to_value.m_ref);
+    }
+  }
+
   // Convert value to metadata - declared here, implemented after
   // LLVMMetadataWrapper
   LLVMMetadataWrapper as_metadata() const;
@@ -3422,6 +3462,17 @@ struct LLVMBasicBlockWrapper {
     check_valid();
     other.check_valid();
     LLVMMoveBasicBlockAfter(m_ref, other.m_ref);
+  }
+
+  void remove_from_parent() {
+    check_valid();
+    LLVMRemoveBasicBlockFromParent(m_ref);
+  }
+
+  void erase_from_parent() {
+    check_valid();
+    LLVMDeleteBasicBlock(m_ref);
+    m_ref = nullptr;
   }
 
   // Get successor blocks (blocks this block branches to)
@@ -5282,6 +5333,32 @@ struct LLVMBuilderWrapper : NoMoveCopy {
     return LLVMValueWrapper(LLVMBuildShuffleVector(m_ref, v1.m_ref, v2.m_ref,
                                                    mask.m_ref, name.c_str()),
                             m_context_token);
+  }
+
+  // Vector splat (broadcast scalar to all lanes).
+  LLVMValueWrapper vector_splat(unsigned count, const LLVMValueWrapper &val,
+                                const std::string &name = "") {
+    check_valid();
+    val.check_valid();
+    if (count == 0)
+      throw LLVMAssertionError("vector_splat requires count > 0");
+
+    LLVMTypeRef elem_ty = LLVMTypeOf(val.m_ref);
+    LLVMTypeRef vec_ty = LLVMVectorType(elem_ty, count);
+    LLVMTypeRef mask_elem_ty = LLVMInt32TypeInContext(LLVMGetTypeContext(elem_ty));
+    LLVMTypeRef mask_ty = LLVMVectorType(mask_elem_ty, count);
+
+    LLVMValueRef zero = LLVMConstInt(mask_elem_ty, 0, 0);
+    std::vector<LLVMValueRef> mask_elts(count, zero);
+    LLVMValueRef mask = LLVMConstVector(mask_elts.data(), count);
+
+    LLVMValueRef undef_vec = LLVMGetUndef(vec_ty);
+    LLVMValueRef inserted = LLVMBuildInsertElement(
+        m_ref, undef_vec, val.m_ref, LLVMConstInt(mask_elem_ty, 0, 0), "");
+    return LLVMValueWrapper(
+        LLVMBuildShuffleVector(m_ref, inserted, LLVMGetUndef(vec_ty), mask,
+                               name.c_str()),
+        m_context_token);
   }
 
   // Freeze instruction
@@ -11103,6 +11180,25 @@ Args:
            R"(Get incoming block at index.
 
 <sub>C API: LLVMGetIncomingBlock</sub>)")
+      .def("get_incoming_value_for_block",
+           [](const LLVMValueWrapper &phi, const LLVMBasicBlockWrapper &bb) {
+             phi.check_valid();
+             phi.require_phi_instruction("get_incoming_value_for_block");
+             bb.check_valid();
+             unsigned n = LLVMCountIncoming(phi.m_ref);
+             for (unsigned i = 0; i < n; ++i) {
+               if (LLVMGetIncomingBlock(phi.m_ref, i) == bb.m_ref) {
+                 return LLVMValueWrapper(LLVMGetIncomingValue(phi.m_ref, i),
+                                         phi.m_context_token);
+               }
+             }
+             throw LLVMAssertionError(
+                 "get_incoming_value_for_block: basic block is not an incoming predecessor");
+           },
+           "bb"_a,
+           R"(Get the incoming value associated with a specific predecessor block.
+
+<sub>C++ API parity: PHINode::getIncomingValueForBlock</sub>)")
       .def_prop_ro(
           "incoming",
           [](const LLVMValueWrapper &phi) {
@@ -11555,6 +11651,19 @@ Valid when:
                    R"(Get allocated type.
 
 <sub>C API: LLVMGetAllocatedType</sub>)")
+      .def_prop_ro("array_size", &LLVMValueWrapper::get_array_size,
+                   R"(Get the array-size operand of an alloca instruction.
+
+For scalar allocas this is typically constant 1.
+
+<sub>C API: LLVMGetOperand</sub>)")
+      .def_prop_ro("is_array_allocation",
+                   &LLVMValueWrapper::is_array_allocation,
+                   R"(Check whether an alloca is an array allocation.
+
+Returns True when the alloca size operand is not the constant 1.
+
+<sub>C++ API parity: AllocaInst::isArrayAllocation</sub>)")
       .def_prop_ro("function_type", &LLVMValueWrapper::get_function_type,
                    R"(Get function type.
           
@@ -11925,6 +12034,13 @@ Combines remove_from_parent() + delete_instruction() atomically.
            R"(Replace all uses of this value with another value.
 
 <sub>C API: LLVMReplaceAllUsesWith</sub>)")
+      .def("replace_uses_of_with", &LLVMValueWrapper::replace_uses_of_with,
+           "from_value"_a, "to_value"_a,
+           R"(Replace matching operand uses within this instruction.
+
+This mirrors llvm::User::replaceUsesOfWith for instruction users.
+
+<sub>Custom helper built on LLVMGetOperand/LLVMSetOperand</sub>)")
       // Callsite attribute methods (for call/invoke instructions)
       .def("get_callsite_attribute_count",
            &LLVMValueWrapper::get_callsite_attribute_count, "idx"_a,
@@ -12103,6 +12219,14 @@ Returns the new predecessor basic block.
            R"(Move after block.
 
 <sub>C API: LLVMMoveBasicBlockAfter</sub>)")
+      .def("remove_from_parent", &LLVMBasicBlockWrapper::remove_from_parent,
+           R"(Remove this basic block from its parent function but keep it alive.
+
+<sub>C API: LLVMRemoveBasicBlockFromParent</sub>)")
+      .def("erase_from_parent", &LLVMBasicBlockWrapper::erase_from_parent,
+           R"(Delete this basic block from its parent function.
+
+<sub>C API: LLVMDeleteBasicBlock</sub>)")
       .def(
           "create_builder", &LLVMBasicBlockWrapper::create_builder,
           nb::kw_only(), "first_non_phi"_a = false,
@@ -12754,6 +12878,11 @@ Prefer the 2-arg form call(func, args) for direct calls.
            R"(Build shuffle_vector.
 
 <sub>C API: LLVMBuildShuffleVector</sub>)")
+      .def("vector_splat", &LLVMBuilderWrapper::vector_splat, "count"_a,
+           "val"_a, "name"_a = "",
+           R"(Broadcast a scalar value to all lanes of a fixed vector.
+
+<sub>Custom helper built from insertelement + shufflevector</sub>)")
       .def("freeze", &LLVMBuilderWrapper::freeze, "val"_a, "name"_a = "",
            R"(Build freeze.
 

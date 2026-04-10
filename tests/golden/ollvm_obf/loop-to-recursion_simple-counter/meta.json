@@ -1,0 +1,8 @@
+{
+  "name": "loop-to-recursion/simple-counter",
+  "args": [
+    "--loop-to-recursion",
+    "--seed=7"
+  ],
+  "cleanup_pipeline": null
+}

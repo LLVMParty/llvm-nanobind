@@ -1,0 +1,8 @@
+{
+  "name": "code-clone/internal-helper",
+  "args": [
+    "--code-clone",
+    "--seed=123"
+  ],
+  "cleanup_pipeline": null
+}

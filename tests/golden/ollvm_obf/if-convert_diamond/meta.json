@@ -1,0 +1,8 @@
+{
+  "name": "if-convert/diamond",
+  "args": [
+    "--if-convert",
+    "--seed=7"
+  ],
+  "cleanup_pipeline": "simplifycfg,adce,instnamer"
+}
