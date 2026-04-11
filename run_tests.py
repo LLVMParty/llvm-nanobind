@@ -4,7 +4,8 @@ Golden master test runner for llvm-nanobind.
 
 Runs C++ test executables from build/ directory and saves their stdout
 as golden master outputs in tests/output/. Then runs corresponding Python
-tests (if they exist) and compares their output to the C++ golden master.
+test scripts directly (not via pytest by default) and compares their output
+to the C++ golden master.
 
 Each test outputs valid LLVM IR with diagnostic comments to stdout.
 The outputs must be deterministic (no timestamps, etc.) for comparison.

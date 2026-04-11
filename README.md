@@ -70,16 +70,42 @@ uv sync --offline --no-build-isolation --verbose
 ### Testing
 
 ```bash
-# Golden master tests (C++ and Python must produce identical output)
+# Main golden-master suite:
+# - runs C++ test executables from build/
+# - runs paired Python scripts
+# - compares Python output against stored C++ behavior
 uv run run_tests.py
 
-# LLVM lit integration tests
-uv run run_llvm_c_tests.py        # Run all tests
-uv run run_llvm_c_tests.py -v     # Verbose output
+# Python-only regression scripts in tests/regressions/
+uv run run_tests.py --regressions
 
-# Type checking
+# Vendored llvm-c-test lit suite against the C test binary
+uv run run_llvm_c_tests.py
+uv run run_llvm_c_tests.py -v
+
+# Vendored llvm-c-test lit suite against the Python implementation
+uv run run_llvm_c_tests.py --use-python
+
+# Type checking (not a test suite, but commonly run in CI/dev)
 uvx ty check
 ```
+
+If you want the closest thing to “run everything in this repo”, use:
+
+```bash
+uv run run_tests.py
+uv run run_tests.py --regressions
+uv run run_llvm_c_tests.py
+uv run run_llvm_c_tests.py --use-python
+```
+
+Python tests here are intended to be executable as standalone scripts
+(e.g. `uv run tests/test_module.py` or `uv run tests/regressions/test_const_bytes.py`).
+They are generally pytest-compatible too, but direct script execution is the
+historical/default style used by `run_tests.py` and for one-off debugging.
+
+`pytest` is still useful for targeting specific regression files or subsets, but
+it is not our complete top-level test entrypoint by itself.
 
 ### Coverage
 
