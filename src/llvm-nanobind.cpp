@@ -937,7 +937,7 @@ struct LLVMTypeFactoryWrapper {
   }
 
   LLVMTypeWrapper function(const LLVMTypeWrapper &ret_ty,
-                           const std::vector<LLVMTypeWrapper> &param_types,
+                           const Iterable<LLVMTypeWrapper> &param_types,
                            bool vararg = false) const {
     check_valid();
     ret_ty.check_valid();
@@ -1023,8 +1023,8 @@ struct LLVMTypeFactoryWrapper {
 
   // Target extension type
   LLVMTypeWrapper target_ext(const std::string &name,
-                             const std::vector<LLVMTypeWrapper> &type_params,
-                             const std::vector<unsigned> &int_params) const {
+                             const Iterable<LLVMTypeWrapper> &type_params,
+                             const Iterable<unsigned> &int_params) const {
     check_valid();
     std::vector<LLVMTypeRef> type_refs;
     type_refs.reserve(type_params.size());
@@ -4708,7 +4708,7 @@ struct LLVMBuilderWrapper : NoMoveCopy {
   }
 
   LLVMValueWrapper gep(const LLVMTypeWrapper &ty, const LLVMValueWrapper &ptr,
-                       const std::vector<LLVMValueWrapper> &indices,
+                       const Iterable<LLVMValueWrapper> &indices,
                        const std::string &name = "") {
     check_valid();
     ty.check_valid();
@@ -4727,7 +4727,7 @@ struct LLVMBuilderWrapper : NoMoveCopy {
 
   LLVMValueWrapper inbounds_gep(const LLVMTypeWrapper &ty,
                                 const LLVMValueWrapper &ptr,
-                                const std::vector<LLVMValueWrapper> &indices,
+                                const Iterable<LLVMValueWrapper> &indices,
                                 const std::string &name = "") {
     check_valid();
     ty.check_valid();
@@ -5062,7 +5062,7 @@ struct LLVMBuilderWrapper : NoMoveCopy {
 
   LLVMValueWrapper call(const LLVMTypeWrapper &func_ty,
                         const LLVMValueWrapper &func,
-                        const std::vector<LLVMValueWrapper> &args,
+                        const Iterable<LLVMValueWrapper> &args,
                         const std::string &name = "") {
     check_valid();
     func_ty.check_valid();
@@ -5088,7 +5088,7 @@ struct LLVMBuilderWrapper : NoMoveCopy {
   // Convenience overload: infer function type from the callee value.
   // Use the explicit-type version for indirect calls through raw pointers.
   LLVMValueWrapper call_infer(const LLVMValueWrapper &func,
-                              const std::vector<LLVMValueWrapper> &args,
+                              const Iterable<LLVMValueWrapper> &args,
                               const std::string &name = "") {
     check_valid();
     func.check_valid();
@@ -5273,7 +5273,7 @@ struct LLVMBuilderWrapper : NoMoveCopy {
 
   // Catch pad
   LLVMValueWrapper catch_pad(const LLVMValueWrapper &parent_pad,
-                             const std::vector<LLVMValueWrapper> &args,
+                             const Iterable<LLVMValueWrapper> &args,
                              const std::string &name = "") {
     check_valid();
     parent_pad.check_valid();
@@ -5293,7 +5293,7 @@ struct LLVMBuilderWrapper : NoMoveCopy {
 
   // Cleanup pad
   LLVMValueWrapper cleanup_pad(const LLVMValueWrapper &parent_pad,
-                               const std::vector<LLVMValueWrapper> &args,
+                               const Iterable<LLVMValueWrapper> &args,
                                const std::string &name = "") {
     check_valid();
     parent_pad.check_valid();
@@ -5427,7 +5427,7 @@ struct LLVMBuilderWrapper : NoMoveCopy {
   // GEP with no-wrap flags
   LLVMValueWrapper
   gep_with_no_wrap_flags(const LLVMTypeWrapper &ty, const LLVMValueWrapper &ptr,
-                         const std::vector<LLVMValueWrapper> &indices,
+                         const Iterable<LLVMValueWrapper> &indices,
                          LLVMGEPNoWrapFlags flags,
                          const std::string &name = "") {
     check_valid();
@@ -6084,7 +6084,7 @@ struct LLVMModuleWrapper : NoMoveCopy {
   // get_intrinsic_declaration method
   LLVMValueWrapper
   get_intrinsic_declaration(unsigned id,
-                            const std::vector<LLVMTypeWrapper> &param_types) {
+                            const Iterable<LLVMTypeWrapper> &param_types) {
     check_valid();
     std::vector<LLVMTypeRef> type_refs;
     type_refs.reserve(param_types.size());
@@ -6317,7 +6317,7 @@ struct LLVMContextWrapper : NoMoveCopy {
   }
 
   LLVMTypeWrapper function_type(const LLVMTypeWrapper &ret_ty,
-                                const std::vector<LLVMTypeWrapper> &param_types,
+                                const Iterable<LLVMTypeWrapper> &param_types,
                                 bool vararg = false) {
     check_valid();
     ret_ty.check_valid();
@@ -6333,7 +6333,7 @@ struct LLVMContextWrapper : NoMoveCopy {
         m_token);
   }
 
-  LLVMTypeWrapper struct_type(const std::vector<LLVMTypeWrapper> &elem_types,
+  LLVMTypeWrapper struct_type(const Iterable<LLVMTypeWrapper> &elem_types,
                               bool packed = false) {
     check_valid();
     std::vector<LLVMTypeRef> elems;
@@ -6399,8 +6399,8 @@ struct LLVMContextWrapper : NoMoveCopy {
 
   LLVMTypeWrapper
   target_ext_type(const std::string &name,
-                  const std::vector<LLVMTypeWrapper> &type_params,
-                  const std::vector<unsigned> &int_params) {
+                  const Iterable<LLVMTypeWrapper> &type_params,
+                  const Iterable<unsigned> &int_params) {
     check_valid();
     std::vector<LLVMTypeRef> type_refs;
     type_refs.reserve(type_params.size());
@@ -6485,7 +6485,7 @@ struct LLVMContextWrapper : NoMoveCopy {
   // Metadata creation methods - declared here, implemented after
   // LLVMMetadataWrapper
   LLVMMetadataWrapper md_string(const std::string &str);
-  LLVMMetadataWrapper md_node(const std::vector<LLVMMetadataWrapper> &mds);
+  LLVMMetadataWrapper md_node(const Iterable<LLVMMetadataWrapper> &mds);
 
   // Module creation (returns context manager) - defined after LLVMModuleManager
   LLVMModuleManager *create_module(const std::string &name);
@@ -6920,7 +6920,7 @@ LLVMValueWrapper get_poison(const LLVMTypeWrapper &ty) {
 }
 
 LLVMValueWrapper const_array(const LLVMTypeWrapper &elem_ty,
-                             const std::vector<LLVMValueWrapper> &vals) {
+                             const Iterable<LLVMValueWrapper> &vals) {
   elem_ty.check_valid();
   std::vector<LLVMValueRef> refs;
   refs.reserve(vals.size());
@@ -6933,7 +6933,7 @@ LLVMValueWrapper const_array(const LLVMTypeWrapper &elem_ty,
       elem_ty.m_context_token);
 }
 
-LLVMValueWrapper const_struct(const std::vector<LLVMValueWrapper> &vals,
+LLVMValueWrapper const_struct(const Iterable<LLVMValueWrapper> &vals,
                               bool packed, LLVMContextWrapper *ctx) {
   ctx->check_valid();
   std::vector<LLVMValueRef> refs;
@@ -6948,7 +6948,7 @@ LLVMValueWrapper const_struct(const std::vector<LLVMValueWrapper> &vals,
       ctx->m_token);
 }
 
-LLVMValueWrapper const_vector(const std::vector<LLVMValueWrapper> &vals) {
+LLVMValueWrapper const_vector(const Iterable<LLVMValueWrapper> &vals) {
   if (vals.empty())
     throw LLVMAssertionError("Cannot create empty vector constant");
   vals[0].check_valid();
@@ -6987,7 +6987,7 @@ LLVMValueWrapper const_pointer_null(const LLVMTypeWrapper &ty) {
 }
 
 LLVMValueWrapper const_named_struct(const LLVMTypeWrapper &struct_ty,
-                                    const std::vector<LLVMValueWrapper> &vals) {
+                                    const Iterable<LLVMValueWrapper> &vals) {
   struct_ty.check_valid();
   std::vector<LLVMValueRef> refs;
   refs.reserve(vals.size());
@@ -7003,7 +7003,7 @@ LLVMValueWrapper const_named_struct(const LLVMTypeWrapper &struct_ty,
 
 LLVMValueWrapper
 const_int_of_arbitrary_precision(const LLVMTypeWrapper &ty,
-                                 const std::vector<uint64_t> &words) {
+                                 const Iterable<uint64_t> &words) {
   ty.check_valid();
   return LLVMValueWrapper(
       LLVMConstIntOfArbitraryPrecision(
@@ -7043,7 +7043,7 @@ LLVMValueWrapper const_data_array(const LLVMTypeWrapper &elem_ty,
 
 LLVMValueWrapper const_gep_with_no_wrap_flags(
     const LLVMTypeWrapper &ty, const LLVMValueWrapper &ptr,
-    const std::vector<LLVMValueWrapper> &indices, unsigned no_wrap_flags) {
+    const Iterable<LLVMValueWrapper> &indices, unsigned no_wrap_flags) {
   ty.check_valid();
   ptr.check_valid();
   std::vector<LLVMValueRef> idx_refs;
@@ -7081,7 +7081,7 @@ bool intrinsic_is_overloaded(unsigned id) {
 // Get the type of an intrinsic function given its ID and parameter types
 LLVMTypeWrapper
 intrinsic_get_type(LLVMContextWrapper *ctx, unsigned id,
-                   const std::vector<LLVMTypeWrapper> &param_types) {
+                   const Iterable<LLVMTypeWrapper> &param_types) {
   ctx->check_valid();
   std::vector<LLVMTypeRef> type_refs;
   type_refs.reserve(param_types.size());
@@ -7110,7 +7110,7 @@ void replace_md_node_operand_with(LLVMValueWrapper &val, unsigned index,
 
 LLVMValueWrapper
 get_intrinsic_declaration(LLVMModuleWrapper *mod, unsigned id,
-                          const std::vector<LLVMTypeWrapper> &param_types) {
+                          const Iterable<LLVMTypeWrapper> &param_types) {
   mod->check_valid();
   std::vector<LLVMTypeRef> type_refs;
   type_refs.reserve(param_types.size());
@@ -7347,7 +7347,7 @@ unsigned type_count_struct_element_types(const LLVMTypeWrapper &ty) {
 
 // Helper for struct types
 void struct_set_body(LLVMTypeWrapper &struct_ty,
-                     const std::vector<LLVMTypeWrapper> &elem_types,
+                     const Iterable<LLVMTypeWrapper> &elem_types,
                      bool packed) {
   struct_ty.check_valid();
   if (!struct_ty.is_struct())
@@ -7943,7 +7943,7 @@ struct LLVMDisasmContextWrapper : NoMoveCopy {
   // Disassemble a single instruction
   // Returns (bytes_consumed, disassembly_string)
   std::pair<size_t, std::string>
-  disasm_instruction(const std::vector<uint8_t> &bytes, size_t offset,
+  disasm_instruction(const Buffer &bytes, size_t offset,
                      uint64_t pc) {
     check_valid();
     if (offset >= bytes.size())
@@ -8596,7 +8596,7 @@ struct LLVMDIBuilderWrapper : NoMoveCopy {
 
   LLVMMetadataWrapper
   create_subroutine_type(const LLVMMetadataWrapper &file,
-                         const std::vector<LLVMMetadataWrapper> &param_types,
+                         const Iterable<LLVMMetadataWrapper> &param_types,
                          unsigned flags);
 
   // =========================================================================
@@ -8616,7 +8616,7 @@ struct LLVMDIBuilderWrapper : NoMoveCopy {
   LLVMMetadataWrapper
   create_vector_type(uint64_t size_in_bits, uint32_t align_in_bits,
                      const LLVMMetadataWrapper &element_type,
-                     const std::vector<LLVMMetadataWrapper> &subscripts);
+                     const Iterable<LLVMMetadataWrapper> &subscripts);
 
   LLVMMetadataWrapper
   create_typedef(const LLVMMetadataWrapper &type, const std::string &name,
@@ -8628,7 +8628,7 @@ struct LLVMDIBuilderWrapper : NoMoveCopy {
       const LLVMMetadataWrapper &file, unsigned line_number,
       uint64_t size_in_bits, uint32_t align_in_bits, unsigned flags,
       const LLVMMetadataWrapper *derived_from,
-      const std::vector<LLVMMetadataWrapper> &elements, unsigned runtime_lang,
+      const Iterable<LLVMMetadataWrapper> &elements, unsigned runtime_lang,
       const LLVMMetadataWrapper *vtable_holder, const std::string &unique_id);
 
   LLVMMetadataWrapper
@@ -8636,7 +8636,7 @@ struct LLVMDIBuilderWrapper : NoMoveCopy {
                           const std::string &name,
                           const LLVMMetadataWrapper &file, unsigned line_number,
                           uint64_t size_in_bits, uint32_t align_in_bits,
-                          const std::vector<LLVMMetadataWrapper> &elements,
+                          const Iterable<LLVMMetadataWrapper> &elements,
                           const LLVMMetadataWrapper &underlying_type);
 
   LLVMMetadataWrapper create_forward_decl(unsigned tag, const std::string &name,
@@ -8673,7 +8673,7 @@ struct LLVMDIBuilderWrapper : NoMoveCopy {
       const LLVMMetadataWrapper &scope, const std::string &name, unsigned line,
       const LLVMMetadataWrapper &file, uint64_t size_in_bits,
       uint32_t align_in_bits, const LLVMMetadataWrapper &element_type,
-      const std::vector<LLVMMetadataWrapper> &subscripts,
+      const Iterable<LLVMMetadataWrapper> &subscripts,
       const LLVMMetadataWrapper &data_location,
       const LLVMMetadataWrapper *associated,
       const LLVMMetadataWrapper *allocated, const LLVMMetadataWrapper *rank,
@@ -8703,7 +8703,7 @@ struct LLVMDIBuilderWrapper : NoMoveCopy {
       const LLVMMetadataWrapper &expr, const LLVMMetadataWrapper *decl,
       uint32_t align_in_bits);
 
-  LLVMMetadataWrapper create_expression(const std::vector<uint64_t> &addr);
+  LLVMMetadataWrapper create_expression(const Iterable<uint64_t> &addr);
 
   LLVMMetadataWrapper create_constant_value_expression(uint64_t value);
 
@@ -8747,7 +8747,7 @@ struct LLVMDIBuilderWrapper : NoMoveCopy {
   LLVMMetadataWrapper get_or_create_subrange(int64_t lo, int64_t count);
 
   LLVMMetadataWrapper
-  get_or_create_array(const std::vector<LLVMMetadataWrapper> &elements);
+  get_or_create_array(const Iterable<LLVMMetadataWrapper> &elements);
 
   // =========================================================================
   // Enumerator Methods
@@ -8758,7 +8758,7 @@ struct LLVMDIBuilderWrapper : NoMoveCopy {
 
   LLVMMetadataWrapper
   create_enumerator_of_arbitrary_precision(const std::string &name,
-                                           const std::vector<uint64_t> &value,
+                                           const Iterable<uint64_t> &value,
                                            bool is_unsigned);
 
   // =========================================================================
@@ -8794,13 +8794,13 @@ struct LLVMDIBuilderWrapper : NoMoveCopy {
   LLVMMetadataWrapper create_imported_module_from_module(
       const LLVMMetadataWrapper &scope,
       const LLVMMetadataWrapper &import_module, const LLVMMetadataWrapper &file,
-      unsigned line, const std::vector<LLVMMetadataWrapper> &elements);
+      unsigned line, const Iterable<LLVMMetadataWrapper> &elements);
 
   LLVMMetadataWrapper create_imported_module_from_alias(
       const LLVMMetadataWrapper &scope,
       const LLVMMetadataWrapper &imported_entity,
       const LLVMMetadataWrapper &file, unsigned line,
-      const std::vector<LLVMMetadataWrapper> &elements);
+      const Iterable<LLVMMetadataWrapper> &elements);
 
   LLVMMetadataWrapper
   create_temp_macro_file(const LLVMMetadataWrapper *parent_macro_file,
@@ -8829,13 +8829,13 @@ struct LLVMDIBuilderWrapper : NoMoveCopy {
                     const LLVMMetadataWrapper &file, unsigned line_number,
                     uint64_t size_in_bits, uint32_t align_in_bits,
                     unsigned flags,
-                    const std::vector<LLVMMetadataWrapper> &elements,
+                    const Iterable<LLVMMetadataWrapper> &elements,
                     unsigned runtime_lang, const std::string &unique_id);
 
   LLVMMetadataWrapper
   create_array_type(uint64_t size_in_bits, uint32_t align_in_bits,
                     const LLVMMetadataWrapper &element_type,
-                    const std::vector<LLVMMetadataWrapper> &subscripts);
+                    const Iterable<LLVMMetadataWrapper> &subscripts);
 
   LLVMMetadataWrapper create_qualified_type(unsigned tag,
                                             const LLVMMetadataWrapper &type);
@@ -8854,7 +8854,7 @@ struct LLVMDIBuilderWrapper : NoMoveCopy {
   LLVMMetadataWrapper create_artificial_type(const LLVMMetadataWrapper &type);
 
   LLVMMetadataWrapper
-  get_or_create_type_array(const std::vector<LLVMMetadataWrapper> &types);
+  get_or_create_type_array(const Iterable<LLVMMetadataWrapper> &types);
 
   LLVMMetadataWrapper
   create_lexical_block_file(const LLVMMetadataWrapper &scope,
@@ -8864,7 +8864,7 @@ struct LLVMDIBuilderWrapper : NoMoveCopy {
   LLVMMetadataWrapper create_imported_declaration(
       const LLVMMetadataWrapper &scope, const LLVMMetadataWrapper &decl,
       const LLVMMetadataWrapper &file, unsigned line, const std::string &name,
-      const std::vector<LLVMMetadataWrapper> &elements);
+      const Iterable<LLVMMetadataWrapper> &elements);
 
   LLVMMetadataWrapper create_imported_module_from_namespace(
       const LLVMMetadataWrapper &scope, const LLVMMetadataWrapper &ns,
@@ -8876,7 +8876,7 @@ struct LLVMDIBuilderWrapper : NoMoveCopy {
       const LLVMMetadataWrapper &file, unsigned line_number,
       uint64_t size_in_bits, uint32_t align_in_bits, uint64_t offset_in_bits,
       unsigned flags, const LLVMMetadataWrapper *derived_from,
-      const std::vector<LLVMMetadataWrapper> &elements,
+      const Iterable<LLVMMetadataWrapper> &elements,
       const LLVMMetadataWrapper *vtable_holder,
       const LLVMMetadataWrapper *template_params, const std::string &unique_id);
 
@@ -8912,8 +8912,8 @@ struct LLVMDIBuilderWrapper : NoMoveCopy {
   // Utility Methods
   // =========================================================================
 
-  void replace_arrays(std::vector<LLVMMetadataWrapper> &composite_types,
-                      std::vector<LLVMMetadataWrapper> &arrays);
+  void replace_arrays(const Iterable<LLVMMetadataWrapper> &composite_types,
+                      const Iterable<LLVMMetadataWrapper> &arrays);
 };
 
 // =============================================================================
@@ -9005,7 +9005,7 @@ LLVMContextWrapper::md_string(const std::string &str) {
 
 // Implementation of LLVMContextWrapper::md_node() - needs LLVMMetadataWrapper
 inline LLVMMetadataWrapper
-LLVMContextWrapper::md_node(const std::vector<LLVMMetadataWrapper> &mds) {
+LLVMContextWrapper::md_node(const Iterable<LLVMMetadataWrapper> &mds) {
   check_valid();
   std::vector<LLVMMetadataRef> refs;
   refs.reserve(mds.size());
@@ -9163,7 +9163,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_function(
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_subroutine_type(
     const LLVMMetadataWrapper &file,
-    const std::vector<LLVMMetadataWrapper> &param_types, unsigned flags) {
+    const Iterable<LLVMMetadataWrapper> &param_types, unsigned flags) {
   check_valid();
   file.check_valid();
   std::vector<LLVMMetadataRef> param_refs;
@@ -9205,7 +9205,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_pointer_type(
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_vector_type(
     uint64_t size_in_bits, uint32_t align_in_bits,
     const LLVMMetadataWrapper &element_type,
-    const std::vector<LLVMMetadataWrapper> &subscripts) {
+    const Iterable<LLVMMetadataWrapper> &subscripts) {
   check_valid();
   element_type.check_valid();
   std::vector<LLVMMetadataRef> sub_refs;
@@ -9241,7 +9241,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_struct_type(
     const LLVMMetadataWrapper &file, unsigned line_number,
     uint64_t size_in_bits, uint32_t align_in_bits, unsigned flags,
     const LLVMMetadataWrapper *derived_from,
-    const std::vector<LLVMMetadataWrapper> &elements, unsigned runtime_lang,
+    const Iterable<LLVMMetadataWrapper> &elements, unsigned runtime_lang,
     const LLVMMetadataWrapper *vtable_holder, const std::string &unique_id) {
   check_valid();
   scope.check_valid();
@@ -9268,7 +9268,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_enumeration_type(
     const LLVMMetadataWrapper &scope, const std::string &name,
     const LLVMMetadataWrapper &file, unsigned line_number,
     uint64_t size_in_bits, uint32_t align_in_bits,
-    const std::vector<LLVMMetadataWrapper> &elements,
+    const Iterable<LLVMMetadataWrapper> &elements,
     const LLVMMetadataWrapper &underlying_type) {
   check_valid();
   scope.check_valid();
@@ -9364,7 +9364,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_dynamic_array_type(
     const LLVMMetadataWrapper &scope, const std::string &name, unsigned line,
     const LLVMMetadataWrapper &file, uint64_t size_in_bits,
     uint32_t align_in_bits, const LLVMMetadataWrapper &element_type,
-    const std::vector<LLVMMetadataWrapper> &subscripts,
+    const Iterable<LLVMMetadataWrapper> &subscripts,
     const LLVMMetadataWrapper &data_location,
     const LLVMMetadataWrapper *associated, const LLVMMetadataWrapper *allocated,
     const LLVMMetadataWrapper *rank, const LLVMMetadataWrapper *bit_stride) {
@@ -9445,8 +9445,9 @@ LLVMDIBuilderWrapper::create_global_variable_expression(
 }
 
 inline LLVMMetadataWrapper
-LLVMDIBuilderWrapper::create_expression(const std::vector<uint64_t> &addr) {
+LLVMDIBuilderWrapper::create_expression(const Iterable<uint64_t> &addr) {
   check_valid();
+  // TODO: is this lifetime correct?
   std::vector<uint64_t> addr_copy = addr;
   return LLVMMetadataWrapper(
       LLVMDIBuilderCreateExpression(m_ref, addr_copy.data(), addr_copy.size()),
@@ -9537,7 +9538,7 @@ LLVMDIBuilderWrapper::get_or_create_subrange(int64_t lo, int64_t count) {
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::get_or_create_array(
-    const std::vector<LLVMMetadataWrapper> &elements) {
+    const Iterable<LLVMMetadataWrapper> &elements) {
   check_valid();
   std::vector<LLVMMetadataRef> elem_refs;
   elem_refs.reserve(elements.size());
@@ -9563,7 +9564,7 @@ LLVMDIBuilderWrapper::create_enumerator(const std::string &name, int64_t value,
 
 inline LLVMMetadataWrapper
 LLVMDIBuilderWrapper::create_enumerator_of_arbitrary_precision(
-    const std::string &name, const std::vector<uint64_t> &value,
+    const std::string &name, const Iterable<uint64_t> &value,
     bool is_unsigned) {
   check_valid();
   return LLVMMetadataWrapper(LLVMDIBuilderCreateEnumeratorOfArbitraryPrecision(
@@ -9624,7 +9625,7 @@ inline LLVMMetadataWrapper
 LLVMDIBuilderWrapper::create_imported_module_from_module(
     const LLVMMetadataWrapper &scope, const LLVMMetadataWrapper &import_module,
     const LLVMMetadataWrapper &file, unsigned line,
-    const std::vector<LLVMMetadataWrapper> &elements) {
+    const Iterable<LLVMMetadataWrapper> &elements) {
   check_valid();
   scope.check_valid();
   import_module.check_valid();
@@ -9646,7 +9647,7 @@ inline LLVMMetadataWrapper
 LLVMDIBuilderWrapper::create_imported_module_from_alias(
     const LLVMMetadataWrapper &scope,
     const LLVMMetadataWrapper &imported_entity, const LLVMMetadataWrapper &file,
-    unsigned line, const std::vector<LLVMMetadataWrapper> &elements) {
+    unsigned line, const Iterable<LLVMMetadataWrapper> &elements) {
   check_valid();
   scope.check_valid();
   imported_entity.check_valid();
@@ -9719,7 +9720,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_union_type(
     const LLVMMetadataWrapper &scope, const std::string &name,
     const LLVMMetadataWrapper &file, unsigned line_number,
     uint64_t size_in_bits, uint32_t align_in_bits, unsigned flags,
-    const std::vector<LLVMMetadataWrapper> &elements, unsigned runtime_lang,
+    const Iterable<LLVMMetadataWrapper> &elements, unsigned runtime_lang,
     const std::string &unique_id) {
   check_valid();
   scope.check_valid();
@@ -9742,7 +9743,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_union_type(
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_array_type(
     uint64_t size_in_bits, uint32_t align_in_bits,
     const LLVMMetadataWrapper &element_type,
-    const std::vector<LLVMMetadataWrapper> &subscripts) {
+    const Iterable<LLVMMetadataWrapper> &subscripts) {
   check_valid();
   element_type.check_valid();
   std::vector<LLVMMetadataRef> sub_refs;
@@ -9808,7 +9809,7 @@ LLVMDIBuilderWrapper::create_artificial_type(const LLVMMetadataWrapper &type) {
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::get_or_create_type_array(
-    const std::vector<LLVMMetadataWrapper> &types) {
+    const Iterable<LLVMMetadataWrapper> &types) {
   check_valid();
   std::vector<LLVMMetadataRef> type_refs;
   type_refs.reserve(types.size());
@@ -9835,7 +9836,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_lexical_block_file(
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_imported_declaration(
     const LLVMMetadataWrapper &scope, const LLVMMetadataWrapper &decl,
     const LLVMMetadataWrapper &file, unsigned line, const std::string &name,
-    const std::vector<LLVMMetadataWrapper> &elements) {
+    const Iterable<LLVMMetadataWrapper> &elements) {
   check_valid();
   scope.check_valid();
   decl.check_valid();
@@ -9869,8 +9870,8 @@ LLVMDIBuilderWrapper::create_imported_module_from_namespace(
 
 // Utility Methods
 inline void LLVMDIBuilderWrapper::replace_arrays(
-    std::vector<LLVMMetadataWrapper> &composite_types,
-    std::vector<LLVMMetadataWrapper> &arrays) {
+    const Iterable<LLVMMetadataWrapper> &composite_types,
+    const Iterable<LLVMMetadataWrapper> &arrays) {
   check_valid();
   if (composite_types.size() != 1 || arrays.size() != 1) {
     throw std::invalid_argument(
@@ -9889,7 +9890,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_class_type(
     const LLVMMetadataWrapper &file, unsigned line_number,
     uint64_t size_in_bits, uint32_t align_in_bits, uint64_t offset_in_bits,
     unsigned flags, const LLVMMetadataWrapper *derived_from,
-    const std::vector<LLVMMetadataWrapper> &elements,
+    const Iterable<LLVMMetadataWrapper> &elements,
     const LLVMMetadataWrapper *vtable_holder,
     const LLVMMetadataWrapper *template_params, const std::string &unique_id) {
   check_valid();
@@ -11006,7 +11007,7 @@ Args:
 <sub>C API: LLVMPointerType</sub>)")
       // Constant creation from type
       .def("const_array", [](const LLVMTypeWrapper &self,
-                             const std::vector<LLVMValueWrapper> &vals) {
+                             const Iterable<LLVMValueWrapper> &vals) {
         self.check_valid();
         std::vector<LLVMValueRef> refs;
         refs.reserve(vals.size());
@@ -11022,7 +11023,7 @@ Args:
 
 <sub>C API: LLVMConstArray2</sub>)")
       .def("const_named_struct", [](const LLVMTypeWrapper &self,
-                                    const std::vector<LLVMValueWrapper> &vals) {
+                                    const Iterable<LLVMValueWrapper> &vals) {
         self.check_valid();
         std::vector<LLVMValueRef> refs;
         refs.reserve(vals.size());
@@ -13008,10 +13009,10 @@ Valid when:
           "invoke_with_operand_bundles",
           [](LLVMBuilderWrapper &self, const LLVMTypeWrapper &fn_ty,
              const LLVMValueWrapper &fn,
-             const std::vector<LLVMValueWrapper> &args,
+             const Iterable<LLVMValueWrapper> &args,
              const LLVMBasicBlockWrapper &then_bb,
              const LLVMBasicBlockWrapper &catch_bb,
-             const std::vector<LLVMOperandBundleWrapper *> &bundles,
+             const Iterable<LLVMOperandBundleWrapper *> &bundles,
              const std::string &name) {
             std::vector<LLVMOperandBundleRef> bundle_refs;
             for (auto *b : bundles)
@@ -13028,8 +13029,8 @@ Valid when:
           "call_with_operand_bundles",
           [](LLVMBuilderWrapper &self, const LLVMTypeWrapper &fn_ty,
              const LLVMValueWrapper &fn,
-             const std::vector<LLVMValueWrapper> &args,
-             const std::vector<LLVMOperandBundleWrapper *> &bundles,
+             const Iterable<LLVMValueWrapper> &args,
+             const Iterable<LLVMOperandBundleWrapper *> &bundles,
              const std::string &name) {
             std::vector<LLVMOperandBundleRef> bundle_refs;
             for (auto *b : bundles)
@@ -13046,9 +13047,9 @@ Valid when:
           [](LLVMBuilderWrapper &self, const LLVMTypeWrapper &fn_ty,
              const LLVMValueWrapper &fn,
              const LLVMBasicBlockWrapper &default_dest,
-             const std::vector<LLVMBasicBlockWrapper> &indirect_dests,
-             const std::vector<LLVMValueWrapper> &args,
-             const std::vector<LLVMOperandBundleWrapper *> &bundles,
+             const Iterable<LLVMBasicBlockWrapper> &indirect_dests,
+             const Iterable<LLVMValueWrapper> &args,
+             const Iterable<LLVMOperandBundleWrapper *> &bundles,
              const std::string &name) {
             std::vector<LLVMOperandBundleRef> bundle_refs;
             for (auto *b : bundles)
@@ -13723,7 +13724,7 @@ Returns:
 
 <sub>C API: LLVMConstStringInContext2</sub>)")
       .def("const_struct", [](LLVMContextWrapper &self,
-                              const std::vector<LLVMValueWrapper> &vals,
+                              const Iterable<LLVMValueWrapper> &vals,
                               bool packed) {
         self.check_valid();
         std::vector<LLVMValueRef> refs;
@@ -13944,7 +13945,7 @@ Valid when:
   // Operand bundle creation
   m.def(
       "create_operand_bundle",
-      [](const std::string &tag, const std::vector<LLVMValueWrapper> &args,
+      [](const std::string &tag, const Iterable<LLVMValueWrapper> &args,
          LLVMContextWrapper *ctx) {
         std::vector<LLVMValueRef> arg_refs;
         for (const auto &a : args)

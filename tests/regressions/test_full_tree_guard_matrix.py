@@ -322,7 +322,7 @@ def test_disasm_invalid_context_guard():
         return
 
     assert_memory_error(
-        lambda: dis.disasm_instruction([0x90], 0, 0),
+        lambda: dis.disasm_instruction(b"\x90", 0, 0),
         "null or invalid",
     )
     assert_memory_error(

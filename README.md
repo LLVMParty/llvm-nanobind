@@ -17,12 +17,14 @@ _Note_: This project is 90%+ vibe coded. It is mostly an experiment to see what 
 
 ## Installation
 
-This package requires LLVM to be installed. The build will automatically find LLVM if it's in your PATH, or you can specify the path:
+This package requires LLVM 21+ to be installed. The build will automatically find LLVM if it's in your PATH, or you can specify the path:
 
 ```bash
 export CMAKE_PREFIX_PATH=/path/to/llvm
 pip install .
 ```
+
+See [llvm-nanobind-example](https://github.com/LLVMParty/llvm-nanobind-example) for a simple example project.
 
 ## Quick Start
 

@@ -48,12 +48,9 @@ def do_disassemble(triple: str, features: str, buf: bytes) -> None:
         print(f"ERROR: Couldn't create disassembler for triple {triple}")
         return
 
-    # Convert bytes to list for the API
-    byte_list = list(buf)
-
     pos = 0
     while pos < len(buf):
-        consumed, outline = disasm.disasm_instruction(byte_list, pos, 0)
+        consumed, outline = disasm.disasm_instruction(buf, pos, 0)
 
         if consumed == 0:
             # Failed to disassemble - print as unknown byte
