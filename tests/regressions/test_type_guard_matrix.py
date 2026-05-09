@@ -26,8 +26,8 @@ def test_type_guard_matrix_negative():
         fn_ty = ctx.types.function(i32, [i32], False)
         arr_ty = ctx.types.array(i32, 4)
         vec_ty = ctx.types.vector(i32, 4)
-        literal_struct = ctx.types.struct([i32], False)
-        named_struct_with_body = ctx.types.struct([i32], False, "NamedWithBody")
+        literal_struct = ctx.types.struct([i32], packed=False)
+        named_struct_with_body = ctx.types.struct([i32], name="NamedWithBody", packed=False)
         opaque_struct = ctx.types.opaque_struct("OpaqueS")
 
         cases = [

@@ -82,7 +82,7 @@ class TypeCloner:
                 elts = [
                     self.clone(src.get_struct_element_type(i)) for i in range(elt_count)
                 ]
-                return types.struct(elts, src.is_packed_struct)
+                return types.struct(elts, packed=src.is_packed_struct)
         elif kind == llvm.TypeKind.Array:
             return self.clone(src.element_type).array(src.array_length)
         elif kind == llvm.TypeKind.Pointer:

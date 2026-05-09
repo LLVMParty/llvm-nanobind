@@ -920,9 +920,9 @@ struct LLVMTypeFactoryWrapper {
   }
 
   // Unified struct() method: named if name is provided, anonymous otherwise
-  LLVMTypeWrapper struct_(const std::vector<LLVMTypeWrapper> &elem_types,
-                          bool packed = false,
-                          const std::string &name = "") const {
+  LLVMTypeWrapper struct_(const Iterable<LLVMTypeWrapper> &elem_types,
+                          const std::string &name = "",
+                          bool packed = false) const {
     check_valid();
 
     if (!name.empty()) {
@@ -13539,7 +13539,7 @@ Use with 'with' statement:
 
 <sub>C API: LLVMFunctionType</sub>)")
       .def("struct", &LLVMTypeFactoryWrapper::struct_, "elem_types"_a,
-           "packed"_a = false, "name"_a = "",
+           "name"_a = "", "packed"_a = false,
            R"(Struct type.
 
 <sub>C API: LLVMStructTypeInContext, LLVMStructCreateNamed</sub>)")
