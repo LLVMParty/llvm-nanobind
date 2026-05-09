@@ -48,6 +48,40 @@ struct type_caster<Iterable<T>> : list_caster<Iterable<T>, T> {
 NAMESPACE_END(detail)
 NAMESPACE_END(NB_NAMESPACE)
 
+// Vector that produces collections.abc.Buffer
+struct Buffer : std::vector<uint8_t> {
+  using std::vector<uint8_t>::vector;
+  using std::vector<uint8_t>::operator=;
+};
+
+NAMESPACE_BEGIN(NB_NAMESPACE)
+NAMESPACE_BEGIN(detail)
+
+template <> struct type_caster<Buffer> {
+  NB_TYPE_CASTER(Buffer, const_name("collections.abc.Buffer"))
+
+  bool from_python(handle src, uint8_t, cleanup_list *) noexcept {
+    Py_buffer view;
+    if (PyObject_GetBuffer(src.ptr(), &view, PyBUF_SIMPLE) != 0) {
+      PyErr_Clear();
+      return false;
+    }
+    auto *ptr = static_cast<const uint8_t *>(view.buf);
+    value.assign(ptr, ptr + view.len);
+    PyBuffer_Release(&view);
+    return true;
+  }
+
+  static handle from_cpp(const Buffer &src, rv_policy,
+                         cleanup_list *) noexcept {
+    return PyBytes_FromStringAndSize(reinterpret_cast<const char *>(src.data()),
+                                     static_cast<Py_ssize_t>(src.size()));
+  }
+};
+
+NAMESPACE_END(detail)
+NAMESPACE_END(NB_NAMESPACE)
+
 namespace nb = nanobind;
 namespace fs = std::filesystem;
 using namespace nb::literals;
