@@ -38,11 +38,42 @@ template <typename T> struct Iterable : std::vector<T> {
 NAMESPACE_BEGIN(NB_NAMESPACE)
 NAMESPACE_BEGIN(detail)
 
-template <typename T>
-struct type_caster<Iterable<T>> : list_caster<Iterable<T>, T> {
-  // Only difference: override the Name to say Iterable instead of list
-  static constexpr auto Name = const_name("collections.abc.Iterable[") +
-                               make_caster<T>::Name + const_name("]");
+template <typename T> struct type_caster<Iterable<T>> {
+  using Caster = make_caster<T>;
+
+  NB_TYPE_CASTER(Iterable<T>, const_name("collections.abc.Iterable[") +
+                                  Caster::Name + const_name("]"))
+
+  bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
+    PyObject *iter = PyObject_GetIter(src.ptr());
+    if (!iter) {
+      PyErr_Clear();
+      return false;
+    }
+
+    value.clear();
+    Caster caster;
+    bool success = true;
+
+    while (PyObject *item = PyIter_Next(iter)) {
+      if (!caster.from_python(handle(item), flags, cleanup)) {
+        Py_DECREF(item);
+        success = false;
+        break;
+      }
+      value.push_back(caster.operator cast_t<T>());
+      Py_DECREF(item);
+    }
+
+    Py_DECREF(iter);
+
+    if (PyErr_Occurred()) {
+      PyErr_Clear();
+      return false;
+    }
+
+    return success;
+  }
 };
 
 NAMESPACE_END(detail)
@@ -70,12 +101,6 @@ template <> struct type_caster<Buffer> {
     value.assign(ptr, ptr + view.len);
     PyBuffer_Release(&view);
     return true;
-  }
-
-  static handle from_cpp(const Buffer &src, rv_policy,
-                         cleanup_list *) noexcept {
-    return PyBytes_FromStringAndSize(reinterpret_cast<const char *>(src.data()),
-                                     static_cast<Py_ssize_t>(src.size()));
   }
 };
 
