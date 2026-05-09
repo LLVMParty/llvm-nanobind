@@ -1,4 +1,5 @@
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/detail/nb_list.h>
 #include <nanobind/stl/filesystem.h>
 #include <nanobind/stl/optional.h>
 #include <nanobind/stl/pair.h>
@@ -27,6 +28,25 @@
 #include <llvm-c/Target.h>
 #include <llvm-c/TargetMachine.h>
 #include <llvm-c/Transforms/PassBuilder.h>
+
+// Vector that produces collections.abc.Iterable[T] type hint
+template <typename T> struct Iterable : std::vector<T> {
+  using std::vector<T>::vector;
+  using std::vector<T>::operator=;
+};
+
+NAMESPACE_BEGIN(NB_NAMESPACE)
+NAMESPACE_BEGIN(detail)
+
+template <typename T>
+struct type_caster<Iterable<T>> : list_caster<Iterable<T>, T> {
+  // Only difference: override the Name to say Iterable instead of list
+  static constexpr auto Name = const_name("collections.abc.Iterable[") +
+                               make_caster<T>::Name + const_name("]");
+};
+
+NAMESPACE_END(detail)
+NAMESPACE_END(NB_NAMESPACE)
 
 namespace nb = nanobind;
 namespace fs = std::filesystem;
