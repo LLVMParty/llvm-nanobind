@@ -44,7 +44,7 @@ def test_core_get_cast_opcode():
         opcode = llvm.get_cast_opcode(f32_val, False, i32, False)
         assert opcode == llvm.Opcode.FPToUI
 
-        print("✅ get_cast_opcode works correctly")
+        print("[PASS] get_cast_opcode works correctly")
 
 
 def test_core_intrinsic_get_type():
@@ -63,7 +63,7 @@ def test_core_intrinsic_get_type():
         assert intrinsic_ty is not None
         assert intrinsic_ty.kind == llvm.TypeKind.Function
 
-        print("✅ intrinsic_get_type works correctly")
+        print("[PASS] intrinsic_get_type works correctly")
 
 
 def test_core_replace_md_node_operand():
@@ -81,7 +81,7 @@ def test_core_replace_md_node_operand():
         # Replace operand
         llvm.replace_md_node_operand_with(md_val, 0, replacement_val.as_metadata())
 
-        print("✅ replace_md_node_operand_with works correctly")
+        print("[PASS] replace_md_node_operand_with works correctly")
 
 
 def test_debuginfo_global_variable_expression():
@@ -135,7 +135,7 @@ def test_debuginfo_global_variable_expression():
                 dib.finalize()
 
         print(
-            "✅ di_global_variable_expression_get_{variable,expression} work correctly"
+            "[PASS] di_global_variable_expression_get_{variable,expression} work correctly"
         )
 
 
@@ -181,7 +181,7 @@ def test_debuginfo_class_type():
                 assert class_ty is not None
                 dib.finalize()
 
-        print("✅ create_class_type works correctly")
+        print("[PASS] create_class_type works correctly")
 
 
 def test_debuginfo_static_member_type():
@@ -229,7 +229,7 @@ def test_debuginfo_static_member_type():
                 assert static_member is not None
                 dib.finalize()
 
-        print("✅ create_static_member_type works correctly")
+        print("[PASS] create_static_member_type works correctly")
 
 
 def test_debuginfo_member_pointer_type():
@@ -287,7 +287,7 @@ def test_debuginfo_member_pointer_type():
                 assert member_ptr_ty is not None
                 dib.finalize()
 
-        print("✅ create_member_pointer_type works correctly")
+        print("[PASS] create_member_pointer_type works correctly")
 
 
 def test_object_binary_copy_to_memory_buffer():
@@ -330,7 +330,7 @@ def test_object_binary_copy_to_memory_buffer():
                 assert copied_data is not None
                 assert len(copied_data) > 0
 
-        print("✅ binary.copy_to_memory_buffer works correctly")
+        print("[PASS] binary.copy_to_memory_buffer works correctly")
 
 
 def test_object_section_contains_symbol():
@@ -375,7 +375,7 @@ def test_object_section_contains_symbol():
                             found_symbol = True
                         assert isinstance(result, bool)
 
-            print("✅ section.contains_symbol works correctly")
+            print("[PASS] section.contains_symbol works correctly")
 
 
 def test_comdat():
@@ -406,7 +406,7 @@ def test_comdat():
             assert retrieved is not None
             assert retrieved.selection_kind == llvm.ComdatSelectionKind.ExactMatch
 
-        print("✅ All Comdat APIs work correctly")
+        print("[PASS] All Comdat APIs work correctly")
 
 
 def test_all():
