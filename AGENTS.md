@@ -12,7 +12,7 @@ uv run <command>                             # Auto-rebuilds the extension if ne
 # Testing
 uv run run_tests.py                          # Main golden-master suite: C++ tests + paired Python comparison
 uv run run_tests.py --regressions            # Python regression scripts in tests/regressions/
-uv run run_llvm_c_tests.py                   # Vendored llvm-c-test lit tests (C binary)
+uv run run_llvm_c_tests.py                   # Vendored llvm-c-test lit tests (auto-rebuilds C binary)
 uv run run_llvm_c_tests.py --use-python      # Vendored llvm-c-test lit tests with Python implementation
 uv run run_llvm_c_tests.py -v                # Run lit tests with verbose output
 ./build/test_factorial                       # Run single C++ test
@@ -20,8 +20,8 @@ uv run test_factorial.py                     # Run single Python test
 uv run pytest tests/regressions/...          # Target a specific regression file or subset
 uv run tests/test_module.py                  # Python tests are intended to be directly runnable scripts
 uv run tests/regressions/test_const_bytes.py # Regression scripts should also run directly via __main__
-uv run llvm-c-test --targets-list            # Run llvm-c-test directly (dev-only tool)
-./llvm-c-test --echo < input.bc              # Can also invoke directly (auto-finds venv)
+uv run python -m llvm_c_test --targets-list  # Run Python llvm-c-test port directly (dev-only tool)
+./build/llvm-c-test --echo < input.bc        # Run vendored C llvm-c-test binary directly
 uvx ty check                                 # Type check Python code (not a test runner)
 uvx ty check llvm_c_test/                    # Type check specific directory
 

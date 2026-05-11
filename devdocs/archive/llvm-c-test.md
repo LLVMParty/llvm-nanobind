@@ -22,7 +22,7 @@ Port the LLVM-C test suite (`llvm-c-test`) from C/C++ to Python as a **drop-in r
 ```
 llvm_c_test/
 ├── __init__.py
-├── __main__.py          # CLI entry point (uv run llvm-c-test)
+├── __main__.py          # CLI entry point (uv run python -m llvm_c_test)
 ├── main.py              # Command dispatcher
 ├── helpers.py           # tokenize_stdin(), shared utilities
 ├── targets.py           # --targets-list

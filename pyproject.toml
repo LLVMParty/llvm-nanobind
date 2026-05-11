@@ -10,9 +10,6 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []
 
-[project.scripts]
-llvm-c-test = "llvm_c_test.main:main"
-
 [project.urls]
 Homepage = "https://github.com/LLVMParty/llvm-nanobind"
 
@@ -33,14 +30,17 @@ minimum-version = "build-system.requires"
 # Setuptools-style build caching in a local directory
 build-dir = "build/{wheel_tag}"
 
+# Package builds only need the extension and generated stubs.
+build.targets = ["llvm_stub"]
+
 # Build stable ABI wheels for CPython 3.12+
 wheel.py-api = "cp312"
 
 # This setup only works properly in redirect mode
 editable.mode = "redirect"
 
-# Install the llvm_c_test Python package
-wheel.packages = ["llvm_c_test"]
+# Do not auto-copy Python packages into wheels; the extension module is installed by CMake.
+wheel.packages = []
 
 [[tool.scikit-build.overrides]]
 if.platform-system = "win32"
@@ -51,9 +51,6 @@ cache-keys = [
     { file = "CMakeLists.txt" },
     { file = "src/**/*.cpp" },
     { file = "src/**/*.h" },
-    { file = "llvm-c/llvm-c-test/*.c" },
-    { file = "llvm-c/llvm-c-test/*.cpp" },
-    { file = "llvm-c/llvm-c-test/*.h" },
 ]
 
 [tool.ty.src]
@@ -103,3 +100,4 @@ exclude_lines = [
 
 [tool.pytest.ini_options]
 addopts = "--deselect tests/regressions/test_symbol_size_crash.py"
+pythonpath = ["."]

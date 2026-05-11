@@ -34,6 +34,11 @@ if not llvm_tools_dir:
 if not llvm_c_test_cmd:
     lit_config.fatal("LLVM_C_TEST_CMD environment variable not set")
 
+# Forward PYTHONPATH for the dev-only Python llvm-c-test implementation.
+# The package is intentionally not installed into site-packages.
+if pythonpath := os.environ.get("PYTHONPATH"):
+    config.environment["PYTHONPATH"] = pythonpath
+
 
 # Tool substitutions
 # On Windows, wrap individual tool paths with quotes to handle backslashes in bash

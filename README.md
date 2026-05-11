@@ -82,11 +82,15 @@ uv run run_tests.py
 uv run run_tests.py --regressions
 
 # Vendored llvm-c-test lit suite against the C test binary
+# Rebuilds the vendored C binary before running lit.
 uv run run_llvm_c_tests.py
 uv run run_llvm_c_tests.py -v
 
 # Vendored llvm-c-test lit suite against the Python implementation
 uv run run_llvm_c_tests.py --use-python
+
+# Run the Python llvm-c-test port directly during development
+uv run python -m llvm_c_test --targets-list
 
 # Type checking (not a test suite, but commonly run in CI/dev)
 uvx ty check

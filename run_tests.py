@@ -106,10 +106,16 @@ def run_python_test(script: Path) -> tuple[str, str, int]:
     # Build command with optional coverage wrapper
     cmd = coverage_wrap(script.stem, [str(script)])
 
+    # Prefer the freshly built extension while keeping the repository root
+    # importable for dev-only helper packages such as tools.obfuscation.
+    pythonpath_entries = [str(BUILD_DIR.resolve()), str(Path(__file__).parent.resolve())]
+    if existing_pythonpath := os.environ.get("PYTHONPATH"):
+        pythonpath_entries.append(existing_pythonpath)
+
     result = subprocess.run(
         [sys.executable] + cmd,
         capture_output=True,
-        env={**os.environ, "PYTHONPATH": str(BUILD_DIR)},
+        env={**os.environ, "PYTHONPATH": os.pathsep.join(pythonpath_entries)},
     )
     try:
         stdout = result.stdout.decode("utf-8")

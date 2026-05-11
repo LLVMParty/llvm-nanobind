@@ -15,6 +15,9 @@ Options:
     --llvm-prefix PATH    Path to LLVM installation prefix
     --use-python          Use Python implementation instead of C binary
 
+When running against the C binary, this script rebuilds the vendored
+llvm-c-test target before invoking lit.
+
 Examples:
     python run_llvm_c_tests.py                          # Run all tests (C binary)
     python run_llvm_c_tests.py --use-python             # Run with Python implementation
@@ -114,14 +117,60 @@ def parse_args(args: list[str]) -> tuple[str | None, bool, list[str]]:
     return llvm_prefix, use_python, remaining
 
 
+def find_llvm_c_test_exe(build_dir: Path) -> Path:
+    """Find the vendored llvm-c-test executable in a CMake build directory."""
+    exe_name = "llvm-c-test.exe" if sys.platform == "win32" else "llvm-c-test"
+    candidates = [
+        build_dir / exe_name,
+        build_dir / "Release" / exe_name,
+        build_dir / "RelWithDebInfo" / exe_name,
+        build_dir / "Debug" / exe_name,
+        build_dir / "MinSizeRel" / exe_name,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+def build_vendored_llvm_c_test(project_root: Path) -> Path:
+    """Rebuild the vendored C llvm-c-test target and return its executable path."""
+    build_dir = project_root / "build"
+    cmd = ["cmake", "--build", str(build_dir), "--target", "llvm-c-test-vendored"]
+
+    print("Building vendored llvm-c-test C binary...", flush=True)
+    result = subprocess.run(cmd, cwd=project_root)
+    if result.returncode != 0:
+        print(
+            f"Error: failed to build llvm-c-test-vendored (exit {result.returncode})",
+            file=sys.stderr,
+        )
+        sys.exit(result.returncode)
+
+    llvm_c_test_exe = find_llvm_c_test_exe(build_dir)
+    if not llvm_c_test_exe.exists():
+        print(
+            f"Error: llvm-c-test executable not found after build: {llvm_c_test_exe}",
+            file=sys.stderr,
+        )
+        print(
+            "Build with: cmake --build build --target llvm-c-test-vendored",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    return llvm_c_test_exe
+
+
 def build_llvm_c_test_cmd(
-    use_python: bool, project_root: Path
+    use_python: bool, project_root: Path, llvm_c_test_exe: Path | None = None
 ) -> tuple[str, dict[str, str]]:
     """Build the llvm-c-test command string and extra environment variables.
 
     Args:
         use_python: If True, use Python implementation; otherwise use C binary.
         project_root: Path to project root for locating files.
+        llvm_c_test_exe: Path to the vendored C binary when not using Python.
 
     Returns:
         Tuple of (command string, extra environment variables dict).
@@ -129,6 +178,17 @@ def build_llvm_c_test_cmd(
     extra_env: dict[str, str] = {}
 
     if use_python:
+        # The llvm_c_test package is a dev-only source package, not an installed
+        # distribution entry point. Make it importable for lit subprocesses while
+        # preferring the freshly built extension module from build/.
+        pythonpath_entries = [
+            str((project_root / "build").resolve()),
+            str(project_root.resolve()),
+        ]
+        if existing_pythonpath := os.environ.get("PYTHONPATH"):
+            pythonpath_entries.append(existing_pythonpath)
+        extra_env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
+
         # Check if we should enable coverage or logging
         coverage_run = os.environ.get("COVERAGE_RUN")
 
@@ -145,22 +205,20 @@ def build_llvm_c_test_cmd(
             coverage_file_arg = coverage_file.as_posix()
             cmd = f"{python_exe} -m coverage run --parallel-mode --data-file={coverage_file_arg} -m llvm_c_test"
         else:
-            # Direct invocation using the installed script
+            # Direct invocation using the Python module
             cmd = f"{python_exe} -m llvm_c_test"
 
         return cmd, extra_env
-    else:
-        # Use C binary
-        llvm_c_test_exe = project_root / "build" / "llvm-c-test"
-        if sys.platform == "win32":
-            llvm_c_test_exe = llvm_c_test_exe.with_suffix(".exe")
 
-        # On Windows, quote the path to handle backslashes in bash
-        exe_path = str(llvm_c_test_exe)
-        if sys.platform == "win32":
-            exe_path = f'"{exe_path}"'
+    if llvm_c_test_exe is None:
+        llvm_c_test_exe = find_llvm_c_test_exe(project_root / "build")
 
-        return exe_path, extra_env
+    # On Windows, quote the path to handle backslashes in bash
+    exe_path = str(llvm_c_test_exe)
+    if sys.platform == "win32":
+        exe_path = f'"{exe_path}"'
+
+    return exe_path, extra_env
 
 
 def prefer_windows_git_bash(env: dict[str, str]) -> str | None:
@@ -200,28 +258,14 @@ def main():
         print("Run: cmake -B build -G Ninja && cmake --build build", file=sys.stderr)
         sys.exit(1)
 
-    # Build the llvm-c-test command
-    llvm_c_test_cmd, extra_env = build_llvm_c_test_cmd(use_python, project_root)
-
-    # Verify C binary exists if not using Python
+    llvm_c_test_exe = None
     if not use_python:
-        llvm_c_test_exe = project_root / "build" / "llvm-c-test"
-        if sys.platform == "win32":
-            llvm_c_test_exe = llvm_c_test_exe.with_suffix(".exe")
+        llvm_c_test_exe = build_vendored_llvm_c_test(project_root)
 
-        if not llvm_c_test_exe.exists():
-            print(
-                f"Error: llvm-c-test executable not found: {llvm_c_test_exe}",
-                file=sys.stderr,
-            )
-            print(
-                "Build with: cmake --build build --target llvm-c-test-vendored",
-                file=sys.stderr,
-            )
-            print(
-                "Or use --use-python to run with Python implementation", file=sys.stderr
-            )
-            sys.exit(1)
+    # Build the llvm-c-test command
+    llvm_c_test_cmd, extra_env = build_llvm_c_test_cmd(
+        use_python, project_root, llvm_c_test_exe
+    )
 
     # Get LLVM tools directory
     llvm_prefix = get_llvm_prefix(llvm_prefix_arg)
@@ -288,7 +332,7 @@ def main():
         print("  Mode:           Python implementation")
     else:
         print("  Mode:           C binary")
-    print()
+    print(flush=True)
 
     result = subprocess.run(lit_args, env=env)
     sys.exit(result.returncode)

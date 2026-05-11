@@ -31,6 +31,10 @@ is in llvm-c/llvm-c-test/debuginfo.c.
 
 import subprocess
 import sys
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def get_function_dbg_id(output: str) -> str | None:
@@ -50,19 +54,25 @@ def get_function_dbg_id(output: str) -> str | None:
 def run_python_dibuilder():
     """Run Python --test-dibuilder and capture output."""
     result = subprocess.run(
-        ["uv", "run", "llvm-c-test", "--test-dibuilder"],
+        [sys.executable, "-m", "llvm_c_test", "--test-dibuilder"],
         capture_output=True,
         text=True,
+        cwd=PROJECT_ROOT,
     )
     return result.stdout
 
 
 def run_c_dibuilder():
     """Run C --test-dibuilder and capture output."""
+    exe = PROJECT_ROOT / "build" / "llvm-c-test"
+    if sys.platform == "win32":
+        exe = exe.with_suffix(".exe")
+
     result = subprocess.run(
-        ["./build/llvm-c-test", "--test-dibuilder"],
+        [str(exe), "--test-dibuilder"],
         capture_output=True,
         text=True,
+        cwd=PROJECT_ROOT,
     )
     return result.stdout
 

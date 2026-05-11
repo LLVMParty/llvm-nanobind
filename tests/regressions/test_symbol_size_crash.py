@@ -101,7 +101,7 @@ def test_symbol_size_crash():
 
     print("\nTest completed (crash avoided by not accessing .size)")
     print("\nTo trigger the crash, uncomment the 'size = sym_iter.size' line")
-    print("or run: cat <object_file> | llvm-c-test --object-list-symbols")
+    print("or run: cat <object_file> | ./build/llvm-c-test --object-list-symbols")
 
 
 def test_with_existing_object():
