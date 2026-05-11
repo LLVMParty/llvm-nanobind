@@ -13,14 +13,20 @@ _Note_: This project is 90%+ vibe coded. It is mostly an experiment to see what 
 - Comprehensive LLVM-C API coverage (~7300 lines of bindings)
 - Memory-safe: validity tokens prevent use-after-free crashes
 - Type-safe: auto-generated `.pyi` stubs for IDE support
-- Tested: 25+ lit tests, 15 golden master test pairs
+- Tested: golden-master tests, regression scripts, pytest, and vendored `llvm-c-test` lit tests
 
 ## Installation
 
-This package requires LLVM 21+ to be installed. The build will automatically find LLVM if it's in your PATH, or you can specify the path:
+Released wheels bundle LLVM for supported platforms, so normal installation is:
 
 ```bash
-export CMAKE_PREFIX_PATH=/path/to/llvm
+pip install llvm-nanobind
+```
+
+Source builds need LLVM 21.1.6 available to CMake. Set `LLVM_ROOT` if LLVM is not in a standard location:
+
+```bash
+export LLVM_ROOT=/path/to/llvm
 pip install .
 ```
 
@@ -31,24 +37,26 @@ See [llvm-nanobind-example](https://github.com/LLVMParty/llvm-nanobind-example) 
 ```python
 import llvm
 
-# Create a simple function that returns 42
+# Create a simple function that returns 42.
 with llvm.create_context() as ctx:
+    i32 = ctx.types.i32
+    fn_type = ctx.types.function(i32, [])
+
     with ctx.create_module("example") as mod:
-        # Create function type: i32 ()
-        i32 = ctx.int32_type()
-        fn_type = ctx.function_type(i32, [])
-        
-        # Create function and basic block
         fn = mod.add_function("get_answer", fn_type)
-        bb = fn.append_basic_block("entry")
-        
-        # Build return instruction
-        with ctx.create_builder() as builder:
-            builder.position_at_end(bb)
-            builder.ret(llvm.const_int(i32, 42))
-        
-        # Print the IR
+        entry = fn.append_basic_block("entry")
+
+        with entry.create_builder() as builder:
+            builder.ret(i32.constant(42))
+
+        assert mod.verify(), mod.get_verification_error()
         print(mod)
+```
+
+The same code is kept as a runnable smoke-tested script in `examples/quick_start.py`:
+
+```bash
+uv run python examples/quick_start.py
 ```
 
 ## Development
@@ -120,6 +128,15 @@ it is not our complete top-level test entrypoint by itself.
 uv run coverage run run_llvm_c_tests.py --use-python
 uv run coverage combine
 uv run coverage report --include="llvm_c_test/*"
+```
+
+### Examples
+
+Runnable examples live in `examples/` and are covered by `tests/test_examples.py`:
+
+```bash
+uv run python examples/quick_start.py
+uv run python examples/transform_replace_add.py
 ```
 
 ## Documentation

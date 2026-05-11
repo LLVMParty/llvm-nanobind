@@ -249,16 +249,9 @@ def exercise_3_simple_transform():
                         doubled_const = builder.add(op1, op1, "doubled")
                         new_add = builder.add(op0, doubled_const, inst.name + ".new")
 
-                        # Replace uses
-                        for use in list(inst.uses):
-                            user = use.user
-                            for i in range(user.num_operands):
-                                if user.get_operand(i) == inst:
-                                    user.set_operand(i, new_add)
-
-                        # Remove old instruction
-                        inst.remove_from_parent()
-                        inst.delete_instruction()
+                        # Replace uses and remove the old instruction
+                        inst.replace_all_uses_with(new_add)
+                        inst.erase_from_parent()
 
             show_ir("After transformation", mod.to_string())
 
@@ -270,15 +263,11 @@ def exercise_3_simple_transform():
     3. REPLACED: Uses of old instruction with new one
     4. CLEANED UP: Removed old instruction
 
-    Notice the manual replace_all_uses_with pattern:
-      for use in list(inst.uses):
-          user = use.user
-          for i in range(user.num_operands):
-              if user.get_operand(i) == inst:
-                  user.set_operand(i, new_add)
+    The current bindings expose the common LLVM RAUW pattern directly:
+      inst.replace_all_uses_with(new_add)
+      inst.erase_from_parent()
 
-    This is verbose because the binding doesn't expose RAUW directly.
-    That's one of the planned improvements!
+    This keeps the transform focused on the IR rewrite, not bookkeeping.
     """)
 
     pause("Press Enter for the next exercise...")
@@ -372,15 +361,9 @@ def exercise_4_mba_by_hand():
                         result = builder.add(xor_val, mul_val, "mba.result")
                         print(f"  Step 5: %mba.result = add %mba.xor, %mba.mul")
 
-                        # Replace uses
-                        for use in list(inst.uses):
-                            user = use.user
-                            for i in range(user.num_operands):
-                                if user.get_operand(i) == inst:
-                                    user.set_operand(i, result)
-
-                        inst.remove_from_parent()
-                        inst.delete_instruction()
+                        # Replace uses and remove the old subtraction.
+                        inst.replace_all_uses_with(result)
+                        inst.erase_from_parent()
 
             print()
             show_ir("After MBA", mod.to_string())
@@ -558,11 +541,11 @@ def summary():
      - Replace: substitute old with new (RAUW)
      - Clean up: delete old, verify
 
-  3. {CYAN}API Quirks{RESET}
+  3. {CYAN}API Patterns{RESET}
      - Context managers for modules and builders
-     - No direct RAUW (must implement manually)
-     - Two-step instruction deletion
-     - Inconsistent property vs method patterns
+     - `replace_all_uses_with` for SSA rewrites
+     - `erase_from_parent` for instruction deletion
+     - Properties such as `inst.operands` and `ctx.types.ptr`
 
   4. {CYAN}Obfuscation Techniques{RESET}
      - MBA: hide operations in equivalent bitwise soup
