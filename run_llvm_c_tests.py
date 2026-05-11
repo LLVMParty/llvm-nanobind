@@ -179,12 +179,16 @@ def build_llvm_c_test_cmd(
 
     if use_python:
         # The llvm_c_test package is a dev-only source package, not an installed
-        # distribution entry point. Make it importable for lit subprocesses while
-        # preferring the freshly built extension module from build/.
-        pythonpath_entries = [
-            str((project_root / "build").resolve()),
-            str(project_root.resolve()),
-        ]
+        # distribution entry point. Make it importable for lit subprocesses. Wheel
+        # tests set LLVM_NANOBIND_TEST_INSTALLED=1 so the installed wheel is tested
+        # instead of build/llvm.*.
+        if os.environ.get("LLVM_NANOBIND_TEST_INSTALLED"):
+            pythonpath_entries = [str(project_root.resolve())]
+        else:
+            pythonpath_entries = [
+                str((project_root / "build").resolve()),
+                str(project_root.resolve()),
+            ]
         if existing_pythonpath := os.environ.get("PYTHONPATH"):
             pythonpath_entries.append(existing_pythonpath)
         extra_env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
