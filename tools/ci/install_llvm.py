@@ -93,13 +93,35 @@ def extract_zip(archive: Path, dest: Path) -> None:
                 target.chmod(mode & 0o777)
 
 
-def looks_like_llvm_root(path: Path) -> bool:
+def llvm_config_path(path: Path) -> Path:
     exe = "llvm-config.exe" if os.name == "nt" else "llvm-config"
+    return path / "bin" / exe
+
+
+def looks_like_llvm_root(path: Path) -> bool:
     return (
-        (path / "bin" / exe).exists()
+        llvm_config_path(path).exists()
         and (path / "include" / "llvm-c").is_dir()
         and (path / "lib").is_dir()
     )
+
+
+def get_llvm_version(path: Path) -> str | None:
+    llvm_config = llvm_config_path(path)
+    if not llvm_config.exists():
+        return None
+    try:
+        return subprocess.check_output([str(llvm_config), "--version"], text=True).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+def write_prefix_file(prefix_file: Path | None, installed_root: Path) -> None:
+    if prefix_file is None:
+        return
+    prefix_file.parent.mkdir(parents=True, exist_ok=True)
+    prefix_file.write_text(installed_root.as_posix() + "\n", encoding="utf-8")
+    print(f"Wrote LLVM prefix file: {prefix_file}", flush=True)
 
 
 def find_llvm_root(extracted: Path) -> Path:
@@ -125,6 +147,21 @@ def install_tree(src: Path, dest: Path) -> None:
 
 def main() -> int:
     args = parse_args()
+    installed_root = args.dest.resolve()
+
+    if looks_like_llvm_root(installed_root):
+        existing_version = get_llvm_version(installed_root)
+        if existing_version == args.version:
+            print(f"Using cached LLVM at {installed_root}", flush=True)
+            write_prefix_file(args.prefix_file, installed_root)
+            print(f"LLVM version: {existing_version}", flush=True)
+            return 0
+        print(
+            f"Ignoring cached LLVM at {installed_root}: "
+            f"expected {args.version}, got {existing_version or 'unknown'}",
+            flush=True,
+        )
+
     tag = args.tag or f"v{args.version}"
     url = f"https://github.com/{args.repo}/releases/download/{tag}/{args.archive}"
 
@@ -138,17 +175,10 @@ def main() -> int:
         llvm_root = find_llvm_root(extract_dir)
         install_tree(llvm_root, args.dest)
 
-    installed_root = args.dest.resolve()
-    installed_root_for_cmake = installed_root.as_posix()
     print(f"Installed LLVM to {installed_root}", flush=True)
-    if args.prefix_file is not None:
-        args.prefix_file.parent.mkdir(parents=True, exist_ok=True)
-        args.prefix_file.write_text(installed_root_for_cmake + "\n", encoding="utf-8")
-        print(f"Wrote LLVM prefix file: {args.prefix_file}", flush=True)
+    write_prefix_file(args.prefix_file, installed_root)
 
-    llvm_config = installed_root / "bin" / ("llvm-config.exe" if os.name == "nt" else "llvm-config")
-    if llvm_config.exists():
-        version = subprocess.check_output([str(llvm_config), "--version"], text=True).strip()
+    if version := get_llvm_version(installed_root):
         print(f"LLVM version: {version}", flush=True)
 
     return 0

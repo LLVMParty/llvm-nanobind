@@ -95,6 +95,12 @@ jobs:
         with:
           arch: x64
 
+      - name: Cache LLVM
+        uses: actions/cache@v4
+        with:
+          path: .llvm
+          key: llvm-${{ matrix.name }}-${{ env.LLVM_VERSION }}-${{ matrix.llvm-archive }}
+
       - name: Build wheel and run tests
         uses: pypa/cibuildwheel@v3.4.1
         env:
@@ -142,6 +148,9 @@ jobs:
           # step copies LLVM-C.dll next to llvm/__init__.pyd.
           CIBW_ENVIRONMENT_WINDOWS: >-
             CMAKE_PREFIX_PATH="${{ github.workspace }}\\.llvm"
+            CMAKE_GENERATOR="Ninja"
+            CC="clang-cl"
+            CXX="clang-cl"
             PATH="${{ github.workspace }}\\.llvm\\bin;$PATH"
           CIBW_BEFORE_BUILD_WINDOWS: >-
             python "${{ github.workspace }}\\tools\\ci\\install_llvm.py"

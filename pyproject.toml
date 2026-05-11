@@ -42,10 +42,6 @@ editable.mode = "redirect"
 # Do not auto-copy Python packages into wheels; the extension module is installed by CMake.
 wheel.packages = []
 
-[[tool.scikit-build.overrides]]
-if.platform-system = "win32"
-cmake.args = ["-T", "ClangCL"]
-
 [tool.uv]
 cache-keys = [
     { file = "CMakeLists.txt" },

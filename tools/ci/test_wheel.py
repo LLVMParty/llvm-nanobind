@@ -140,7 +140,9 @@ def main() -> int:
     run([sys.executable, "run_llvm_c_tests.py", "--use-python", "-v"], env=env)
     run_extra_standalone_tests(env)
     run_extra_cpp_tests(env)
-    run([sys.executable, "-m", "pytest"], env=env)
+    # The script-based runners above cover the main, regression, standalone,
+    # and C++ suites. Keep pytest for tests that are intentionally pytest-only.
+    run([sys.executable, "-m", "pytest", "tests/test_examples.py"], env=env)
     run([shutil.which("ty") or "ty", "check"], env=env)
 
     return 0

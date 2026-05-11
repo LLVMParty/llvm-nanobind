@@ -261,3 +261,9 @@ def test_ollvm_cli_vectorize_no_longer_reports_unsupported(tmp_path: Path) -> No
         encoding="utf-8",
     )
     assert main(["--vectorize", str(input_path)]) == 0
+
+
+if __name__ == "__main__":
+    import pytest
+
+    raise SystemExit(pytest.main([__file__]))
