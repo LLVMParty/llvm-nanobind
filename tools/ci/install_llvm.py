@@ -44,6 +44,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Destination LLVM root directory.",
     )
+    parser.add_argument(
+        "--prefix-file",
+        type=Path,
+        help="Optional .llvm-prefix file to write with the installed LLVM root.",
+    )
     return parser.parse_args()
 
 
@@ -133,8 +138,15 @@ def main() -> int:
         llvm_root = find_llvm_root(extract_dir)
         install_tree(llvm_root, args.dest)
 
-    print(f"Installed LLVM to {args.dest}", flush=True)
-    llvm_config = args.dest / "bin" / ("llvm-config.exe" if os.name == "nt" else "llvm-config")
+    installed_root = args.dest.resolve()
+    installed_root_for_cmake = installed_root.as_posix()
+    print(f"Installed LLVM to {installed_root}", flush=True)
+    if args.prefix_file is not None:
+        args.prefix_file.parent.mkdir(parents=True, exist_ok=True)
+        args.prefix_file.write_text(installed_root_for_cmake + "\n", encoding="utf-8")
+        print(f"Wrote LLVM prefix file: {args.prefix_file}", flush=True)
+
+    llvm_config = installed_root / "bin" / ("llvm-config.exe" if os.name == "nt" else "llvm-config")
     if llvm_config.exists():
         version = subprocess.check_output([str(llvm_config), "--version"], text=True).strip()
         print(f"LLVM version: {version}", flush=True)

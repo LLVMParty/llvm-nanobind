@@ -120,6 +120,7 @@ jobs:
             --version "${{ env.LLVM_VERSION }}"
             --archive "${{ matrix.llvm-archive }}"
             --dest /project/.llvm
+            --prefix-file /project/.llvm-prefix
           CIBW_REPAIR_WHEEL_COMMAND_LINUX: >-
             auditwheel repair --plat ${{ matrix.auditwheel-plat }} -w {dest_dir} {wheel}
 
@@ -135,6 +136,7 @@ jobs:
             --version "${{ env.LLVM_VERSION }}"
             --archive "${{ matrix.llvm-archive }}"
             --dest "${{ github.workspace }}/.llvm"
+            --prefix-file "${{ github.workspace }}/.llvm-prefix"
 
           # Windows wheels are built on the hosted runner. The CMake install
           # step copies LLVM-C.dll next to llvm/__init__.pyd.
@@ -146,6 +148,7 @@ jobs:
             --version "${{ env.LLVM_VERSION }}"
             --archive "${{ matrix.llvm-archive }}"
             --dest "${{ github.workspace }}\\.llvm"
+            --prefix-file "${{ github.workspace }}\\.llvm-prefix"
 
       - name: Check wheel metadata
         shell: bash

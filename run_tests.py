@@ -181,9 +181,11 @@ def run_regression_tests():
         # Print progress
         print(f"[{status}] {test_name}")
 
-        # Show error output if failed
-        if status == "FAIL" and stderr:
-            for line in stderr.splitlines()[:10]:  # First 10 lines of error
+        # Show captured output if failed. Pytest usually writes assertion
+        # details to stdout, while crashes/import errors often use stderr.
+        if status == "FAIL":
+            failure_output = stderr or stdout
+            for line in failure_output.splitlines()[:20]:
                 print(f"       {line}")
 
     # Summary
