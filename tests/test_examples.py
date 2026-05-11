@@ -52,7 +52,39 @@ def test_readme_quick_start_snippet() -> None:
 
 def test_transform_replace_add_example() -> None:
     output = run_example("examples/transform_replace_add.py")
-    assert "define i32 @add_one(i32 %x)" in output
-    assert "%sum.repl = sub i32 %x, -1" in output
+    assert "define i32 @add_values(i32 %x, i32 %y)" in output
+    assert "%sum.rhs.neg = sub i32 0, %y" in output
+    assert "%sum.repl = sub i32 %x, %sum.rhs.neg" in output
     assert "ret i32 %sum.repl" in output
     assert " add i32 " not in output
+
+
+def test_transform_replace_add_preserves_rhs_operand() -> None:
+    from examples.transform_replace_add import transform
+
+    output = transform(
+        """
+        define i32 @f(i32 %x, i32 %y) {
+        entry:
+          %sum = add i32 %x, %y
+          ret i32 %sum
+        }
+        """
+    )
+    assert "%sum.rhs.neg = sub i32 0, %y" in output
+    assert "%sum.repl = sub i32 %x, %sum.rhs.neg" in output
+
+
+def test_transform_replace_add_leaves_no_wrap_adds_alone() -> None:
+    from examples.transform_replace_add import transform
+
+    output = transform(
+        """
+        define i32 @f(i32 %x, i32 %y) {
+        entry:
+          %sum = add nsw i32 %x, %y
+          ret i32 %sum
+        }
+        """
+    )
+    assert "%sum = add nsw i32 %x, %y" in output
