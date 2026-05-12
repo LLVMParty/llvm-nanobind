@@ -22,7 +22,7 @@ def get_di_tag():
         node_md = ctx.md_node([string_md])
 
         # Get tag from node (should be 0 for generic node)
-        tag = llvm.get_di_node_tag(node_md)
+        tag = node_md.di_node_tag
         assert tag == 0, f"Expected tag 0, got {tag}"
 
         # Create DIBuilder
@@ -42,7 +42,7 @@ def get_di_tag():
             )
 
             # Get tag from struct (should be 0x13 = DW_TAG_structure_type)
-            tag = llvm.get_di_node_tag(struct_md)
+            tag = struct_md.di_node_tag
             assert tag == 0x13, f"Expected tag 0x13, got {tag:#x}"
 
     return 0
@@ -75,7 +75,7 @@ def di_type_get_name():
             )
 
             # Get name from type
-            type_name = llvm.di_type_get_name(struct_md)
+            type_name = struct_md.di_type_name
 
             # Verify name matches
             assert len(type_name) == len(name), (
@@ -289,8 +289,8 @@ def test_dibuilder():
             )
 
             # Create debug location for parameters
-            foo_param_location = llvm.dibuilder_create_debug_location(
-                ctx, 42, 0, replaceable_function_md, None
+            foo_param_location = ctx.create_debug_location(
+                42, 0, replaceable_function_md, None
             )
 
             # Create function debug info
@@ -302,7 +302,7 @@ def test_dibuilder():
             replaceable_function_md.replace_all_uses_with(function_md)
 
             # Replace function type
-            llvm.di_subprogram_replace_type(function_md, function_ty)
+            function_md.replace_di_subprogram_type(function_ty)
 
             # Create expression for parameters
             foo_param_expr = dib.create_expression([])
@@ -354,8 +354,8 @@ def test_dibuilder():
 
             # Create another basic block for variables
             foo_var_block = foo_function.append_basic_block("vars")
-            foo_vars_location = llvm.dibuilder_create_debug_location(
-                ctx, 43, 0, function_md, None
+            foo_vars_location = ctx.create_debug_location(
+                43, 0, function_md, None
             )
 
             # Create auto variables with debug value records
@@ -521,26 +521,25 @@ def test_dibuilder():
                 phi2 = builder.phi(i64_type, "p2")
                 phi2.add_incoming(zero_val, foo_entry_block)
 
-                # Insert non-phi before ret
-                # TODO: settings before_dbg=True will crash the test here in LLVMGetFirstDbgRecord
+                # Insert non-phi after ret's debug records and before ret.
                 builder.position_before(ret_inst, before_dbg=False)
                 add_inst = builder.add(phi1, phi2, "a")
 
                 # Iterate over debug records
-                add_dbg_first = llvm.get_first_dbg_record(add_inst)
+                add_dbg_first = add_inst.first_dbg_record
                 assert add_dbg_first is not None, "First debug record should exist"
-                add_dbg_second = llvm.get_next_dbg_record(add_dbg_first)
+                add_dbg_second = add_dbg_first.next
                 assert add_dbg_second is not None, "Second debug record should exist"
-                add_dbg_last = llvm.get_last_dbg_record(add_inst)
+                add_dbg_last = add_inst.last_dbg_record
                 assert add_dbg_last is not None, "Last debug record should exist"
                 # Note: Debug records are opaque pointers, comparison may not work reliably
                 # assert add_dbg_second == add_dbg_last
-                add_dbg_over = llvm.get_next_dbg_record(add_dbg_second)
+                add_dbg_over = add_dbg_second.next
                 assert add_dbg_over is None, "Should be no record after second"
-                add_dbg_first_prev = llvm.get_previous_dbg_record(add_dbg_second)
+                add_dbg_first_prev = add_dbg_second.prev
                 assert add_dbg_first_prev is not None, "Previous of second should exist"
                 # assert add_dbg_first == add_dbg_first_prev
-                add_dbg_under = llvm.get_previous_dbg_record(add_dbg_first_prev)
+                add_dbg_under = add_dbg_first_prev.prev
                 assert add_dbg_under is None, "Should be no record before first"
 
             # Print module

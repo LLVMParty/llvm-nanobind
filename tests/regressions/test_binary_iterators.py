@@ -35,7 +35,7 @@ def test_binary_iterators_match_manual_iteration():
         print(f"SKIP: object file not found: {obj.resolve()}")
         return
 
-    with llvm.create_binary_from_file(obj) as binary:
+    with llvm.BinaryManager.from_file(obj) as binary:
         # Sections
         manual_sections = _manual_section_names(binary)
         for_sections = [sect.name for sect in binary.sections]

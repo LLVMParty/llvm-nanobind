@@ -199,13 +199,17 @@ def test_non_value_guard_matrix_negative():
             )
 
             assert_llvm_assertion(
-                lambda: llvm.get_first_dbg_record(fn),
+                lambda: fn.first_dbg_record,
                 "instruction value",
             )
             assert_llvm_assertion(
-                lambda: llvm.get_last_dbg_record(fn),
+                lambda: fn.last_dbg_record,
                 "instruction value",
             )
+
+            # Drop the detached clone before module teardown; it still references
+            # function arguments from this module.
+            detached_clone.delete_instruction()
 
             # Keep the instruction alive to prevent fixture optimization.
             assert first_inst.is_instruction

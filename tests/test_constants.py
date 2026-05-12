@@ -35,8 +35,8 @@ def main():
             # Arbitrary precision integer (128-bit) - two 64-bit words (little-endian)
             # words[] = {0xFFFFFFFFFFFFFFFFULL, 0x0000000000000001ULL}
             # Low word first (little-endian): 0xFFFFFFFFFFFFFFFF, 0x0000000000000001
-            const_i128 = llvm.const_int_of_arbitrary_precision(
-                i128, [0xFFFFFFFFFFFFFFFF, 0x0000000000000001]
+            const_i128 = i128.constant(
+                [0xFFFFFFFFFFFFFFFF, 0x0000000000000001]
             )
 
             # ==========================================

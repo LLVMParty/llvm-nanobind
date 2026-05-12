@@ -34,10 +34,10 @@ def target_machine() -> llvm.TargetMachine:
     llvm.initialize_all_asm_printers()
     llvm.initialize_all_asm_parsers()
 
-    triple = llvm.get_default_target_triple()
-    target = llvm.get_target_from_triple(triple)
+    triple = llvm.default_target_triple
+    target = llvm.Target.from_triple(triple)
     assert target is not None
-    return llvm.create_target_machine(
+    return llvm.TargetMachine.create(
         target,
         triple,
         "generic",
@@ -52,8 +52,7 @@ def canonicalize_ir(text: str, cleanup_pipeline: str | None) -> str:
     if cleanup_pipeline is not None:
         with llvm.create_context() as ctx:
             with ctx.parse_ir(text) as mod:
-                llvm.run_passes(
-                    mod,
+                mod.run_passes(
                     cleanup_pipeline,
                     target_machine=target_machine(),
                     options=llvm.PassBuilderOptions(),

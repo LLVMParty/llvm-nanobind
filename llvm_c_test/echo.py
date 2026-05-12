@@ -303,7 +303,7 @@ def clone_constant_impl(cst: llvm.Value, m: llvm.Module) -> llvm.Value:
         key = clone_constant(cst.constant_ptr_auth_key, m)
         disc = clone_constant(cst.constant_ptr_auth_discriminator, m)
         addr_disc = clone_constant(cst.constant_ptr_auth_addr_discriminator, m)
-        return llvm.const_ptr_auth(ptr, key, disc, addr_disc)
+        return ptr.const_ptr_auth(key, disc, addr_disc)
 
     # At this point, if it's not a constant expression, it's unsupported
     if not cst.is_constant_expr:
@@ -322,9 +322,7 @@ def clone_constant_impl(cst: llvm.Value, m: llvm.Module) -> llvm.Value:
         ptr = clone_constant(cst.get_operand(0), m)
         num_idx = cst.num_indices
         idx = [clone_constant(cst.get_operand(i + 1), m) for i in range(num_idx)]
-        return llvm.const_gep_with_no_wrap_flags(
-            elem_ty, ptr, idx, cst.gep_no_wrap_flags
-        )
+        return elem_ty.gep_const(ptr, idx, cst.gep_no_wrap_flags)
     else:
         print(
             f"{op} is not a supported opcode for constant expressions", file=sys.stderr
@@ -353,8 +351,7 @@ def clone_inline_asm(asm: llvm.Value, m: llvm.Module) -> llvm.Value:
     can_unwind = asm.inline_asm_can_unwind
 
     cloned_fn_ty = TypeCloner(m).clone(fn_ty)
-    return llvm.get_inline_asm(
-        cloned_fn_ty,
+    return cloned_fn_ty.inline_asm(
         asm_string,
         constraint_string,
         has_side_effects,
@@ -510,7 +507,7 @@ class FunCloner:
     def clone_attrs(self, src: llvm.Value, dst: llvm.Value) -> None:
         """Clone call/invoke attributes from src to dst."""
         ctx = self.module.context
-        last_kind = llvm.get_last_enum_attribute_kind()
+        last_kind = llvm.last_enum_attribute_kind
 
         # Clone attributes for all indices (return, function, and each param)
         # Index 0 is return, index -1 (AttributeFunctionIndex) is function
@@ -1179,7 +1176,7 @@ def declare_symbols(src: llvm.Module, m: llvm.Module) -> None:
         f = m.add_function(name, ty)
 
         # Copy attributes
-        last_kind = llvm.get_last_enum_attribute_kind()
+        last_kind = llvm.last_enum_attribute_kind
         for i in range(llvm.AttributeFunctionIndex, cur.param_count + 1):
             for k in range(1, last_kind + 1):
                 src_a = cur.get_enum_attribute(i, k)

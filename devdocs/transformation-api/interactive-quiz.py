@@ -249,7 +249,7 @@ OBFUSCATION = [
         ],
         "correct": 2,
         "explanation": "Use bytes for binary payloads: llvm.const_string(ctx, data, ...) or "
-        "llvm.const_data_array(i8, data). The str overload is for text and follows UTF-8 encoding.",
+        "i8.array_const(data). The str overload is for text and follows UTF-8 encoding.",
     },
 ]
 

@@ -23,7 +23,7 @@ raw = bytes([0xFF, 0x80, 0x42])
 const = llvm.const_string(ctx, raw, dont_null_terminate=True)
 assert const.type.array_length == len(raw)
 
-arr = llvm.const_data_array(i8, raw)
+arr = i8.array_const(raw)
 assert arr.type.array_length == len(raw)
 ```
 

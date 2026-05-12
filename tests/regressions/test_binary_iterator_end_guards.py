@@ -26,7 +26,7 @@ def test_section_symbol_and_relocation_end_guards() -> None:
         print(f"SKIP: object file not found: {OBJECT_PATH.resolve()}")
         return
 
-    with llvm.create_binary_from_file(OBJECT_PATH) as binary:
+    with llvm.BinaryManager.from_file(OBJECT_PATH) as binary:
         sections = binary.sections
         while not sections.is_at_end():
             sections.move_next()
@@ -66,7 +66,7 @@ def test_contains_symbol_and_move_to_containing_section_require_non_end_symbol()
         print(f"SKIP: object file not found: {OBJECT_PATH.resolve()}")
         return
 
-    with llvm.create_binary_from_file(OBJECT_PATH) as binary:
+    with llvm.BinaryManager.from_file(OBJECT_PATH) as binary:
         sections = binary.sections
         symbols = binary.symbols
 

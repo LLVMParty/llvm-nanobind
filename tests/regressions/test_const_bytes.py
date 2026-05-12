@@ -48,11 +48,10 @@ def test_const_data_array_accepts_bytes_without_utf8_expansion():
             i8 = ctx.types.i8
             raw = bytes([0xFF, 0x80, 0x42, 0x00, 0x7F])
 
-            # Global helper overload.
-            arr_global = llvm.const_data_array(i8, raw)
+            arr_global = i8.array_const(raw)
             assert arr_global.type.array_length == len(raw)
 
-            # Type helper overload.
+            # Repeated Type helper call.
             arr_method = i8.array_const(raw)
             assert arr_method.type.array_length == len(raw)
 

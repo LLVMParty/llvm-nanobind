@@ -237,12 +237,12 @@ def test_manager_state_machine_guards():
     bitcode_path = Path(__file__).parent / "factorial.bc"
     bitcode = bitcode_path.read_bytes()
 
-    bin_mgr = llvm.create_binary_from_bytes(bitcode)
+    bin_mgr = llvm.BinaryManager.from_bytes(bitcode)
     bin_mgr.dispose()
     assert_memory_error(lambda: bin_mgr.dispose(), "already been disposed")
 
     # Non-object binaries should reject object iterators instead of crashing.
-    with llvm.create_binary_from_bytes(bitcode) as bitcode_binary:
+    with llvm.BinaryManager.from_bytes(bitcode) as bitcode_binary:
         assert_llvm_assertion(lambda: bitcode_binary.sections, "object-file binary")
         assert_llvm_assertion(lambda: bitcode_binary.symbols, "object-file binary")
 
@@ -251,7 +251,7 @@ def test_manager_state_machine_guards():
         print(f"SKIP binary manager iterator checks: missing {object_file}")
         return
 
-    bin_mgr2 = llvm.create_binary_from_file(object_file)
+    bin_mgr2 = llvm.BinaryManager.from_file(object_file)
     binary = bin_mgr2.__enter__()
     sections = binary.sections
     symbols = binary.symbols
@@ -314,9 +314,9 @@ def test_lifetime_guards_for_remaining_wrappers():
 
 
 def test_disasm_invalid_context_guard():
-    dis = llvm.create_disasm_cpu_features("zzzz-unknown-none")
+    dis = llvm.Disasm.create("zzzz-unknown-none")
     if dis.is_valid:
-        dis = llvm.create_disasm_cpu_features("definitely-not-a-real-triple")
+        dis = llvm.Disasm.create("definitely-not-a-real-triple")
     if dis.is_valid:
         print("SKIP: could not create an invalid disassembler context on this host")
         return

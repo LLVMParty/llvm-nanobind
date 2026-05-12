@@ -1284,7 +1284,7 @@ def encrypt_strings_module(mod: llvm.Module, seed: int) -> None:
             encrypted[i] = byte ^ state
             state = ((state * 31) + 17 + encrypted[i]) & 0xFF
 
-        enc_const = llvm.const_data_array(i8, bytes(encrypted))
+        enc_const = i8.array_const(bytes(encrypted))
         enc_gv = mod.add_global(enc_const.type, f"__ollvm_str_enc_{index}")
         enc_gv.initializer = enc_const
         enc_gv.linkage = llvm.Linkage.Private
@@ -1497,8 +1497,7 @@ def insert_register_anchor(value: llvm.Value, use) -> None:
         asm_int_ty = value.context.types.i64 if is_ptr else val_ty
         int_val = builder.ptrtoint(value, asm_int_ty, "") if is_ptr else value
         asm_ty = value.context.types.function(asm_int_ty, [asm_int_ty])
-        asm_val = llvm.get_inline_asm(
-            asm_ty,
+        asm_val = asm_ty.inline_asm(
             "",
             "=r,0",
             True,

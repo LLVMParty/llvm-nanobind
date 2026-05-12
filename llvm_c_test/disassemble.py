@@ -42,7 +42,7 @@ def do_disassemble(triple: str, features: str, buf: bytes) -> None:
         buf: Bytes to disassemble
     """
     # Create disassembler
-    disasm = llvm.create_disasm_cpu_features(triple, "", features)
+    disasm = llvm.Disasm.create(triple, "", features)
 
     if not disasm.is_valid:
         print(f"ERROR: Couldn't create disassembler for triple {triple}")

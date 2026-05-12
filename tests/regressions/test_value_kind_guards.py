@@ -252,7 +252,7 @@ def build_fixture(ctx: llvm.Context, mod: llvm.Module):
 
     with inv_entry.create_builder() as b:
         invoke_inst = b.invoke_with_operand_bundles(
-            callee_void_ty, may_throw, [], inv_normal, inv_unwind, [], "inv"
+            callee_void_ty, may_throw, [], inv_normal, inv_unwind, [], ""
         )
         b.position_at_end(inv_normal)
         b.ret_void()
@@ -275,8 +275,7 @@ def build_fixture(ctx: llvm.Context, mod: llvm.Module):
     cb_default = cb_fn.append_basic_block("default")
     cb_indirect = cb_fn.append_basic_block("indirect")
     with cb_entry.create_builder() as b:
-        inline_asm = llvm.get_inline_asm(
-            cb_fn_ty,
+        inline_asm = cb_fn_ty.inline_asm(
             "nop",
             "r",
             True,
@@ -291,7 +290,7 @@ def build_fixture(ctx: llvm.Context, mod: llvm.Module):
             [cb_indirect],
             [cb_fn.get_param(0)],
             [],
-            "cb",
+            "",
         )
         b.position_at_end(cb_default)
         b.ret_void()

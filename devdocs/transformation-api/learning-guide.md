@@ -524,7 +524,7 @@ The porting process revealed API gaps:
 | Replace all uses | `value.replace_all_uses_with(new_value)` |
 | Delete instruction | `inst.erase_from_parent()` |
 | Split block | `bb.split_basic_block(...)` / `bb.split_basic_block_before(...)` |
-| Raw byte constants | `llvm.const_string(ctx, b"...", ...)` and `llvm.const_data_array(i8, b"...")` |
+| Raw byte constants | `ctx.const_string(b"...", ...)` and `i8.array_const(b"...")` |
 
 **Raw bytes example:**
 

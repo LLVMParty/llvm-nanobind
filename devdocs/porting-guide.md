@@ -456,7 +456,7 @@ BlockAddress* addr = BlockAddress::get(func, bb);
 
 **Python:**
 ```python
-addr = llvm.block_address(func, bb)  # Function, not class method
+addr = bb.block_address()  # Function is inferred from the block
 ```
 
 ---
@@ -633,7 +633,7 @@ Constant* dataArr = ConstantDataArray::get(ctx, arrayRef);
 **Python:**
 ```python
 arr = llvm.array_const(elem_ty, [elem1, elem2])
-data_arr = llvm.const_data_array(elem_ty, string_data)
+data_arr = elem_ty.array_const(string_data)
 ```
 
 ### Struct Constants
@@ -977,7 +977,7 @@ result = builder.select(condition, true_val, false_val, "name")
 
 The original porting effort exposed several blockers. The current bindings have since added the core transformation conveniences:
 
-- raw `bytes` support for `const_string()` / `const_data_array()`
+- raw `bytes` support for `Context.const_string()` / `Type.array_const()`
 - `value.replace_all_uses_with(new_value)`
 - `bb.split_basic_block(...)` and `bb.split_basic_block_before(...)`
 - `inst.erase_from_parent()`

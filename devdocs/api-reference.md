@@ -238,6 +238,7 @@ This section captures guard preconditions for wrapper classes other than
     `remove_enum_attribute`, `remove_string_attribute`
   - valid index range: `-1` (function), `0` (return), `1..param_count`.
 - `block_address` requires block ownership by that function.
+  Prefer `bb.block_address()` when the function can be inferred.
 - Parent navigation:
   - `module`/`context` require function has a parent module.
 
@@ -253,9 +254,10 @@ This section captures guard preconditions for wrapper classes other than
   - `insert_into_builder_with_name(instr)` requires instruction value.
   - `add_metadata_to_inst(instr)` requires instruction value.
 
-### Global helper `llvm.block_address(fn, bb)`
+### BasicBlock `block_address()`
 
-- Requires `bb` to be owned by `fn`.
+- Requires the block to be attached to a function.
+- Legacy `llvm.block_address(fn, bb)` requires `bb` to be owned by `fn`.
 
 ### OperandBundle (`llvm.OperandBundle`)
 

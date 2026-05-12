@@ -9,7 +9,7 @@ Output should match the C++ golden master test.
 LLVM Python APIs tested:
 - llvm.PassBuilderOptions()
 - options.set_verify_each(), set_debug_logging(), etc.
-- llvm.run_passes()
+- Module.run_passes()
 """
 
 import sys
@@ -106,12 +106,12 @@ def main():
     llvm.initialize_all_asm_parsers()
 
     # Get default target for running passes
-    triple = llvm.get_default_target_triple()
-    target = llvm.get_target_from_triple(triple)
+    triple = llvm.default_target_triple
+    target = llvm.Target.from_triple(triple)
     if target is None:
         print("; ERROR: Failed to get target", file=sys.stderr)
         return 1
-    tm = llvm.create_target_machine(
+    tm = llvm.TargetMachine.create(
         target,
         triple,
         "generic",
@@ -157,7 +157,7 @@ def main():
             instr_before_o0 = count_instructions(mod_o0)
             funcs_before_o0 = count_functions(mod_o0)
 
-            llvm.run_passes(mod_o0, "default<O0>", target_machine=tm, options=opts)
+            mod_o0.run_passes("default<O0>", target_machine=tm, options=opts)
 
             instr_after_o0 = count_instructions(mod_o0)
             funcs_after_o0 = count_functions(mod_o0)
@@ -179,7 +179,7 @@ def main():
             instr_before_o2 = count_instructions(mod_o2)
             funcs_before_o2 = count_functions(mod_o2)
 
-            llvm.run_passes(mod_o2, "default<O2>", target_machine=tm, options=opts)
+            mod_o2.run_passes("default<O2>", target_machine=tm, options=opts)
 
             instr_after_o2 = count_instructions(mod_o2)
             funcs_after_o2 = count_functions(mod_o2)
@@ -214,8 +214,8 @@ def main():
             instr_before_custom = count_instructions(mod_custom)
 
             # Run just instcombine and simplifycfg
-            llvm.run_passes(
-                mod_custom, "instcombine,simplifycfg", target_machine=tm, options=opts
+            mod_custom.run_passes(
+                "instcombine,simplifycfg", target_machine=tm, options=opts
             )
 
             instr_after_custom = count_instructions(mod_custom)

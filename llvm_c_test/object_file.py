@@ -23,7 +23,7 @@ def object_list_sections() -> int:
     data = sys.stdin.buffer.read()
 
     try:
-        with llvm.create_binary_from_bytes(data) as binary:
+        with llvm.BinaryManager.from_bytes(data) as binary:
             # Iterate sections using Pythonic for loop
             for sect in binary.sections:
                 name = sect.name
@@ -50,7 +50,7 @@ def object_list_symbols() -> int:
     data = sys.stdin.buffer.read()
 
     try:
-        with llvm.create_binary_from_bytes(data) as binary:
+        with llvm.BinaryManager.from_bytes(data) as binary:
             # Get a section iterator to track containing sections
             sect = binary.sections
 

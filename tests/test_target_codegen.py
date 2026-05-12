@@ -10,11 +10,11 @@ LLVM Python APIs tested:
 - llvm.initialize_all_targets(), llvm.initialize_all_target_mcs()
 - llvm.initialize_all_asm_printers(), llvm.initialize_all_asm_parsers()
 - llvm.initialize_native_target(), llvm.initialize_native_asm_printer()
-- llvm.get_default_target_triple(), llvm.normalize_target_triple()
-- llvm.get_host_cpu_name(), llvm.get_host_cpu_features()
-- llvm.get_target_from_triple(), llvm.get_target_from_name()
+- llvm.default_target_triple, llvm.normalize_target_triple()
+- llvm.host_cpu_name, llvm.host_cpu_features
+- llvm.Target.from_triple(), llvm.Target.from_name()
 - Target.name, Target.description, Target.has_jit, etc.
-- llvm.create_target_machine()
+- llvm.TargetMachine.create()
 - TargetMachine.triple, TargetMachine.cpu, TargetMachine.feature_string
 - TargetMachine.create_data_layout()
 - TargetData.size_of_type_in_bits(), TargetData.abi_size_of_type(), etc.
@@ -42,16 +42,16 @@ def main():
     # ==========================================================================
     print("; Host queries:")
 
-    default_triple = llvm.get_default_target_triple()
+    default_triple = llvm.default_target_triple
     print(f";   Default triple: {default_triple}")
 
     normalized = llvm.normalize_target_triple(default_triple)
     print(f";   Normalized triple: {normalized}")
 
-    cpu_name = llvm.get_host_cpu_name()
+    cpu_name = llvm.host_cpu_name
     print(f";   Host CPU: {cpu_name}")
 
-    cpu_features = llvm.get_host_cpu_features()
+    cpu_features = llvm.host_cpu_features
     # Features can be very long, just check it's not empty
     print(f";   Host features length: {len(cpu_features)}")
 
@@ -61,7 +61,7 @@ def main():
     print(";")
     print("; Target lookup:")
 
-    target = llvm.get_target_from_triple(default_triple)
+    target = llvm.Target.from_triple(default_triple)
     if target is None:
         print("; ERROR: Failed to get target", file=sys.stderr)
         return 1
@@ -78,7 +78,7 @@ def main():
     print(";")
     print("; TargetMachine:")
 
-    tm = llvm.create_target_machine(
+    tm = llvm.TargetMachine.create(
         target,
         default_triple,
         "generic",
