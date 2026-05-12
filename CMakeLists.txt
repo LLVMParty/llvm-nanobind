@@ -55,6 +55,10 @@ target_compile_features(llvm PUBLIC
 	cxx_std_20
 )
 
+target_compile_options(llvm PUBLIC
+	"$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/Od>"
+)
+
 if(NOT TARGET LLVM-C-Wrapper)
 	message(FATAL_ERROR "Target \"LLVM-C-Wrapper\" referenced by \"llvm\" does not exist!")
 endif()
