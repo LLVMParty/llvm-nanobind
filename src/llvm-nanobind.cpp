@@ -4529,13 +4529,16 @@ struct LLVMBuilderWrapper : NoMoveCopy {
   LLVMBuilderRef m_ref = nullptr;
   LLVMContextRef m_ctx_ref = nullptr;
   std::shared_ptr<ValidityToken> m_context_token;
+  std::shared_ptr<ValidityToken> m_module_token;
   std::shared_ptr<ValidityToken> m_token;
 
   // Constructor with basic block (position at end)
   LLVMBuilderWrapper(LLVMContextRef ctx,
                      std::shared_ptr<ValidityToken> context_token,
-                     LLVMBasicBlockRef bb)
+                     LLVMBasicBlockRef bb,
+                     std::shared_ptr<ValidityToken> module_token = nullptr)
       : m_ctx_ref(ctx), m_context_token(std::move(context_token)),
+        m_module_token(std::move(module_token)),
         m_token(std::make_shared<ValidityToken>()) {
     m_ref = LLVMCreateBuilderInContext(ctx);
     LLVMPositionBuilderAtEnd(m_ref, bb);
@@ -4544,8 +4547,10 @@ struct LLVMBuilderWrapper : NoMoveCopy {
   // Constructor with instruction (position before/after debug records)
   LLVMBuilderWrapper(LLVMContextRef ctx,
                      std::shared_ptr<ValidityToken> context_token,
-                     LLVMValueRef inst, bool before_dbg)
+                     LLVMValueRef inst, bool before_dbg,
+                     std::shared_ptr<ValidityToken> module_token = nullptr)
       : m_ctx_ref(ctx), m_context_token(std::move(context_token)),
+        m_module_token(std::move(module_token)),
         m_token(std::make_shared<ValidityToken>()) {
     if (!LLVMIsAInstruction(inst))
       throw LLVMAssertionError("Builder position requires an instruction");
@@ -4577,6 +4582,8 @@ struct LLVMBuilderWrapper : NoMoveCopy {
       throw LLVMMemoryError("Builder has been disposed");
     if (!m_context_token || !m_context_token->is_valid())
       throw LLVMMemoryError("Builder used after context was destroyed");
+    if (m_module_token && !m_module_token->is_valid())
+      throw LLVMMemoryError("Builder used after module was disposed");
   }
 
   void dispose() {
@@ -5899,11 +5906,13 @@ struct LLVMModuleWrapper : NoMoveCopy {
   // Borrowed wrappers don't dispose the module when destroyed.
   static LLVMModuleWrapper *
   create_borrowed(LLVMModuleRef mod, LLVMContextRef ctx,
-                  std::shared_ptr<ValidityToken> context_token) {
+                  std::shared_ptr<ValidityToken> context_token,
+                  std::shared_ptr<ValidityToken> module_token = nullptr) {
     auto *wrapper = new LLVMModuleWrapper();
     wrapper->m_ref = mod;
     wrapper->m_context_token = std::move(context_token);
-    wrapper->m_token = std::make_shared<ValidityToken>();
+    wrapper->m_token = module_token ? std::move(module_token)
+                                    : std::make_shared<ValidityToken>();
     wrapper->m_ctx_ref = ctx;
     wrapper->m_borrowed = true;
     return wrapper;
@@ -5936,6 +5945,8 @@ struct LLVMModuleWrapper : NoMoveCopy {
 
   void check_valid() const {
     if (!m_ref)
+      throw LLVMMemoryError("Module has been disposed");
+    if (!m_token || !m_token->is_valid())
       throw LLVMMemoryError("Module has been disposed");
     if (!m_context_token || !m_context_token->is_valid())
       throw LLVMMemoryError("Module used after context was destroyed");
@@ -7039,6 +7050,7 @@ struct LLVMModuleManager : NoMoveCopy {
 struct LLVMBuilderManager : NoMoveCopy {
   LLVMContextWrapper *m_context = nullptr;
   std::shared_ptr<ValidityToken> m_context_token;
+  std::shared_ptr<ValidityToken> m_module_token;
   std::unique_ptr<LLVMBuilderWrapper> m_builder;
   bool m_entered = false;
   bool m_disposed = false;
@@ -7059,18 +7071,22 @@ struct LLVMBuilderManager : NoMoveCopy {
       throw LLVMMemoryError("Builder manager already entered");
     if (!m_context)
       throw LLVMMemoryError("No context provided");
-    // Check context token validity before dereferencing m_context
+    // Check context/module token validity before dereferencing saved IR refs.
     if (!m_context_token || !m_context_token->is_valid())
       throw LLVMMemoryError("Builder's context has been destroyed");
+    if (m_module_token && !m_module_token->is_valid())
+      throw LLVMMemoryError("Builder's module has been disposed");
     m_context->check_valid();
 
     // Create builder with position
     if (m_initial_bb) {
       m_builder = std::make_unique<LLVMBuilderWrapper>(
-          m_context->m_ref, m_context->m_token, *m_initial_bb);
+          m_context->m_ref, m_context->m_token, *m_initial_bb,
+          m_module_token);
     } else if (m_initial_inst) {
       m_builder = std::make_unique<LLVMBuilderWrapper>(
-          m_context->m_ref, m_context->m_token, *m_initial_inst, m_before_dbg);
+          m_context->m_ref, m_context->m_token, *m_initial_inst, m_before_dbg,
+          m_module_token);
     } else {
       throw LLVMMemoryError(
           "Builder must be created with a position (BasicBlock or "
@@ -10630,6 +10646,7 @@ LLVMModuleWrapper::create_builder(const LLVMBasicBlockWrapper &bb) {
         "create_builder requires a block belonging to this module");
   }
   auto manager = new LLVMBuilderManager(get_context());
+  manager->m_module_token = m_token;
   manager->m_initial_bb = bb.m_ref;
   return manager;
 }
@@ -10653,6 +10670,7 @@ LLVMModuleWrapper::create_builder(const LLVMValueWrapper &inst,
         "create_builder requires an instruction belonging to this module");
   }
   auto manager = new LLVMBuilderManager(get_context());
+  manager->m_module_token = m_token;
   manager->m_initial_inst = inst.m_ref;
   manager->m_before_dbg = before_dbg;
   return manager;
@@ -10670,7 +10688,8 @@ inline LLVMModuleWrapper *LLVMBuilderWrapper::module() const {
   if (!mod_ref)
     throw LLVMAssertionError("Builder insertion function has no parent module");
   LLVMContextRef ctx_ref = LLVMGetModuleContext(mod_ref);
-  return LLVMModuleWrapper::create_borrowed(mod_ref, ctx_ref, m_context_token);
+  return LLVMModuleWrapper::create_borrowed(mod_ref, ctx_ref, m_context_token,
+                                            m_module_token);
 }
 
 inline LLVMContextWrapper *LLVMBuilderWrapper::context() const {
