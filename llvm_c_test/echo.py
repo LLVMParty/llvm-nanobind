@@ -642,8 +642,8 @@ class FunCloner:
             nuw = src.nuw
             nsw = src.nsw
             dst = builder.add(lhs, rhs, name)
-            dst.set_nuw(nuw)
-            dst.set_nsw(nsw)
+            dst.nuw = nuw
+            dst.nsw = nsw
 
         elif op == llvm.Opcode.Sub:
             lhs = self.clone_value(src.get_operand(0))
@@ -651,8 +651,8 @@ class FunCloner:
             nuw = src.nuw
             nsw = src.nsw
             dst = builder.sub(lhs, rhs, name)
-            dst.set_nuw(nuw)
-            dst.set_nsw(nsw)
+            dst.nuw = nuw
+            dst.nsw = nsw
 
         elif op == llvm.Opcode.Mul:
             lhs = self.clone_value(src.get_operand(0))
@@ -660,22 +660,22 @@ class FunCloner:
             nuw = src.nuw
             nsw = src.nsw
             dst = builder.mul(lhs, rhs, name)
-            dst.set_nuw(nuw)
-            dst.set_nsw(nsw)
+            dst.nuw = nuw
+            dst.nsw = nsw
 
         elif op == llvm.Opcode.UDiv:
             lhs = self.clone_value(src.get_operand(0))
             rhs = self.clone_value(src.get_operand(1))
             is_exact = src.exact
             dst = builder.udiv(lhs, rhs, name)
-            dst.set_exact(is_exact)
+            dst.exact = is_exact
 
         elif op == llvm.Opcode.SDiv:
             lhs = self.clone_value(src.get_operand(0))
             rhs = self.clone_value(src.get_operand(1))
             is_exact = src.exact
             dst = builder.sdiv(lhs, rhs, name)
-            dst.set_exact(is_exact)
+            dst.exact = is_exact
 
         elif op == llvm.Opcode.URem:
             lhs = self.clone_value(src.get_operand(0))
@@ -693,22 +693,22 @@ class FunCloner:
             nuw = src.nuw
             nsw = src.nsw
             dst = builder.shl(lhs, rhs, name)
-            dst.set_nuw(nuw)
-            dst.set_nsw(nsw)
+            dst.nuw = nuw
+            dst.nsw = nsw
 
         elif op == llvm.Opcode.LShr:
             lhs = self.clone_value(src.get_operand(0))
             rhs = self.clone_value(src.get_operand(1))
             is_exact = src.exact
             dst = builder.lshr(lhs, rhs, name)
-            dst.set_exact(is_exact)
+            dst.exact = is_exact
 
         elif op == llvm.Opcode.AShr:
             lhs = self.clone_value(src.get_operand(0))
             rhs = self.clone_value(src.get_operand(1))
             is_exact = src.exact
             dst = builder.ashr(lhs, rhs, name)
-            dst.set_exact(is_exact)
+            dst.exact = is_exact
 
         elif op == llvm.Opcode.And:
             lhs = self.clone_value(src.get_operand(0))
@@ -720,7 +720,7 @@ class FunCloner:
             rhs = self.clone_value(src.get_operand(1))
             is_disjoint = src.is_disjoint
             dst = builder.or_(lhs, rhs, name)
-            dst.set_is_disjoint(is_disjoint)
+            dst.is_disjoint = is_disjoint
 
         elif op == llvm.Opcode.Xor:
             lhs = self.clone_value(src.get_operand(0))
@@ -735,21 +735,21 @@ class FunCloner:
         elif op == llvm.Opcode.Load:
             ptr = self.clone_value(src.get_operand(0))
             dst = builder.load(self.clone_type(src), ptr, name)
-            dst.set_inst_alignment(src.inst_alignment)
-            dst.set_ordering(src.ordering)
-            dst.set_volatile(src.is_volatile)
+            dst.inst_alignment = src.inst_alignment
+            dst.ordering = src.ordering
+            dst.is_volatile = src.is_volatile
             if src.is_atomic:
-                dst.set_atomic_sync_scope_id(src.atomic_sync_scope_id)
+                dst.atomic_sync_scope_id = src.atomic_sync_scope_id
 
         elif op == llvm.Opcode.Store:
             val = self.clone_value(src.get_operand(0))
             ptr = self.clone_value(src.get_operand(1))
             dst = builder.store(val, ptr)
-            dst.set_inst_alignment(src.inst_alignment)
-            dst.set_ordering(src.ordering)
-            dst.set_volatile(src.is_volatile)
+            dst.inst_alignment = src.inst_alignment
+            dst.ordering = src.ordering
+            dst.is_volatile = src.is_volatile
             if src.is_atomic:
-                dst.set_atomic_sync_scope_id(src.atomic_sync_scope_id)
+                dst.atomic_sync_scope_id = src.atomic_sync_scope_id
 
         elif op == llvm.Opcode.GetElementPtr:
             elem_ty = self.clone_type(src.gep_source_element_type)
@@ -769,7 +769,7 @@ class FunCloner:
                 bin_op, ptr, val, ordering, src.atomic_sync_scope_id
             )
             dst.alignment = src.alignment
-            dst.set_volatile(src.is_volatile)
+            dst.is_volatile = src.is_volatile
             dst.name = name
 
         elif op == llvm.Opcode.AtomicCmpXchg:
@@ -782,8 +782,8 @@ class FunCloner:
                 ptr, cmp, new, succ, fail, src.atomic_sync_scope_id
             )
             dst.alignment = src.alignment
-            dst.set_volatile(src.is_volatile)
-            dst.set_weak(src.weak)
+            dst.is_volatile = src.is_volatile
+            dst.weak = src.weak
             dst.name = name
 
         elif op == llvm.Opcode.BitCast:
@@ -796,7 +796,7 @@ class FunCloner:
             lhs = self.clone_value(src.get_operand(0))
             rhs = self.clone_value(src.get_operand(1))
             dst = builder.icmp(pred, lhs, rhs, name)
-            dst.set_icmp_same_sign(same_sign)
+            dst.icmp_same_sign = same_sign
 
         elif op == llvm.Opcode.PHI:
             # We need to aggressively set things here because of loops
@@ -808,7 +808,7 @@ class FunCloner:
                 dst.add_incoming(value, block)
             # Copy fast math flags and return early
             if src.can_use_fast_math_flags:
-                dst.set_fast_math_flags(src.fast_math_flags)
+                dst.fast_math_flags = src.fast_math_flags
             return dst
 
         elif op == llvm.Opcode.Select:
@@ -832,7 +832,7 @@ class FunCloner:
             fn_ty = self.clone_type(src.called_function_type)
             fn = self.clone_value(src.called_value)
             dst = builder.call_with_operand_bundles(fn_ty, fn, args, bundles, name)
-            dst.set_tail_call_kind(src.tail_call_kind)
+            dst.tail_call_kind = src.tail_call_kind
             self.clone_attrs(src, dst)
 
         elif op == llvm.Opcode.Resume:
@@ -843,7 +843,7 @@ class FunCloner:
             num_clauses = src.num_clauses
             for i in range(num_clauses):
                 dst.add_clause(self.clone_value(src.get_clause(i)))
-            dst.set_cleanup(src.is_cleanup)
+            dst.is_cleanup = src.is_cleanup
 
         elif op == llvm.Opcode.CleanupRet:
             catch_pad = self.clone_value(src.get_operand(0))
@@ -943,7 +943,7 @@ class FunCloner:
             dest_ty = self.clone_type(src)
             nneg = src.nneg
             dst = builder.zext(val, dest_ty, name)
-            dst.set_nneg(nneg)
+            dst.nneg = nneg
 
         elif op == llvm.Opcode.FAdd:
             lhs = self.clone_value(src.get_operand(0))
@@ -1031,7 +1031,7 @@ class FunCloner:
 
         # Copy fast-math flags on instructions that support them
         if src.can_use_fast_math_flags:
-            dst.set_fast_math_flags(src.fast_math_flags)
+            dst.fast_math_flags = src.fast_math_flags
 
         # Copy instruction metadata
         ctx = self.module.context
@@ -1296,9 +1296,9 @@ def clone_symbols(src: llvm.Module, m: llvm.Module) -> None:
                 md = all_metadata.get_metadata(i)
                 g.set_metadata(kind, md, ctx)
 
-            g.set_constant(cur.is_global_constant)
-            g.set_thread_local(cur.is_thread_local)
-            g.set_externally_initialized(cur.is_externally_initialized)
+            g.is_global_constant = cur.is_global_constant
+            g.is_thread_local = cur.is_thread_local
+            g.is_externally_initialized = cur.is_externally_initialized
             g.linkage = cur.linkage
             g.section = cur.section
             g.visibility = cur.visibility
@@ -1337,7 +1337,7 @@ def clone_symbols(src: llvm.Module, m: llvm.Module) -> None:
                 p = m.get_function(p_name)
                 if not p:
                     raise RuntimeError("Could not find personality function")
-                fun.set_personality_fn(p)
+                fun.personality_fn = p
 
             # Copy function metadata
             ctx = m.context
@@ -1351,12 +1351,12 @@ def clone_symbols(src: llvm.Module, m: llvm.Module) -> None:
             if cur.has_prefix_data:
                 prefix_data = cur.prefix_data
                 assert prefix_data is not None  # Guaranteed by has_prefix_data
-                fun.set_prefix_data(clone_constant(prefix_data, m))
+                fun.prefix_data = clone_constant(prefix_data, m)
 
             if cur.has_prologue_data:
                 prologue_data = cur.prologue_data
                 assert prologue_data is not None  # Guaranteed by has_prologue_data
-                fun.set_prologue_data(clone_constant(prologue_data, m))
+                fun.prologue_data = clone_constant(prologue_data, m)
 
             fc = FunCloner(cur, fun, m)
             fc.clone_bbs(cur)
@@ -1420,7 +1420,7 @@ def clone_symbols(src: llvm.Module, m: llvm.Module) -> None:
 
             resolver = cur.global_ifunc_resolver
             if resolver:
-                ifunc.set_global_ifunc_resolver(clone_constant(resolver, m))
+                ifunc.global_ifunc_resolver = clone_constant(resolver, m)
 
             ifunc.linkage = cur.linkage
             ifunc.unnamed_address = cur.unnamed_address

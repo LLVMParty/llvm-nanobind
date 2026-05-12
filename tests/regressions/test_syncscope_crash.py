@@ -102,7 +102,7 @@ def test_syncscope_clone():
                         llvm.AtomicOrdering.AcquireRelease,
                         sync_scope_id,
                     )
-                    atomic.set_volatile(True)
+                    atomic.is_volatile = True
                     atomic.alignment = 8
 
                     print("Atomic created", file=sys.stderr)

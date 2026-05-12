@@ -35,7 +35,7 @@ def main():
             # Verify module
             if not mod.verify():
                 print(
-                    f"; Verification failed: {mod.get_verification_error()}",
+                    f"; Verification failed: {mod.verification_error}",
                     file=sys.stderr,
                 )
                 return 1

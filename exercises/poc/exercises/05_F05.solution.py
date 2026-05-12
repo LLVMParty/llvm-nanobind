@@ -6,4 +6,4 @@ def solve(input_ir: str) -> str:
         with ctx.parse_ir(input_ir) as mod:
             if mod.verify():
                 return ""
-            return mod.get_verification_error()
+            return mod.verification_error

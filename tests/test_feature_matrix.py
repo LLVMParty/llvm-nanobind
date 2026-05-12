@@ -399,7 +399,7 @@ def test_comdat():
             assert g.comdat is None
 
             # Set comdat
-            g.set_comdat(comdat)
+            g.comdat = comdat
 
             # Get comdat back
             retrieved = g.comdat

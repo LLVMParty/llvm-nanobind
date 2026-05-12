@@ -20,7 +20,7 @@ with llvm.create_context() as ctx:
 # Output
 ir_string = mod.to_string()
 is_valid = mod.verify()
-error = mod.get_verification_error()
+error = mod.verification_error
 ```
 
 ## Types
@@ -283,7 +283,7 @@ print(dir(thing))
 
 # Verify validity
 if not mod.verify():
-    print(mod.get_verification_error())
+    print(mod.verification_error)
 ```
 
 ---

@@ -39,7 +39,7 @@ def test_const_string_accepts_bytes_without_utf8_expansion():
             g_raw_nt = mod.add_global(i8.array(len(raw) + 1), "g_raw_nt")
             g_raw_nt.initializer = const_raw_nt
 
-            assert mod.verify(), mod.get_verification_error()
+            assert mod.verify(), mod.verification_error
 
 
 def test_const_data_array_accepts_bytes_without_utf8_expansion():
@@ -61,7 +61,7 @@ def test_const_data_array_accepts_bytes_without_utf8_expansion():
             g2 = mod.add_global(i8.array(len(raw)), "g2")
             g2.initializer = arr_method
 
-            assert mod.verify(), mod.get_verification_error()
+            assert mod.verify(), mod.verification_error
 
 
 if __name__ == "__main__":

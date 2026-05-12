@@ -13,7 +13,7 @@ def test_diagnostic_handler():
     """Test diagnostic handler functionality.
 
     The Python binding automatically installs a diagnostic handler that collects
-    diagnostics. We use get_diagnostics() to check if any were triggered during
+    diagnostics. We use ctx.diagnostics to check if any were triggered during
     bitcode parsing.
     """
     # Get global context (has automatic diagnostic handler installed)
@@ -40,7 +40,7 @@ def test_diagnostic_handler():
         pass
 
     # Check context diagnostics
-    diagnostics = ctx.get_diagnostics()
+    diagnostics = ctx.diagnostics
     handler_called = len(diagnostics) > 0
 
     # Check if diagnostic handler was called

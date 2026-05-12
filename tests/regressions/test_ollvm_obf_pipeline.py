@@ -33,7 +33,7 @@ def test_ollvm_if_convert_eliminates_phi_and_introduces_select() -> None:
         with ctx.parse_ir(ir) as mod:
             apply_pipeline(mod, PipelineOptions(if_convert=True, verify_each=True))
             text = mod.to_string()
-            assert mod.verify(), mod.get_verification_error()
+            assert mod.verify(), mod.verification_error
             assert " phi " not in text
             assert "select i1" in text
 
@@ -82,7 +82,7 @@ def test_ollvm_supported_pipeline_smoke() -> None:
                     seed=123,
                 ),
             )
-            assert mod.verify(), mod.get_verification_error()
+            assert mod.verify(), mod.verification_error
 
 
 def test_ollvm_flatten_smoke() -> None:
@@ -108,7 +108,7 @@ def test_ollvm_flatten_smoke() -> None:
         with ctx.parse_ir(ir) as mod:
             apply_pipeline(mod, PipelineOptions(flatten=True, verify_each=True, seed=7))
             text = mod.to_string()
-            assert mod.verify(), mod.get_verification_error()
+            assert mod.verify(), mod.verification_error
             assert "cff.dispatch" in text
             assert "cff.state" in text
 
@@ -126,7 +126,7 @@ def test_ollvm_remaining_passes_smoke() -> None:
     with llvm.create_context() as ctx:
         with ctx.parse_ir(string_ir) as mod:
             apply_pipeline(mod, PipelineOptions(string_encrypt=True, verify_each=True, seed=1))
-            assert mod.verify(), mod.get_verification_error()
+            assert mod.verify(), mod.verification_error
             text = mod.to_string()
             assert "__ollvm_str_enc_0" in text
             assert "__ollvm_str_key_0" in text
@@ -144,7 +144,7 @@ def test_ollvm_remaining_passes_smoke() -> None:
     with llvm.create_context() as ctx:
         with ctx.parse_ir(bmi_ir) as mod:
             apply_pipeline(mod, PipelineOptions(bmi_mutate=True, verify_each=True, seed=7))
-            assert mod.verify(), mod.get_verification_error()
+            assert mod.verify(), mod.verification_error
             text = mod.to_string()
             assert "@llvm.x86.bmi.bzhi.32(" in text
             assert ".i32(" not in text
@@ -192,7 +192,7 @@ def test_ollvm_remaining_passes_smoke() -> None:
                     seed=123,
                 ),
             )
-            assert mod.verify(), mod.get_verification_error()
+            assert mod.verify(), mod.verification_error
 
 
 def test_ollvm_loop_to_recursion_smoke() -> None:
@@ -217,7 +217,7 @@ def test_ollvm_loop_to_recursion_smoke() -> None:
         with ctx.parse_ir(ir) as mod:
             apply_pipeline(mod, PipelineOptions(loop_to_recursion=True, verify_each=True, seed=7))
             text = mod.to_string()
-            assert mod.verify(), mod.get_verification_error()
+            assert mod.verify(), mod.verification_error
             assert "musttail call" in text
             assert "@sum_loop.recur" in text
 
@@ -278,7 +278,7 @@ def test_ollvm_loop_to_recursion_skips_multi_exit_loop() -> None:
             before = mod.to_string()
             apply_pipeline(mod, PipelineOptions(loop_to_recursion=True, verify_each=True, seed=7))
             after = mod.to_string()
-            assert mod.verify(), mod.get_verification_error()
+            assert mod.verify(), mod.verification_error
             assert "musttail call" not in after
             assert "@f.recur" not in after
             assert after == before

@@ -171,6 +171,40 @@ def test_member_factories_and_builder_navigation() -> None:
     for name in removed_globals:
         assert not hasattr(llvm, name), name
 
+    removed_class_methods = {
+        llvm.Context: ["get_diagnostics"],
+        llvm.Module: ["get_verification_error"],
+        llvm.Function: ["get_personality_fn", "set_personality_fn", "get_gc", "set_gc"],
+        llvm.Value: [
+            "set_constant",
+            "set_comdat",
+            "set_thread_local",
+            "set_externally_initialized",
+            "set_volatile",
+            "set_inst_alignment",
+            "set_global_ifunc_resolver",
+            "set_personality_fn",
+            "set_prefix_data",
+            "set_prologue_data",
+            "set_nsw",
+            "set_nuw",
+            "set_exact",
+            "set_nneg",
+            "set_is_disjoint",
+            "set_icmp_same_sign",
+            "set_ordering",
+            "set_atomic_sync_scope_id",
+            "set_weak",
+            "set_tail_call_kind",
+            "set_called_operand",
+            "set_cleanup",
+            "set_fast_math_flags",
+        ],
+    }
+    for cls, names in removed_class_methods.items():
+        for name in names:
+            assert not hasattr(cls, name), f"{cls.__name__}.{name}"
+
     assert isinstance(llvm.default_target_triple, str)
     assert isinstance(llvm.host_cpu_name, str)
     assert isinstance(llvm.host_cpu_features, str)

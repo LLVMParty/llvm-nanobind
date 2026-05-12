@@ -158,7 +158,7 @@ with llvm.create_context() as ctx:
             result = builder.add(lhs, rhs, "sum")
             builder.ret(result)
 
-        assert mod.verify(), mod.get_verification_error()
+        assert mod.verify(), mod.verification_error
 ```
 
 ---

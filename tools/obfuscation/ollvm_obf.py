@@ -2482,7 +2482,7 @@ def loop_to_recursion_module(mod: llvm.Module, seed: int, cfg: FilterConfig) -> 
         recurse_args.extend(helper.get_param(len(phis) + i) for i in range(len(live_ins)))
         with recurse_bb.create_builder() as builder:
             tail_call = builder.call(helper_ty, helper, list(recurse_args), "")
-            tail_call.set_tail_call_kind(llvm.TailCallKind.MustTail)
+            tail_call.tail_call_kind = llvm.TailCallKind.MustTail
             if ret_ty == fn.context.types.void:
                 builder.ret_void()
             else:
@@ -2654,7 +2654,7 @@ def clone_functions_module(mod: llvm.Module, seed: int, cfg: FilterConfig) -> No
 
         for call_site in call_sites:
             picked = variants[rng.randrange(len(variants))]
-            call_site.set_called_operand(picked)
+            call_site.called_value = picked
 
         cloned += 1
 
@@ -2759,7 +2759,7 @@ def apply_pipeline(mod: llvm.Module, options: PipelineOptions) -> None:
         if options.verify_each and not mod.verify():
             raise RuntimeError(
                 f"ollvm-obf: module verification failed after {pass_name}: "
-                f"{mod.get_verification_error()}"
+                f"{mod.verification_error}"
             )
 
     if options.string_encrypt:
@@ -2843,7 +2843,7 @@ def apply_pipeline(mod: llvm.Module, options: PipelineOptions) -> None:
     if not mod.verify():
         raise RuntimeError(
             "ollvm-obf: module verification failed after obfuscation: "
-            + mod.get_verification_error()
+            + mod.verification_error
         )
 
 

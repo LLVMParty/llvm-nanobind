@@ -25,7 +25,7 @@ def test_get_unwind_dest_returns_none_when_not_present():
             # Create main function
             fn_ty = ctx.types.function(void_ty, [])
             fn = m.add_function("test_cleanup", fn_ty)
-            fn.set_personality_fn(personality_fn)
+            fn.personality_fn = personality_fn
 
             entry = fn.append_basic_block("entry")
             cleanup_block = fn.append_basic_block("cleanup")
@@ -62,7 +62,7 @@ def test_get_unwind_dest_returns_block_when_present():
             # Create main function
             fn_ty = ctx.types.function(void_ty, [])
             fn = m.add_function("test_invoke", fn_ty)
-            fn.set_personality_fn(personality_fn)
+            fn.personality_fn = personality_fn
 
             entry = fn.append_basic_block("entry")
             normal = fn.append_basic_block("normal")
@@ -86,7 +86,7 @@ def test_get_unwind_dest_returns_block_when_present():
                 landing = builder.landing_pad(
                     ctx.types.struct([ctx.types.ptr, i32_ty]), 0, "lp"
                 )
-                landing.set_cleanup(True)
+                landing.is_cleanup = True
                 builder.ret_void()
 
                 # Verify unwind_dest returns the unwind block

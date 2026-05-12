@@ -10,7 +10,7 @@ Do not fix the IR; report the failure.
 """
 hints = [
   "Parse can succeed while verification fails.",
-  "Use `mod.get_verification_error()` for the reason text.",
+  "Use `mod.verification_error` for the reason text.",
 ]
 
 [validation]

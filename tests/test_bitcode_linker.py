@@ -65,7 +65,7 @@ def main():
             # Verify
             if not mod1_copy.verify():
                 print(
-                    f"; ERROR: Verification failed: {mod1_copy.get_verification_error()}",
+                    f"; ERROR: Verification failed: {mod1_copy.verification_error}",
                     file=sys.stderr,
                 )
 
@@ -130,7 +130,7 @@ def main():
             # Verify linked module
             if not dest.verify():
                 print(
-                    f"; ERROR: Linked module verification failed: {dest.get_verification_error()}",
+                    f"; ERROR: Linked module verification failed: {dest.verification_error}",
                     file=sys.stderr,
                 )
 

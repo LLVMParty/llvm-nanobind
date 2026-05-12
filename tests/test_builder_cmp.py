@@ -161,7 +161,7 @@ def main():
 
             # Verify module
             if not mod.verify():
-                print(f"; Verification failed: {mod.get_verification_error()}")
+                print(f"; Verification failed: {mod.verification_error}")
                 return 1
 
             # Print diagnostic comments

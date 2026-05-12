@@ -150,8 +150,8 @@ def some_api_call(self):
 **Example: Sync Scope ID Issue**
 ```python
 # BAD: Sync scope ID is context-specific
-src_id = src.get_atomic_sync_scope_id()
-dst.set_atomic_sync_scope_id(src_id)  # Wrong context!
+src_id = src.atomic_sync_scope_id
+dst.atomic_sync_scope_id = src_id  # Wrong context!
 
 # GOOD: Map sync scope name across contexts
 # (Implementation depends on available APIs)

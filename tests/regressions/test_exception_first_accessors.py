@@ -69,10 +69,6 @@ def test_function_metadata_accessors_require_has_checks():
                 lambda: fn.personality_fn, ["personality_fn", "has_personality_fn"]
             )
             _assert_raises_assertion(
-                lambda: fn.get_personality_fn(),
-                ["get_personality_fn", "has_personality_fn"],
-            )
-            _assert_raises_assertion(
                 lambda: fn.prefix_data, ["prefix_data", "has_prefix_data"]
             )
             _assert_raises_assertion(
@@ -91,12 +87,12 @@ def test_function_metadata_accessors_work_when_present():
             personality = mod.add_function("__personality", personality_ty)
             fn = mod.add_function("f", fn_ty)
 
-            fn.set_personality_fn(personality)
-            fn.set_prefix_data(ctx.types.ptr.null())
-            fn.set_prologue_data(ctx.types.ptr.null())
+            fn.personality_fn = personality
+            fn.prefix_data = ctx.types.ptr.null()
+            fn.prologue_data = ctx.types.ptr.null()
 
             assert fn.has_personality_fn
-            assert fn.get_personality_fn() == personality
+            assert fn.personality_fn == personality
             assert fn.personality_fn == personality
             assert fn.has_prefix_data
             assert fn.prefix_data is not None
