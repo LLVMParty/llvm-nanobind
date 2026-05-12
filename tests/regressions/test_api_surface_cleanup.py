@@ -3,6 +3,7 @@ Regression coverage for API surface cleanup helpers.
 
 Covers:
 - Module add_* get_or_insert=True defaults and explicit raw insertion escape hatch
+- Named struct get_or_insert=True defaults and explicit raw insertion escape hatch
 - New member/factory APIs that replace module-level helpers
 - Builder parent navigation helpers and Module.create_builder()
 """
@@ -71,6 +72,42 @@ def test_module_add_get_or_insert_semantics() -> None:
                 "ifunc", resolver_ty, 0, resolver, get_or_insert=False
             )
             assert raw_ifunc.name != "ifunc"
+
+
+def test_named_struct_get_or_insert_semantics() -> None:
+    with llvm.create_context() as ctx:
+        i32 = ctx.types.i32
+        i64 = ctx.types.i64
+
+        pair = ctx.types.struct("Pair", [i32, i64], packed=False)
+        assert pair.struct_name == "Pair"
+        assert not pair.is_opaque_struct
+        assert ctx.types.struct("Pair", [i32, i64], packed=False) == pair
+        expect_raises(
+            lambda: ctx.types.struct("Pair", [i32], packed=False),
+            "different body",
+        )
+        expect_raises(
+            lambda: ctx.types.struct("Pair", [i32, i64], packed=True),
+            "different packing",
+        )
+
+        raw_pair = ctx.types.struct(
+            "Pair", [i32, i64], packed=False, get_or_insert=False
+        )
+        assert raw_pair != pair
+        assert raw_pair.struct_name != "Pair"
+
+        forward = ctx.types.opaque_struct("Forward")
+        assert forward.is_opaque_struct
+        assert ctx.types.opaque_struct("Forward") == forward
+        completed = ctx.types.struct("Forward", [i32])
+        assert completed == forward
+        assert not completed.is_opaque_struct
+
+        raw_forward = ctx.types.opaque_struct("Forward", get_or_insert=False)
+        assert raw_forward != forward
+        assert raw_forward.struct_name != "Forward"
 
 
 def test_member_factories_and_builder_navigation() -> None:
@@ -187,5 +224,6 @@ def test_member_factories_and_builder_navigation() -> None:
 
 if __name__ == "__main__":
     test_module_add_get_or_insert_semantics()
+    test_named_struct_get_or_insert_semantics()
     test_member_factories_and_builder_navigation()
     print("test_api_surface_cleanup: PASSED")

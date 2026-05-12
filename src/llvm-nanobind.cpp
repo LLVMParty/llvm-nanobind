@@ -1010,44 +1010,94 @@ struct LLVMTypeFactoryWrapper {
         m_context_token);
   }
 
-  // Unified struct() method: named if name is provided, anonymous otherwise
-  LLVMTypeWrapper struct_(const Iterable<LLVMTypeWrapper> &elem_types,
-                          const std::string &name = "",
-                          bool packed = false) const {
-    check_valid();
+  std::vector<LLVMTypeRef>
+  collect_type_refs(const Iterable<LLVMTypeWrapper> &types) const {
+    std::vector<LLVMTypeRef> refs;
+    refs.reserve(types.size());
+    for (const auto &type : types) {
+      type.check_valid();
+      if (LLVMGetTypeContext(type.m_ref) != m_ctx_ref) {
+        throw LLVMAssertionError(
+            "Struct element types must belong to this context");
+      }
+      refs.push_back(type.m_ref);
+    }
+    return refs;
+  }
 
-    if (!name.empty()) {
-      // Named struct
-      LLVMTypeRef s = LLVMStructCreateNamed(m_ctx_ref, name.c_str());
-      if (!elem_types.empty()) {
-        std::vector<LLVMTypeRef> elems;
-        elems.reserve(elem_types.size());
-        for (const auto &e : elem_types) {
-          e.check_valid();
-          elems.push_back(e.m_ref);
-        }
-        LLVMStructSetBody(s, elems.data(), static_cast<unsigned>(elems.size()),
-                          packed);
+  static void require_same_struct_body(LLVMTypeRef existing,
+                                       const std::vector<LLVMTypeRef> &elems,
+                                       bool packed,
+                                       const std::string &name) {
+    if (LLVMIsOpaqueStruct(existing))
+      return;
+    if (static_cast<bool>(LLVMIsPackedStruct(existing)) != packed) {
+      throw LLVMAssertionError("struct '" + name +
+                               "' already exists with different packing");
+    }
+    unsigned count = LLVMCountStructElementTypes(existing);
+    if (count != elems.size()) {
+      throw LLVMAssertionError("struct '" + name +
+                               "' already exists with a different body");
+    }
+    for (unsigned i = 0; i < count; ++i) {
+      if (LLVMStructGetTypeAtIndex(existing, i) != elems[i]) {
+        throw LLVMAssertionError("struct '" + name +
+                                 "' already exists with a different body");
       }
-      return LLVMTypeWrapper(s, m_context_token);
-    } else {
-      // Anonymous struct
-      std::vector<LLVMTypeRef> elems;
-      elems.reserve(elem_types.size());
-      for (const auto &e : elem_types) {
-        e.check_valid();
-        elems.push_back(e.m_ref);
-      }
-      return LLVMTypeWrapper(
-          LLVMStructTypeInContext(m_ctx_ref, elems.data(),
-                                  static_cast<unsigned>(elems.size()), packed),
-          m_context_token);
     }
   }
 
-  // Opaque named struct (forward declaration)
-  LLVMTypeWrapper opaque_struct(const std::string &name) const {
+  LLVMTypeWrapper struct_with_name(const std::string &name,
+                                   const Iterable<LLVMTypeWrapper> &elem_types,
+                                   bool packed = false,
+                                   bool get_or_insert = true) const {
     check_valid();
+    if (name.empty()) {
+      throw LLVMAssertionError(
+          "Named struct type requires a non-empty name");
+    }
+    std::vector<LLVMTypeRef> elems = collect_type_refs(elem_types);
+
+    if (get_or_insert) {
+      if (LLVMTypeRef existing = LLVMGetTypeByName2(m_ctx_ref, name.c_str())) {
+        require_same_struct_body(existing, elems, packed, name);
+        if (LLVMIsOpaqueStruct(existing)) {
+          LLVMStructSetBody(existing, elems.data(),
+                            static_cast<unsigned>(elems.size()), packed);
+        }
+        return LLVMTypeWrapper(existing, m_context_token);
+      }
+    }
+
+    LLVMTypeRef s = LLVMStructCreateNamed(m_ctx_ref, name.c_str());
+    LLVMStructSetBody(s, elems.data(), static_cast<unsigned>(elems.size()),
+                      packed);
+    return LLVMTypeWrapper(s, m_context_token);
+  }
+
+  // Literal (anonymous) struct type.
+  LLVMTypeWrapper struct_(const Iterable<LLVMTypeWrapper> &elem_types,
+                          bool packed = false) const {
+    check_valid();
+    std::vector<LLVMTypeRef> elems = collect_type_refs(elem_types);
+    return LLVMTypeWrapper(
+        LLVMStructTypeInContext(m_ctx_ref, elems.data(),
+                                static_cast<unsigned>(elems.size()), packed),
+        m_context_token);
+  }
+
+  // Opaque named struct (forward declaration)
+  LLVMTypeWrapper opaque_struct(const std::string &name,
+                                bool get_or_insert = true) const {
+    check_valid();
+    if (name.empty()) {
+      throw LLVMAssertionError("Opaque struct type requires a non-empty name");
+    }
+    if (get_or_insert) {
+      if (LLVMTypeRef existing = LLVMGetTypeByName2(m_ctx_ref, name.c_str()))
+        return LLVMTypeWrapper(existing, m_context_token);
+    }
     return LLVMTypeWrapper(LLVMStructCreateNamed(m_ctx_ref, name.c_str()),
                            m_context_token);
   }
@@ -14218,12 +14268,30 @@ Returns a BuilderManager for use with Python's 'with' statement.
 
 <sub>C API: LLVMFunctionType</sub>)")
       .def("struct", &LLVMTypeFactoryWrapper::struct_, "elem_types"_a,
-           "name"_a = "", "packed"_a = false,
-           R"(Struct type.
+           "packed"_a = false,
+           R"(Literal (anonymous) struct type.
 
-<sub>C API: LLVMStructTypeInContext, LLVMStructCreateNamed</sub>)")
+Use struct(name, elem_types, ...) for identified named structs.
+
+<sub>C API: LLVMStructTypeInContext</sub>)")
+      .def("struct", &LLVMTypeFactoryWrapper::struct_with_name, "name"_a,
+           "elem_types"_a, "packed"_a = false, nb::kw_only(),
+           "get_or_insert"_a = true,
+           R"(Named struct type.
+
+Named structs default to lookup-first get-or-insert semantics: an existing
+struct with the same name and body is returned, an opaque declaration is
+completed, and a different existing body raises. Pass get_or_insert=False for
+LLVM's raw inserting behavior, which may append a suffix to duplicate names.
+
+<sub>C API: LLVMStructCreateNamed</sub>)")
       .def("opaque_struct", &LLVMTypeFactoryWrapper::opaque_struct, "name"_a,
+           nb::kw_only(), "get_or_insert"_a = true,
            R"(Opaque struct type.
+
+Defaults to returning an existing named struct with this name. Pass
+get_or_insert=False for LLVM's raw inserting behavior, which may append a
+suffix to duplicate names.
 
 <sub>C API: LLVMStructCreateNamed</sub>)")
       .def("array", &LLVMTypeFactoryWrapper::array, "elem_ty"_a, "count"_a,
