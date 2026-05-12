@@ -134,11 +134,11 @@ calls should raise `llvm.LLVMAssertionError` (not crash).
   - `num_arg_operands`, `get_arg_operand`
 - Tail call kind (`call`, `invoke`):
   - `tail_call_kind`, `set_tail_call_kind`
-- Callsite attributes:
-  - `get_callsite_attribute_count`
-  - `get_callsite_enum_attribute`
-  - `add_callsite_attribute`
-  - Requires call-like instruction and `-1 <= idx <= num_arg_operands`.
+- Callsite attributes use slot accessors:
+  - `callsite_attributes` for callsite-level attributes.
+  - `callsite_return_attributes` for return-value attributes.
+  - `callsite_param_attributes(i)` for argument attributes, using a 0-based Python index.
+  - Requires a call-like instruction.
 
 ### Atomic/Memory Families
 
@@ -240,11 +240,11 @@ This section captures guard preconditions for wrapper classes other than
 - Basic block accessors are exception-first:
   - `entry_block` requires `is_declaration == False`.
   - `first_basic_block` / `last_basic_block` require `basic_block_count > 0`.
-- Attribute index APIs:
-  - `get_attribute_count`, `get_enum_attribute`, `add_attribute`,
-    `get_attributes`, `get_string_attribute`,
-    `remove_enum_attribute`, `remove_string_attribute`
-  - valid index range: `-1` (function), `0` (return), `1..param_count`.
+- Attribute APIs use slot accessors, not raw LLVM indices:
+  - `attributes` for function-level attributes.
+  - `return_attributes` for return-value attributes.
+  - `param_attributes(i)` for parameter attributes, using a 0-based Python index.
+  - Use `llvm.Attribute.enum/type/string(...)` or `slot.add("noreturn")`.
 - `block_address` requires block ownership by that function.
   Prefer `bb.block_address()` when the function can be inferred.
 - Parent navigation:

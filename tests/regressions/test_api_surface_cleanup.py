@@ -118,6 +118,9 @@ def test_member_factories_and_builder_navigation() -> None:
     llvm.initialize_all_asm_parsers()
 
     removed_globals = [
+        "AttributeFunctionIndex",
+        "AttributeReturnIndex",
+        "last_enum_attribute_kind",
         "block_address",
         "const_data_array",
         "const_gep_with_no_wrap_flags",
@@ -164,6 +167,7 @@ def test_member_factories_and_builder_navigation() -> None:
         "get_target_from_name",
         "get_target_from_triple",
         "intrinsic_get_type",
+        "lookup_enum_attribute_kind",
         "replace_md_node_operand_with",
         "run_passes",
         "strip_module_debug_info",
@@ -172,9 +176,28 @@ def test_member_factories_and_builder_navigation() -> None:
         assert not hasattr(llvm, name), name
 
     removed_class_methods = {
-        llvm.Context: ["get_diagnostics"],
+        llvm.Context: [
+            "get_diagnostics",
+            "create_enum_attribute",
+            "create_string_attribute",
+            "create_type_attribute",
+        ],
         llvm.Module: ["get_verification_error"],
-        llvm.Function: ["get_personality_fn", "set_personality_fn", "get_gc", "set_gc"],
+        llvm.Function: [
+            "get_personality_fn",
+            "set_personality_fn",
+            "get_gc",
+            "set_gc",
+            "get_attribute_count",
+            "get_enum_attribute",
+            "add_attribute",
+            "get_attributes",
+            "get_string_attribute",
+            "remove_enum_attribute",
+            "remove_string_attribute",
+        ],
+        llvm.Attribute: ["kind"],
+        llvm.AttributeAccessor: ["get_enum", "remove_enum"],
         llvm.Value: [
             "set_constant",
             "set_comdat",
@@ -199,6 +222,9 @@ def test_member_factories_and_builder_navigation() -> None:
             "set_called_operand",
             "set_cleanup",
             "set_fast_math_flags",
+            "get_callsite_attribute_count",
+            "get_callsite_enum_attribute",
+            "add_callsite_attribute",
         ],
     }
     for cls, names in removed_class_methods.items():
@@ -208,7 +234,6 @@ def test_member_factories_and_builder_navigation() -> None:
     assert isinstance(llvm.default_target_triple, str)
     assert isinstance(llvm.host_cpu_name, str)
     assert isinstance(llvm.host_cpu_features, str)
-    assert isinstance(llvm.last_enum_attribute_kind, int)
     assert isinstance(llvm.debug_metadata_version, int)
 
     with llvm.create_context() as ctx:

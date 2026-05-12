@@ -12,7 +12,7 @@ The earliest API mirrored the LLVM C API directly. While this made initial imple
 # Current: Pythonic object-oriented API
 i32 = ctx.types.i32
 const = i32.constant(42)
-func.add_attribute(0, attr)
+func.attributes.add(attr)
 inst.set_metadata(kind, md)
 ```
 
@@ -24,7 +24,7 @@ inst.set_metadata(kind, md)
 
 **Principle**: Operations on an object should be methods of that object, not global functions that take the object as an argument.
 
-**Why**: Python is object-oriented. When you write `func.add_attribute()`, it's immediately clear you're modifying a function. With `llvm.add_attribute_at_index(func, ...)`, you must read the arguments to understand what's being modified.
+**Why**: Python is object-oriented. When you write `func.attributes.add("noreturn")`, it's clear which function and which attribute slot are being modified. With `llvm.add_attribute_at_index(func, ...)`, you must read the arguments and know LLVM's raw index convention.
 
 **C API constraint**: The C language has no classes, so LLVM uses `LLVMAddAttributeAtIndex(LLVMValueRef Fn, ...)`. Python has no such limitation.
 

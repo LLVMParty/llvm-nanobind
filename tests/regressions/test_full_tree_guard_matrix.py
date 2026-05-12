@@ -145,8 +145,8 @@ def test_attribute_operand_bundle_and_entries_guards():
     with llvm.create_context() as ctx:
         with ctx.create_module("attrmd") as mod:
             i32 = ctx.types.i32
-            enum_attr = ctx.create_enum_attribute(1, 0)
-            string_attr = ctx.create_string_attribute("k", "v")
+            enum_attr = llvm.Attribute.enum(ctx, "cold")
+            string_attr = llvm.Attribute.string(ctx, "k", "v")
 
             assert_llvm_error(lambda: enum_attr.string_kind, "not a string attribute")
             assert_llvm_error(lambda: enum_attr.string_value, "not a string attribute")
@@ -281,7 +281,7 @@ def test_lifetime_guards_for_remaining_wrappers():
         with ctx.create_module("lifetime") as mod:
             i32 = ctx.types.i32
             escaped["types"] = ctx.types
-            escaped["attr"] = ctx.create_string_attribute("k", "v")
+            escaped["attr"] = llvm.Attribute.string(ctx, "k", "v")
             escaped["comdat"] = mod.add_comdat("C")
             escaped["named_md"] = mod.add_named_metadata("llvm.nanobind.named")
 

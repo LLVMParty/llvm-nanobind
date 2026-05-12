@@ -20,17 +20,12 @@ def test_function_attributes():
         with ctx.parse_bitcode_from_bytes(bitcode) as mod:
             # Iterate through functions
             for func in mod.functions:
-                # Read attributes at different indices
-                param_count = func.param_count
-
-                # Test function index and all parameter indices
-                # AttributeFunctionIndex is -1, so iterate from -1 to param_count
-                idx = llvm.AttributeFunctionIndex
-                while idx <= param_count:
-                    attr_count = func.get_attribute_count(idx)
-                    idx += 1
-                    # The C version allocates and frees but doesn't use the attributes
-                    # We just check the count is valid
+                # Read attributes in all slots. The C version allocates and
+                # frees but doesn't use the attributes; we just check counts.
+                slots = [func.attributes, func.return_attributes]
+                slots.extend(func.param_attributes(i) for i in range(func.param_count))
+                for slot in slots:
+                    attr_count = len(slot)
                     if attr_count < 0:
                         raise ValueError(f"Invalid attribute count: {attr_count}")
 
@@ -50,8 +45,6 @@ def test_callsite_attributes():
         with ctx.parse_bitcode_from_bytes(bitcode) as mod:
             # Iterate through functions
             for func in mod.functions:
-                param_count = func.param_count
-
                 # Iterate through basic blocks
                 bb = func.first_basic_block
                 while bb is not None:
@@ -60,15 +53,22 @@ def test_callsite_attributes():
                     while inst is not None:
                         # Check if it's a call instruction
                         if inst.is_call_inst:
-                            # Read call site attributes at different indices
-                            idx = llvm.AttributeFunctionIndex
-                            while idx <= param_count:
-                                attr_count = inst.get_callsite_attribute_count(idx)
+                            # Read call site attributes in all slots. The C
+                            # version allocates and frees but doesn't use them.
+                            slots = [
+                                inst.callsite_attributes,
+                                inst.callsite_return_attributes,
+                            ]
+                            slots.extend(
+                                inst.callsite_param_attributes(i)
+                                for i in range(inst.num_arg_operands)
+                            )
+                            for slot in slots:
+                                attr_count = len(slot)
                                 if attr_count < 0:
                                     raise ValueError(
                                         f"Invalid attribute count: {attr_count}"
                                     )
-                                idx += 1
 
                         inst = inst.next_instruction
 
