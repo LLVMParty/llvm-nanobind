@@ -206,11 +206,11 @@ This section captures guard preconditions for wrapper classes other than
   - `constant(str, radix)` requires `2 <= radix <= 36`.
 - Named struct creation:
   - `ctx.types.struct("Name", [field_types...])` defaults to
-    `get_or_insert=True`.
+    `reuse_existing=True`.
   - Reusing the same name with the same body returns the existing identified
     struct; reusing an opaque declaration completes it; conflicting bodies or
     packing raise `LLVMAssertionError`.
-  - Pass `get_or_insert=False` for raw LLVM insertion behavior, which may append
+  - Pass `reuse_existing=False` for raw LLVM insertion behavior, which may append
     a suffix to duplicate names.
 - Struct body mutation:
   - `set_body` requires identified opaque struct type (not literal, not already

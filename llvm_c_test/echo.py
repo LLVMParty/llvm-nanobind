@@ -1254,7 +1254,7 @@ def declare_symbols(src: llvm.Module, m: llvm.Module) -> None:
             name = cur_md.name
             if m.get_named_metadata(name):
                 raise RuntimeError("Named Metadata Node already cloned")
-            m.get_or_insert_named_metadata(name)
+            m.add_named_metadata(name)
 
             next_md = cur_md.next
             if next_md is None:

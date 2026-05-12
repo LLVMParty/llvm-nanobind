@@ -282,8 +282,8 @@ def test_lifetime_guards_for_remaining_wrappers():
             i32 = ctx.types.i32
             escaped["types"] = ctx.types
             escaped["attr"] = ctx.create_string_attribute("k", "v")
-            escaped["comdat"] = mod.get_or_insert_comdat("C")
-            escaped["named_md"] = mod.get_or_insert_named_metadata("llvm.nanobind.named")
+            escaped["comdat"] = mod.add_comdat("C")
+            escaped["named_md"] = mod.add_named_metadata("llvm.nanobind.named")
 
             fn_ty = ctx.types.function(i32, [i32], False)
             fn = mod.add_function("f", fn_ty)

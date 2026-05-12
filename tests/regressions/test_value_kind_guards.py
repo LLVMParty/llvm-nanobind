@@ -827,7 +827,7 @@ def test_value_accessor_guard_matrix_negative():
                     "global value",
                 ),
                 ("comdat", lambda: bad.comdat, "global object"),
-                ("set_comdat", lambda: bad.set_comdat(mod.get_or_insert_comdat("x")), "global object"),
+                ("set_comdat", lambda: bad.set_comdat(mod.add_comdat("x")), "global object"),
                 ("section", lambda: bad.section, "global object"),
                 ("section", lambda: setattr(bad, "section", ".foo"), "global object"),
                 ("set_thread_local", lambda: bad.set_thread_local(True), "global variable"),
@@ -1155,7 +1155,7 @@ def test_value_accessor_guard_matrix_positive():
             assert g0.is_thread_local
             g0.set_externally_initialized(True)
             assert g0.is_externally_initialized
-            c = mod.get_or_insert_comdat("value_guard_positive_comdat")
+            c = mod.add_comdat("value_guard_positive_comdat")
             g0.set_comdat(c)
             assert g0.comdat is not None
             g_del = mod.add_global(ctx.types.i32, "g_del")

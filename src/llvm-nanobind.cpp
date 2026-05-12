@@ -1042,7 +1042,7 @@ struct LLVMTypeFactoryWrapper {
   LLVMTypeWrapper struct_with_name(const std::string &name,
                                    const Iterable<LLVMTypeWrapper> &elem_types,
                                    bool packed = false,
-                                   bool get_or_insert = true) const {
+                                   bool reuse_existing = true) const {
     check_valid();
     if (name.empty()) {
       throw LLVMAssertionError(
@@ -1050,7 +1050,7 @@ struct LLVMTypeFactoryWrapper {
     }
     std::vector<LLVMTypeRef> elems = collect_type_refs(elem_types);
 
-    if (get_or_insert) {
+    if (reuse_existing) {
       if (LLVMTypeRef existing = LLVMGetTypeByName2(m_ctx_ref, name.c_str())) {
         require_same_struct_body(existing, elems, packed, name);
         if (LLVMIsOpaqueStruct(existing)) {
@@ -1080,12 +1080,12 @@ struct LLVMTypeFactoryWrapper {
 
   // Opaque named struct (forward declaration)
   LLVMTypeWrapper opaque_struct(const std::string &name,
-                                bool get_or_insert = true) const {
+                                bool reuse_existing = true) const {
     check_valid();
     if (name.empty()) {
       throw LLVMAssertionError("Opaque struct type requires a non-empty name");
     }
-    if (get_or_insert) {
+    if (reuse_existing) {
       if (LLVMTypeRef existing = LLVMGetTypeByName2(m_ctx_ref, name.c_str()))
         return LLVMTypeWrapper(existing, m_context_token);
     }
@@ -6055,10 +6055,10 @@ struct LLVMModuleWrapper : NoMoveCopy {
   // Functions
   LLVMFunctionWrapper add_function(const std::string &name,
                                    const LLVMTypeWrapper &func_ty,
-                                   bool get_or_insert = true) {
+                                   bool reuse_existing = true) {
     check_valid();
     func_ty.check_valid();
-    if (get_or_insert) {
+    if (reuse_existing) {
       if (LLVMValueRef func = LLVMGetNamedFunction(m_ref, name.c_str())) {
         require_same_type(LLVMGlobalGetValueType(func), func_ty.m_ref, name,
                           "function");
@@ -6081,17 +6081,17 @@ struct LLVMModuleWrapper : NoMoveCopy {
   // Global variables
   LLVMValueWrapper add_global(const LLVMTypeWrapper &ty,
                               const std::string &name,
-                              bool get_or_insert = true) {
-    return add_global_in_address_space(ty, name, 0, get_or_insert);
+                              bool reuse_existing = true) {
+    return add_global_in_address_space(ty, name, 0, reuse_existing);
   }
 
   LLVMValueWrapper add_global_in_address_space(const LLVMTypeWrapper &ty,
                                                const std::string &name,
                                                unsigned address_space,
-                                               bool get_or_insert = true) {
+                                               bool reuse_existing = true) {
     check_valid();
     ty.check_valid();
-    if (get_or_insert) {
+    if (reuse_existing) {
       if (LLVMValueRef global = LLVMGetNamedGlobal(m_ref, name.c_str())) {
         require_same_type(LLVMGlobalGetValueType(global), ty.m_ref, name,
                           "global variable");
@@ -6263,8 +6263,8 @@ struct LLVMModuleWrapper : NoMoveCopy {
   // COMDAT support (for Windows/COFF linking)
   // ==========================================================================
 
-  /// Get or insert a COMDAT section with the given name.
-  LLVMComdatWrapper get_or_insert_comdat(const std::string &name) {
+  /// Add a COMDAT section, or return the existing one with this name.
+  LLVMComdatWrapper add_comdat(const std::string &name) {
     check_valid();
     LLVMComdatRef comdat = LLVMGetOrInsertComdat(m_ref, name.c_str());
     return LLVMComdatWrapper(comdat, m_token);
@@ -6319,11 +6319,11 @@ struct LLVMModuleWrapper : NoMoveCopy {
                              unsigned addr_space,
                              const LLVMValueWrapper &aliasee,
                              const std::string &name,
-                             bool get_or_insert = true) {
+                             bool reuse_existing = true) {
     check_valid();
     value_ty.check_valid();
     aliasee.check_valid();
-    if (get_or_insert) {
+    if (reuse_existing) {
       if (LLVMValueRef alias =
               LLVMGetNamedGlobalAlias(m_ref, name.c_str(), name.size())) {
         require_same_type(LLVMGlobalGetValueType(alias), value_ty.m_ref, name,
@@ -6374,11 +6374,11 @@ struct LLVMModuleWrapper : NoMoveCopy {
                                     const LLVMTypeWrapper &ty,
                                     unsigned addr_space,
                                     const LLVMValueWrapper &resolver,
-                                    bool get_or_insert = true) {
+                                    bool reuse_existing = true) {
     check_valid();
     ty.check_valid();
     resolver.check_valid();
-    if (get_or_insert) {
+    if (reuse_existing) {
       if (LLVMValueRef ifunc =
               LLVMGetNamedGlobalIFunc(m_ref, name.c_str(), name.size())) {
         require_same_type(LLVMGlobalGetValueType(ifunc), ty.m_ref, name,
@@ -6426,7 +6426,7 @@ struct LLVMModuleWrapper : NoMoveCopy {
     return LLVMNamedMDNodeWrapper(md, m_context_token);
   }
 
-  LLVMNamedMDNodeWrapper get_or_insert_named_metadata(const std::string &name) {
+  LLVMNamedMDNodeWrapper add_named_metadata(const std::string &name) {
     check_valid();
     return LLVMNamedMDNodeWrapper(
         LLVMGetOrInsertNamedMetadata(m_ref, name.c_str(), name.size()),
@@ -13959,12 +13959,12 @@ Valid when:
 
 <sub>C API: LLVMGetTarget, LLVMSetTarget</sub>)")
       .def("add_function", &LLVMModuleWrapper::add_function, "name"_a,
-           "func_ty"_a, nb::kw_only(), "get_or_insert"_a = true,
+           "func_ty"_a, nb::kw_only(), "reuse_existing"_a = true,
            R"(Add or get a function.
 
 By default, this returns an existing function with the same name when the
 function type matches, and raises if the name exists with an incompatible type
-or as another global value kind. Pass get_or_insert=False for LLVM's raw
+or as another global value kind. Pass reuse_existing=False for LLVM's raw
 inserting behavior, which may rename collisions with a suffix like `.0`.
 
 <sub>C API: LLVMGetNamedFunction, LLVMAddFunction</sub>)")
@@ -13973,23 +13973,23 @@ inserting behavior, which may rename collisions with a suffix like `.0`.
 
 <sub>C API: LLVMGetNamedFunction</sub>)")
       .def("add_global", &LLVMModuleWrapper::add_global, "ty"_a, "name"_a,
-           nb::kw_only(), "get_or_insert"_a = true,
+           nb::kw_only(), "reuse_existing"_a = true,
            R"(Add or get a global variable in address space 0.
 
 By default, this returns an existing global variable with the same name when
 the element type and address space match, and raises on incompatible existing
-symbols. Pass get_or_insert=False for LLVM's raw inserting behavior, which may
+symbols. Pass reuse_existing=False for LLVM's raw inserting behavior, which may
 rename collisions with a suffix like `.0`.
 
 <sub>C API: LLVMGetNamedGlobal, LLVMAddGlobalInAddressSpace</sub>)")
       .def("add_global_in_address_space",
            &LLVMModuleWrapper::add_global_in_address_space, "ty"_a, "name"_a,
-           "address_space"_a, nb::kw_only(), "get_or_insert"_a = true,
+           "address_space"_a, nb::kw_only(), "reuse_existing"_a = true,
            R"(Add or get a global variable in an address space.
 
 By default, this returns an existing global variable with the same name when
 the element type and address space match, and raises on incompatible existing
-symbols. Pass get_or_insert=False for LLVM's raw inserting behavior, which may
+symbols. Pass reuse_existing=False for LLVM's raw inserting behavior, which may
 rename collisions with a suffix like `.0`.
 
 <sub>C API: LLVMGetNamedGlobal, LLVMAddGlobalInAddressSpace</sub>)")
@@ -14065,11 +14065,11 @@ rename collisions with a suffix like `.0`.
 <sub>C API: LLVMGetNamedGlobalAlias</sub>)")
       .def("add_alias", &LLVMModuleWrapper::add_alias, "value_ty"_a,
            "addr_space"_a, "aliasee"_a, "name"_a, nb::kw_only(),
-           "get_or_insert"_a = true,
+           "reuse_existing"_a = true,
            R"(Add or get a global alias.
 
 By default, this returns an existing alias with the same name when its value
-type, address space, and aliasee match. Pass get_or_insert=False for LLVM's raw
+type, address space, and aliasee match. Pass reuse_existing=False for LLVM's raw
 inserting behavior.
 
 <sub>C API: LLVMGetNamedGlobalAlias, LLVMAddAlias2</sub>)")
@@ -14088,11 +14088,11 @@ inserting behavior.
 <sub>C API: LLVMGetNamedGlobalIFunc</sub>)")
       .def("add_global_ifunc", &LLVMModuleWrapper::add_global_ifunc, "name"_a,
            "ty"_a, "addr_space"_a, "resolver"_a, nb::kw_only(),
-           "get_or_insert"_a = true,
+           "reuse_existing"_a = true,
            R"(Add or get an indirect function (IFunc) in the module.
 
 By default, this returns an existing IFunc with the same name when its type,
-address space, and resolver match. Pass get_or_insert=False for LLVM's raw
+address space, and resolver match. Pass reuse_existing=False for LLVM's raw
 inserting behavior.
 
 <sub>C API: LLVMGetNamedGlobalIFunc, LLVMAddGlobalIFunc</sub>)")
@@ -14111,9 +14111,13 @@ inserting behavior.
            "name"_a, R"(Get named metadata.
 
 <sub>C API: LLVMGetNamedMetadata</sub>)")
-      .def("get_or_insert_named_metadata",
-           &LLVMModuleWrapper::get_or_insert_named_metadata, "name"_a,
-           R"(Get or insert named metadata.
+      .def("add_named_metadata",
+           &LLVMModuleWrapper::add_named_metadata, "name"_a,
+           R"(Add named metadata, or return the existing node with this name.
+
+This method has get-or-insert behavior: if named metadata with `name` already
+exists in the module, it is returned unchanged; otherwise a new empty named
+metadata node is created and returned.
 
 <sub>C API: LLVMGetOrInsertNamedMetadata</sub>)")
       .def("get_named_metadata_num_operands",
@@ -14164,18 +14168,21 @@ inserting behavior.
 
 <sub>C API: LLVMLinkModules2</sub>)")
       // COMDAT support
-      .def("get_or_insert_comdat", &LLVMModuleWrapper::get_or_insert_comdat,
-           "name"_a,
-           R"(Get or insert a COMDAT section with the given name.
-           
-           COMDAT sections are used on Windows/COFF targets for symbol
-           deduplication and merging.
-           
-           Args:
-               name: The COMDAT name
-               
-           Returns:
-               A Comdat object for the named section.
+      .def("add_comdat", &LLVMModuleWrapper::add_comdat, "name"_a,
+           R"(Add a COMDAT section, or return the existing one with this name.
+
+This method has get-or-insert behavior: if a COMDAT with `name` already exists
+in the module, it is returned unchanged; otherwise a new COMDAT is created and
+returned.
+
+COMDAT sections are used on Windows/COFF targets for symbol deduplication and
+merging.
+
+Args:
+    name: The COMDAT name
+
+Returns:
+    A Comdat object for the named section.
 
 <sub>C API: LLVMGetOrInsertComdat</sub>)")
       // Module printing to file
@@ -14379,21 +14386,21 @@ Use struct(name, elem_types, ...) for identified named structs.
 <sub>C API: LLVMStructTypeInContext</sub>)")
       .def("struct", &LLVMTypeFactoryWrapper::struct_with_name, "name"_a,
            "elem_types"_a, "packed"_a = false, nb::kw_only(),
-           "get_or_insert"_a = true,
+           "reuse_existing"_a = true,
            R"(Named struct type.
 
-Named structs default to lookup-first get-or-insert semantics: an existing
-struct with the same name and body is returned, an opaque declaration is
-completed, and a different existing body raises. Pass get_or_insert=False for
-LLVM's raw inserting behavior, which may append a suffix to duplicate names.
+Named structs default to lookup-first reuse semantics: an existing struct with
+the same name and body is returned, an opaque declaration is completed, and a
+different existing body raises. Pass reuse_existing=False for LLVM's raw
+inserting behavior, which may append a suffix to duplicate names.
 
 <sub>C API: LLVMStructCreateNamed</sub>)")
       .def("opaque_struct", &LLVMTypeFactoryWrapper::opaque_struct, "name"_a,
-           nb::kw_only(), "get_or_insert"_a = true,
+           nb::kw_only(), "reuse_existing"_a = true,
            R"(Opaque struct type.
 
 Defaults to returning an existing named struct with this name. Pass
-get_or_insert=False for LLVM's raw inserting behavior, which may append a
+reuse_existing=False for LLVM's raw inserting behavior, which may append a
 suffix to duplicate names.
 
 <sub>C API: LLVMStructCreateNamed</sub>)")

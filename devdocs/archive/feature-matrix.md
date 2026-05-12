@@ -44,7 +44,7 @@ Implement remaining LLVM-C API bindings to reach ~85% coverage of the C API, wit
 - `section.contains_symbol(symbol)` - Symbol membership test
 
 **Comdat.h (all 5 functions):**
-- `mod.get_or_insert_comdat(name)` - Get/create COMDAT
+- `mod.add_comdat(name)` - Add/create COMDAT, or return the existing one
 - `gv.comdat` / `gv.set_comdat(comdat)` - Global COMDAT access
 - `comdat.selection_kind` - Selection kind property
 

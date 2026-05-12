@@ -2,8 +2,8 @@
 Regression coverage for API surface cleanup helpers.
 
 Covers:
-- Module add_* get_or_insert=True defaults and explicit raw insertion escape hatch
-- Named struct get_or_insert=True defaults and explicit raw insertion escape hatch
+- Module add_* reuse_existing=True defaults and explicit raw insertion escape hatch
+- Named struct reuse_existing=True defaults and explicit raw insertion escape hatch
 - New member/factory APIs that replace module-level helpers
 - Builder parent navigation helpers and Module.create_builder()
 """
@@ -20,7 +20,7 @@ def expect_raises(fn, message_part: str) -> None:
         raise AssertionError("expected exception")
 
 
-def test_module_add_get_or_insert_semantics() -> None:
+def test_module_add_reuse_existing_semantics() -> None:
     with llvm.create_context() as ctx:
         i32 = ctx.types.i32
         i64 = ctx.types.i64
@@ -29,12 +29,12 @@ def test_module_add_get_or_insert_semantics() -> None:
         other_fn_ty = ctx.types.function(i32, [])
         resolver_ty = ctx.types.function(i32, [])
 
-        with ctx.create_module("get_or_insert") as mod:
+        with ctx.create_module("reuse_existing") as mod:
             fn = mod.add_function("f", fn_ty)
             assert mod.add_function("f", fn_ty) == fn
             assert len([f for f in mod.functions if f.name.startswith("f")]) == 1
             expect_raises(lambda: mod.add_function("f", other_fn_ty), "different type")
-            raw_fn = mod.add_function("f", fn_ty, get_or_insert=False)
+            raw_fn = mod.add_function("f", fn_ty, reuse_existing=False)
             assert raw_fn.name != "f"
 
             g = mod.add_global(i32, "g")
@@ -44,7 +44,7 @@ def test_module_add_get_or_insert_semantics() -> None:
                 lambda: mod.add_global_in_address_space(i32, "g", 1),
                 "address space",
             )
-            raw_g = mod.add_global(i32, "g", get_or_insert=False)
+            raw_g = mod.add_global(i32, "g", reuse_existing=False)
             assert raw_g.name != "g"
 
             expect_raises(lambda: mod.add_function("g", fn_ty), "global variable")
@@ -53,7 +53,7 @@ def test_module_add_get_or_insert_semantics() -> None:
             alias = mod.add_alias(i32, 0, g, "alias")
             assert mod.add_alias(i32, 0, g, "alias") == alias
             expect_raises(lambda: mod.add_alias(i64, 0, g, "alias"), "different type")
-            raw_alias = mod.add_alias(i32, 0, g, "alias", get_or_insert=False)
+            raw_alias = mod.add_alias(i32, 0, g, "alias", reuse_existing=False)
             assert raw_alias.name != "alias"
 
             resolver = mod.add_function("resolver", resolver_ty)
@@ -69,12 +69,12 @@ def test_module_add_get_or_insert_semantics() -> None:
                 "different resolver",
             )
             raw_ifunc = mod.add_global_ifunc(
-                "ifunc", resolver_ty, 0, resolver, get_or_insert=False
+                "ifunc", resolver_ty, 0, resolver, reuse_existing=False
             )
             assert raw_ifunc.name != "ifunc"
 
 
-def test_named_struct_get_or_insert_semantics() -> None:
+def test_named_struct_reuse_existing_semantics() -> None:
     with llvm.create_context() as ctx:
         i32 = ctx.types.i32
         i64 = ctx.types.i64
@@ -93,7 +93,7 @@ def test_named_struct_get_or_insert_semantics() -> None:
         )
 
         raw_pair = ctx.types.struct(
-            "Pair", [i32, i64], packed=False, get_or_insert=False
+            "Pair", [i32, i64], packed=False, reuse_existing=False
         )
         assert raw_pair != pair
         assert raw_pair.struct_name != "Pair"
@@ -105,7 +105,7 @@ def test_named_struct_get_or_insert_semantics() -> None:
         assert completed == forward
         assert not completed.is_opaque_struct
 
-        raw_forward = ctx.types.opaque_struct("Forward", get_or_insert=False)
+        raw_forward = ctx.types.opaque_struct("Forward", reuse_existing=False)
         assert raw_forward != forward
         assert raw_forward.struct_name != "Forward"
 
@@ -205,6 +205,18 @@ def test_member_factories_and_builder_navigation() -> None:
             with mod.create_builder(ret) as before_ret:
                 assert before_ret.insert_block == bb
 
+            assert not hasattr(mod, "get_or_insert_named_metadata")
+            named_md = mod.add_named_metadata("llvm.nanobind.surface")
+            assert mod.add_named_metadata("llvm.nanobind.surface") == named_md
+
+            assert not hasattr(mod, "get_or_insert_comdat")
+            comdat = mod.add_comdat("surface_comdat")
+            comdat.selection_kind = llvm.ComdatSelectionKind.ExactMatch
+            assert (
+                mod.add_comdat("surface_comdat").selection_kind
+                == llvm.ComdatSelectionKind.ExactMatch
+            )
+
             opts = llvm.PassBuilderOptions()
             mod.run_passes("default<O0>", options=opts)
 
@@ -223,7 +235,7 @@ def test_member_factories_and_builder_navigation() -> None:
 
 
 if __name__ == "__main__":
-    test_module_add_get_or_insert_semantics()
-    test_named_struct_get_or_insert_semantics()
+    test_module_add_reuse_existing_semantics()
+    test_named_struct_reuse_existing_semantics()
     test_member_factories_and_builder_navigation()
     print("test_api_surface_cleanup: PASSED")

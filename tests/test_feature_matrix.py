@@ -382,8 +382,8 @@ def test_comdat():
     """Test all Comdat APIs"""
     with llvm.create_context() as ctx:
         with ctx.create_module("test") as mod:
-            # Test get_or_insert_comdat
-            comdat = mod.get_or_insert_comdat("my_comdat")
+            # Test add_comdat get-or-insert behavior
+            comdat = mod.add_comdat("my_comdat")
             assert comdat is not None
 
             # Test selection_kind property (getter and setter)
