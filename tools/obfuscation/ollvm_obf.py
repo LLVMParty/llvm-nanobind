@@ -173,9 +173,7 @@ def should_skip_function(fn: llvm.Function, cfg: FilterConfig) -> bool:
     if fn.linkage == llvm.Linkage.AvailableExternally:
         return True
 
-    exclude_attr = fn.get_string_attribute(
-        llvm.AttributeFunctionIndex, "ollvm_exclude"
-    )
+    exclude_attr = fn.attributes.get("ollvm_exclude")
     if exclude_attr is not None:
         return True
 
@@ -1890,7 +1888,7 @@ def vectorize_module(
 
 
 def _target_features(fn: llvm.Function) -> str:
-    attr = fn.get_string_attribute(llvm.AttributeFunctionIndex, "target-features")
+    attr = fn.attributes.get("target-features")
     return attr.string_value if attr is not None else ""
 
 
@@ -2645,9 +2643,14 @@ def clone_functions_module(mod: llvm.Module, seed: int, cfg: FilterConfig) -> No
             clone = mod.add_function(clone_name, fn.global_value_type)
             clone.linkage = llvm.Linkage.Internal
             clone.calling_conv = fn.calling_conv
-            for idx in range(llvm.AttributeFunctionIndex, fn.param_count + 1):
-                for attr in fn.get_attributes(idx):
-                    clone.add_attribute(idx, attr)
+            src_slots = [fn.attributes, fn.return_attributes]
+            dst_slots = [clone.attributes, clone.return_attributes]
+            for param_index in range(fn.param_count):
+                src_slots.append(fn.param_attributes(param_index))
+                dst_slots.append(clone.param_attributes(param_index))
+            for src_slot, dst_slot in zip(src_slots, dst_slots):
+                for attr in src_slot:
+                    dst_slot.add(attr)
             FunCloner(fn, clone, mod).clone_bbs(fn)
             diversify_clone(clone, rng)
             variants.append(clone)

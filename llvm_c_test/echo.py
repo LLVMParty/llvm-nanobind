@@ -506,19 +506,15 @@ class FunCloner:
 
     def clone_attrs(self, src: llvm.Value, dst: llvm.Value) -> None:
         """Clone call/invoke attributes from src to dst."""
-        ctx = self.module.context
-        last_kind = llvm.last_enum_attribute_kind
+        src_slots = [src.callsite_attributes, src.callsite_return_attributes]
+        dst_slots = [dst.callsite_attributes, dst.callsite_return_attributes]
+        for i in range(src.num_arg_operands):
+            src_slots.append(src.callsite_param_attributes(i))
+            dst_slots.append(dst.callsite_param_attributes(i))
 
-        # Clone attributes for all indices (return, function, and each param)
-        # Index 0 is return, index -1 (AttributeFunctionIndex) is function
-        # Params start at index 1
-        for idx in range(llvm.AttributeFunctionIndex, src.num_arg_operands + 1):
-            for kind in range(1, last_kind + 1):
-                attr = src.get_callsite_enum_attribute(idx, kind)
-                if attr is not None:
-                    # Create a copy of the attribute in the destination context
-                    new_attr = ctx.create_enum_attribute(attr.kind, attr.value)
-                    dst.add_callsite_attribute(idx, new_attr)
+        for src_slot, dst_slot in zip(src_slots, dst_slots):
+            for attr in src_slot:
+                dst_slot.add(attr)
 
     def clone_instruction(self, src: llvm.Value, builder: llvm.Builder) -> llvm.Value:
         """Clone a single instruction."""
@@ -1175,15 +1171,15 @@ def declare_symbols(src: llvm.Module, m: llvm.Module) -> None:
         ty = TypeCloner(m).clone(cur.global_value_type)
         f = m.add_function(name, ty)
 
-        # Copy attributes
-        last_kind = llvm.last_enum_attribute_kind
-        for i in range(llvm.AttributeFunctionIndex, cur.param_count + 1):
-            for k in range(1, last_kind + 1):
-                src_a = cur.get_enum_attribute(i, k)
-                if src_a:
-                    val = src_a.value
-                    dst_a = ctx.create_enum_attribute(k, val)
-                    f.add_attribute(i, dst_a)
+        # Copy attributes.
+        src_slots = [cur.attributes, cur.return_attributes]
+        dst_slots = [f.attributes, f.return_attributes]
+        for i in range(cur.param_count):
+            src_slots.append(cur.param_attributes(i))
+            dst_slots.append(f.param_attributes(i))
+        for src_slot, dst_slot in zip(src_slots, dst_slots):
+            for attr in src_slot:
+                dst_slot.add(attr)
 
         cur = cur.next_function
 

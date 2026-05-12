@@ -750,55 +750,29 @@ def test_value_accessor_guard_matrix_negative():
                     "identical type",
                 ),
                 (
-                    "get_callsite_attribute_count",
-                    lambda: add_inst.get_callsite_attribute_count(0),
-                    "call, invoke, or callbr",
+                    "callsite_attributes",
+                    lambda: add_inst.callsite_attributes,
+                    "call/invoke/callbr",
                 ),
                 (
-                    "get_callsite_enum_attribute",
-                    lambda: add_inst.get_callsite_enum_attribute(0, 1),
-                    "call, invoke, or callbr",
+                    "callsite_return_attributes",
+                    lambda: add_inst.callsite_return_attributes,
+                    "call/invoke/callbr",
                 ),
                 (
-                    "add_callsite_attribute",
-                    lambda: add_inst.add_callsite_attribute(
-                        0, ctx.create_string_attribute("k", "v")
-                    ),
-                    "call, invoke, or callbr",
+                    "callsite_param_attributes",
+                    lambda: add_inst.callsite_param_attributes(0),
+                    "call/invoke/callbr",
                 ),
                 (
-                    "get_callsite_attribute_count",
-                    lambda: refs["call_plain_inst"].get_callsite_attribute_count(-2),
-                    "idx >= -1",
+                    "callsite_param_attributes",
+                    lambda: refs["call_plain_inst"].callsite_param_attributes(-1),
+                    "param index >= 0",
                 ),
                 (
-                    "get_callsite_enum_attribute",
-                    lambda: refs["call_plain_inst"].get_callsite_enum_attribute(-2, 1),
-                    "idx >= -1",
-                ),
-                (
-                    "add_callsite_attribute",
-                    lambda: refs["call_plain_inst"].add_callsite_attribute(
-                        -2, ctx.create_string_attribute("k2", "v2")
-                    ),
-                    "idx >= -1",
-                ),
-                (
-                    "get_callsite_attribute_count",
-                    lambda: refs["call_plain_inst"].get_callsite_attribute_count(1),
-                    "out of range for callsite",
-                ),
-                (
-                    "get_callsite_enum_attribute",
-                    lambda: refs["call_plain_inst"].get_callsite_enum_attribute(1, 1),
-                    "out of range for callsite",
-                ),
-                (
-                    "add_callsite_attribute",
-                    lambda: refs["call_plain_inst"].add_callsite_attribute(
-                        1, ctx.create_string_attribute("k3", "v3")
-                    ),
-                    "out of range for callsite",
+                    "callsite_param_attributes",
+                    lambda: refs["call_plain_inst"].callsite_param_attributes(0),
+                    "out of range",
                 ),
                 ("initializer", lambda: bad.initializer, "global variable"),
                 (
@@ -1081,12 +1055,12 @@ def test_value_accessor_guard_matrix_positive():
             ptr_null = ctx.types.ptr.null()
             assert ptr_null.const_bitcast(ctx.types.ptr) is not None
             add_wrap_inst.replace_all_uses_with(ctx.types.i32.constant(7, False))
-            attr = ctx.create_string_attribute("k", "v")
-            before = call_arg_inst.get_callsite_attribute_count(llvm.AttributeFunctionIndex)
-            call_arg_inst.add_callsite_attribute(llvm.AttributeFunctionIndex, attr)
-            after = call_arg_inst.get_callsite_attribute_count(llvm.AttributeFunctionIndex)
+            attr = llvm.Attribute.string(ctx, "k", "v")
+            before = len(call_arg_inst.callsite_attributes)
+            call_arg_inst.callsite_attributes.add(attr)
+            after = len(call_arg_inst.callsite_attributes)
             assert after >= before + 1
-            _ = call_arg_inst.get_callsite_enum_attribute(llvm.AttributeFunctionIndex, 1)
+            assert call_arg_inst.callsite_attributes.get("k") is not None
 
             # Instruction lifecycle APIs.
             cloned = add_inst.instruction_clone()

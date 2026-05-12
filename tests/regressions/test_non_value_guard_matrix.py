@@ -4,8 +4,8 @@ Comprehensive guard matrix for non-Value wrapper APIs.
 Covers:
 - Builder instruction-only APIs.
 - Function/block ownership checks (block_address, append_existing_basic_block).
-- Function attribute index bounds.
-- Callsite attribute index bounds.
+- Function parameter attribute accessor bounds.
+- Callsite parameter attribute accessor bounds.
 """
 
 import llvm
@@ -46,8 +46,8 @@ def build_fixture(ctx: llvm.Context, mod: llvm.Module):
     assert other_inst is not None
 
     orphan_block = ctx.create_basic_block("orphan")
-    fn_attr = ctx.create_string_attribute("test.attr", "1")
-    call_attr = ctx.create_string_attribute("callsite.attr", "1")
+    fn_attr = llvm.Attribute.string(ctx, "test.attr", "1")
+    call_attr = llvm.Attribute.string(ctx, "callsite.attr", "1")
 
     callee_ty = ctx.types.function(void, [i32], False)
     callee = mod.add_function("callee", callee_ty)
@@ -85,8 +85,6 @@ def test_non_value_guard_matrix_negative():
             detached_clone = refs["detached_clone"]
             other_entry = refs["other_entry"]
             other_inst = refs["other_inst"]
-            fn_attr = refs["fn_attr"]
-            call_attr = refs["call_attr"]
             call_inst = refs["call_inst"]
 
             assert_llvm_assertion(
@@ -147,55 +145,23 @@ def test_non_value_guard_matrix_negative():
                 "owned by this function",
             )
 
-            high = fn.param_count + 1
+            high = fn.param_count
             assert_llvm_assertion(
-                lambda: fn.get_attribute_count(-2),
-                "idx >= -1",
+                lambda: fn.param_attributes(-1),
+                "param index >= 0",
             )
             assert_llvm_assertion(
-                lambda: fn.get_attribute_count(high),
-                "out of range",
-            )
-            assert_llvm_assertion(
-                lambda: fn.get_enum_attribute(high, 1),
-                "out of range",
-            )
-            assert_llvm_assertion(
-                lambda: fn.add_attribute(high, fn_attr),
-                "out of range",
-            )
-            assert_llvm_assertion(
-                lambda: fn.get_attributes(high),
-                "out of range",
-            )
-            assert_llvm_assertion(
-                lambda: fn.get_string_attribute(high, "test.attr"),
-                "out of range",
-            )
-            assert_llvm_assertion(
-                lambda: fn.remove_enum_attribute(high, 1),
-                "out of range",
-            )
-            assert_llvm_assertion(
-                lambda: fn.remove_string_attribute(high, "test.attr"),
+                lambda: fn.param_attributes(high),
                 "out of range",
             )
 
             assert_llvm_assertion(
-                lambda: call_inst.get_callsite_attribute_count(-2),
-                "idx >= -1",
+                lambda: call_inst.callsite_param_attributes(-1),
+                "param index >= 0",
             )
             assert_llvm_assertion(
-                lambda: call_inst.get_callsite_attribute_count(2),
-                "out of range for callsite",
-            )
-            assert_llvm_assertion(
-                lambda: call_inst.get_callsite_enum_attribute(2, 1),
-                "out of range for callsite",
-            )
-            assert_llvm_assertion(
-                lambda: call_inst.add_callsite_attribute(2, call_attr),
-                "out of range for callsite",
+                lambda: call_inst.callsite_param_attributes(call_inst.num_arg_operands),
+                "out of range",
             )
 
             assert_llvm_assertion(
@@ -235,14 +201,13 @@ def test_non_value_guard_matrix_positive():
             assert fn.block_address(entry).is_constant
             assert entry.block_address().is_constant
 
-            idx = llvm.AttributeFunctionIndex
-            before_attrs = fn.get_attribute_count(idx)
-            fn.add_attribute(idx, fn_attr)
-            after_attrs = fn.get_attribute_count(idx)
+            before_attrs = len(fn.attributes)
+            fn.attributes.add(fn_attr)
+            after_attrs = len(fn.attributes)
             assert after_attrs >= before_attrs + 1
-            _ = fn.get_attributes(idx)
-            _ = fn.get_string_attribute(idx, "test.attr")
-            fn.remove_string_attribute(idx, "test.attr")
+            _ = fn.attributes.all()
+            _ = fn.attributes.get("test.attr")
+            fn.attributes.remove("test.attr")
 
             with ctx.create_builder(first_inst) as b:
                 assert b.insert_block is not None
@@ -258,15 +223,13 @@ def test_non_value_guard_matrix_positive():
 
             assert any(inst.name == "cloned_add" for inst in entry.instructions)
 
-            call_idx = llvm.AttributeFunctionIndex
-            before_call_attrs = call_inst.get_callsite_attribute_count(call_idx)
-            call_inst.add_callsite_attribute(call_idx, call_attr)
-            after_call_attrs = call_inst.get_callsite_attribute_count(call_idx)
+            before_call_attrs = len(call_inst.callsite_attributes)
+            call_inst.callsite_attributes.add(call_attr)
+            after_call_attrs = len(call_inst.callsite_attributes)
             assert after_call_attrs >= before_call_attrs + 1
 
-            # Valid callsite ranges: -1(function), 0(return), 1..num_arg_operands.
-            assert call_inst.get_callsite_attribute_count(0) >= 0
-            assert call_inst.get_callsite_attribute_count(1) >= 0
+            assert len(call_inst.callsite_return_attributes) >= 0
+            assert len(call_inst.callsite_param_attributes(0)) >= 0
 
 
 if __name__ == "__main__":

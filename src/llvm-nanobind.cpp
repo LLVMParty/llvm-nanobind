@@ -127,6 +127,17 @@ struct LLVMAssertionError : std::runtime_error {
   using std::runtime_error::runtime_error;
 };
 
+static unsigned lookup_enum_attribute_kind(const std::string &name) {
+  return LLVMGetEnumAttributeKindForName(name.c_str(), name.size());
+}
+
+static unsigned require_enum_attribute_kind(const std::string &name) {
+  unsigned kind_id = lookup_enum_attribute_kind(name);
+  if (kind_id == 0)
+    throw LLVMAssertionError("Unknown enum attribute kind: " + name);
+  return kind_id;
+}
+
 // =============================================================================
 // Diagnostic Information
 // =============================================================================
@@ -232,6 +243,7 @@ struct LLVMModuleWrapper;
 struct LLVMTypeWrapper;
 struct LLVMValueWrapper;
 struct LLVMFunctionWrapper;
+struct LLVMAttributeAccessorWrapper;
 struct LLVMBasicBlockWrapper;
 struct LLVMBuilderWrapper;
 struct LLVMModuleManager;
@@ -330,11 +342,6 @@ struct LLVMAttributeWrapper {
 
   bool is_valid() const {
     return m_ref != nullptr && m_context_token && m_context_token->is_valid();
-  }
-
-  unsigned get_kind() const {
-    check_valid();
-    return LLVMGetEnumAttributeKind(m_ref);
   }
 
   uint64_t get_value() const {
@@ -3242,66 +3249,6 @@ struct LLVMValueWrapper {
   // LLVMMetadataWrapper
   LLVMMetadataWrapper as_metadata() const;
 
-  // Callsite attribute methods (for call/invoke instructions)
-  unsigned get_callsite_attribute_count(int idx) const {
-    check_valid();
-    require_call_like_instruction("get_callsite_attribute_count");
-    if (idx < -1) {
-      throw LLVMAssertionError(
-          "get_callsite_attribute_count requires idx >= -1");
-    }
-    unsigned num_args = LLVMGetNumArgOperands(m_ref);
-    if (idx > static_cast<int>(num_args)) {
-      throw LLVMAssertionError(
-          "get_callsite_attribute_count: idx " + std::to_string(idx) +
-          " out of range for callsite (valid: -1..num_arg_operands, "
-          "num_arg_operands=" +
-          std::to_string(num_args) + ")");
-    }
-    return LLVMGetCallSiteAttributeCount(m_ref, static_cast<unsigned>(idx));
-  }
-
-  std::optional<LLVMAttributeWrapper>
-  get_callsite_enum_attribute(int idx, unsigned kind_id) const {
-    check_valid();
-    require_call_like_instruction("get_callsite_enum_attribute");
-    if (idx < -1) {
-      throw LLVMAssertionError(
-          "get_callsite_enum_attribute requires idx >= -1");
-    }
-    unsigned num_args = LLVMGetNumArgOperands(m_ref);
-    if (idx > static_cast<int>(num_args)) {
-      throw LLVMAssertionError(
-          "get_callsite_enum_attribute: idx " + std::to_string(idx) +
-          " out of range for callsite (valid: -1..num_arg_operands, "
-          "num_arg_operands=" +
-          std::to_string(num_args) + ")");
-    }
-    LLVMAttributeRef ref = LLVMGetCallSiteEnumAttribute(
-        m_ref, static_cast<unsigned>(idx), kind_id);
-    if (!ref)
-      return std::nullopt;
-    return LLVMAttributeWrapper(ref, m_context_token);
-  }
-
-  void add_callsite_attribute(int idx, const LLVMAttributeWrapper &attr) {
-    check_valid();
-    attr.check_valid();
-    require_call_like_instruction("add_callsite_attribute");
-    if (idx < -1) {
-      throw LLVMAssertionError("add_callsite_attribute requires idx >= -1");
-    }
-    unsigned num_args = LLVMGetNumArgOperands(m_ref);
-    if (idx > static_cast<int>(num_args)) {
-      throw LLVMAssertionError(
-          "add_callsite_attribute: idx " + std::to_string(idx) +
-          " out of range for callsite (valid: -1..num_arg_operands, "
-          "num_arg_operands=" +
-          std::to_string(num_args) + ")");
-    }
-    LLVMAddCallSiteAttribute(m_ref, static_cast<unsigned>(idx), attr.m_ref);
-  }
-
   // Unified set_metadata - works for both instructions and globals
   // Declared here, implemented after LLVMMetadataWrapper
   // Takes a context for converting metadata to value (needed for instructions)
@@ -3981,85 +3928,6 @@ struct LLVMFunctionWrapper : LLVMValueWrapper {
     return LLVMFunctionWrapper(prev, m_context_token);
   }
 
-  // Attribute methods (moved from global functions)
-  unsigned normalize_attribute_index(const char *api_name, int idx) const {
-    if (idx < -1) {
-      throw LLVMAssertionError(std::string(api_name) + " requires idx >= -1");
-    }
-    int max_idx = static_cast<int>(LLVMCountParams(m_ref));
-    if (idx > max_idx) {
-      throw LLVMAssertionError(
-          std::string(api_name) + ": idx " + std::to_string(idx) +
-          " out of range (valid: -1..param_count, param_count=" +
-          std::to_string(max_idx) + ")");
-    }
-    return static_cast<unsigned>(idx);
-  }
-
-  unsigned get_attribute_count(int idx) const {
-    check_valid();
-    unsigned attr_idx = normalize_attribute_index("get_attribute_count", idx);
-    return LLVMGetAttributeCountAtIndex(m_ref, attr_idx);
-  }
-
-  std::optional<LLVMAttributeWrapper>
-  get_enum_attribute(int idx, unsigned kind_id) const {
-    check_valid();
-    unsigned attr_idx = normalize_attribute_index("get_enum_attribute", idx);
-    LLVMAttributeRef ref = LLVMGetEnumAttributeAtIndex(m_ref, attr_idx, kind_id);
-    if (!ref)
-      return std::nullopt;
-    return LLVMAttributeWrapper(ref, m_context_token);
-  }
-
-  void add_attribute(int idx, const LLVMAttributeWrapper &attr) {
-    check_valid();
-    attr.check_valid();
-    unsigned attr_idx = normalize_attribute_index("add_attribute", idx);
-    LLVMAddAttributeAtIndex(m_ref, attr_idx, attr.m_ref);
-  }
-
-  std::vector<LLVMAttributeWrapper> get_attributes(int idx) const {
-    check_valid();
-    unsigned attr_idx = normalize_attribute_index("get_attributes", idx);
-    unsigned count = LLVMGetAttributeCountAtIndex(m_ref, attr_idx);
-    if (count == 0)
-      return {};
-    std::vector<LLVMAttributeRef> refs(count);
-    LLVMGetAttributesAtIndex(m_ref, attr_idx, refs.data());
-    std::vector<LLVMAttributeWrapper> result;
-    result.reserve(count);
-    for (auto ref : refs) {
-      result.emplace_back(ref, m_context_token);
-    }
-    return result;
-  }
-
-  std::optional<LLVMAttributeWrapper>
-  get_string_attribute(int idx, const std::string &key) const {
-    check_valid();
-    unsigned attr_idx = normalize_attribute_index("get_string_attribute", idx);
-    LLVMAttributeRef ref = LLVMGetStringAttributeAtIndex(
-        m_ref, attr_idx, key.c_str(), key.size());
-    if (!ref)
-      return std::nullopt;
-    return LLVMAttributeWrapper(ref, m_context_token);
-  }
-
-  void remove_enum_attribute(int idx, unsigned kind_id) {
-    check_valid();
-    unsigned attr_idx =
-        normalize_attribute_index("remove_enum_attribute", idx);
-    LLVMRemoveEnumAttributeAtIndex(m_ref, attr_idx, kind_id);
-  }
-
-  void remove_string_attribute(int idx, const std::string &key) {
-    check_valid();
-    unsigned attr_idx =
-        normalize_attribute_index("remove_string_attribute", idx);
-    LLVMRemoveStringAttributeAtIndex(m_ref, attr_idx, key.c_str(), key.size());
-  }
-
   void add_target_attribute(const std::string &key, const std::string &value) {
     check_valid();
     LLVMAddTargetDependentFunctionAttr(m_ref, key.c_str(), value.c_str());
@@ -4178,6 +4046,272 @@ struct LLVMFunctionWrapper : LLVMValueWrapper {
     }
     return LLVMValueWrapper(LLVMBlockAddress(m_ref, bb.m_ref),
                             m_context_token);
+  }
+};
+
+// =============================================================================
+// Attribute Accessor Wrapper
+// =============================================================================
+
+enum class LLVMAttributeAccessorTarget { Function, CallSite };
+
+struct LLVMAttributeAccessorWrapper {
+  LLVMValueRef m_ref = nullptr;
+  std::shared_ptr<ValidityToken> m_context_token;
+  unsigned m_idx = LLVMAttributeReturnIndex;
+  LLVMAttributeAccessorTarget m_target = LLVMAttributeAccessorTarget::Function;
+
+  LLVMAttributeAccessorWrapper() = default;
+  LLVMAttributeAccessorWrapper(LLVMValueRef ref,
+                               std::shared_ptr<ValidityToken> token,
+                               unsigned idx,
+                               LLVMAttributeAccessorTarget target)
+      : m_ref(ref), m_context_token(std::move(token)), m_idx(idx),
+        m_target(target) {}
+
+  static unsigned normalize_function_index(LLVMValueRef fn,
+                                           const char *api_name, int idx) {
+    if (idx < -1)
+      throw LLVMAssertionError(std::string(api_name) + " requires idx >= -1");
+    int max_idx = static_cast<int>(LLVMCountParams(fn));
+    if (idx > max_idx) {
+      throw LLVMAssertionError(
+          std::string(api_name) + ": idx " + std::to_string(idx) +
+          " out of range (valid: -1..param_count, param_count=" +
+          std::to_string(max_idx) + ")");
+    }
+    return static_cast<unsigned>(idx);
+  }
+
+  static unsigned normalize_function_param_index(LLVMValueRef fn,
+                                                 const char *api_name,
+                                                 int param_index) {
+    if (param_index < 0)
+      throw LLVMAssertionError(std::string(api_name) +
+                               " requires param index >= 0");
+    unsigned param_count = LLVMCountParams(fn);
+    if (static_cast<unsigned>(param_index) >= param_count) {
+      throw LLVMAssertionError(
+          std::string(api_name) + ": param index " +
+          std::to_string(param_index) +
+          " out of range (valid: 0..param_count-1, param_count=" +
+          std::to_string(param_count) + ")");
+    }
+    return static_cast<unsigned>(param_index + 1);
+  }
+
+  static void require_call_like(LLVMValueRef value, const char *api_name) {
+    if (!LLVMIsAInstruction(value)) {
+      throw LLVMAssertionError(std::string(api_name) +
+                               " requires a call/invoke/callbr instruction");
+    }
+    LLVMOpcode op = LLVMGetInstructionOpcode(value);
+    if (op != LLVMCall && op != LLVMInvoke && op != LLVMCallBr) {
+      throw LLVMAssertionError(std::string(api_name) +
+                               " requires a call/invoke/callbr instruction");
+    }
+  }
+
+  static unsigned normalize_callsite_index(LLVMValueRef call,
+                                           const char *api_name, int idx) {
+    require_call_like(call, api_name);
+    if (idx < -1)
+      throw LLVMAssertionError(std::string(api_name) + " requires idx >= -1");
+    unsigned num_args = LLVMGetNumArgOperands(call);
+    if (idx > static_cast<int>(num_args)) {
+      throw LLVMAssertionError(
+          std::string(api_name) + ": idx " + std::to_string(idx) +
+          " out of range for callsite (valid: -1..num_arg_operands, "
+          "num_arg_operands=" +
+          std::to_string(num_args) + ")");
+    }
+    return static_cast<unsigned>(idx);
+  }
+
+  static unsigned normalize_callsite_param_index(LLVMValueRef call,
+                                                 const char *api_name,
+                                                 int param_index) {
+    require_call_like(call, api_name);
+    if (param_index < 0)
+      throw LLVMAssertionError(std::string(api_name) +
+                               " requires param index >= 0");
+    unsigned num_args = LLVMGetNumArgOperands(call);
+    if (static_cast<unsigned>(param_index) >= num_args) {
+      throw LLVMAssertionError(
+          std::string(api_name) + ": param index " +
+          std::to_string(param_index) +
+          " out of range (valid: 0..num_arg_operands-1, num_arg_operands=" +
+          std::to_string(num_args) + ")");
+    }
+    return static_cast<unsigned>(param_index + 1);
+  }
+
+  void check_valid() const {
+    if (!m_ref)
+      throw LLVMMemoryError("AttributeAccessor target is null");
+    if (!m_context_token || !m_context_token->is_valid())
+      throw LLVMMemoryError(
+          "AttributeAccessor used after context was destroyed");
+    if (m_target == LLVMAttributeAccessorTarget::Function) {
+      if (!LLVMIsAFunction(m_ref)) {
+        throw LLVMAssertionError(
+            "AttributeAccessor requires a function value");
+      }
+    } else {
+      require_call_like(m_ref, "AttributeAccessor");
+    }
+  }
+
+  LLVMContextRef context_ref(const char *api_name) const {
+    check_valid();
+    LLVMTypeRef ty = LLVMTypeOf(m_ref);
+    if (!ty)
+      throw LLVMAssertionError(std::string(api_name) +
+                               " could not determine value type");
+    LLVMContextRef ctx = LLVMGetTypeContext(ty);
+    if (!ctx)
+      throw LLVMAssertionError(std::string(api_name) +
+                               " could not determine value context");
+    return ctx;
+  }
+
+  unsigned size() const {
+    check_valid();
+    if (m_target == LLVMAttributeAccessorTarget::Function)
+      return LLVMGetAttributeCountAtIndex(m_ref, m_idx);
+    return LLVMGetCallSiteAttributeCount(m_ref, m_idx);
+  }
+
+  std::vector<LLVMAttributeWrapper> get_all() const {
+    check_valid();
+    unsigned count = size();
+    if (count == 0)
+      return {};
+    std::vector<LLVMAttributeRef> refs(count);
+    if (m_target == LLVMAttributeAccessorTarget::Function) {
+      LLVMGetAttributesAtIndex(m_ref, m_idx, refs.data());
+    } else {
+      LLVMGetCallSiteAttributes(m_ref, m_idx, refs.data());
+    }
+    std::vector<LLVMAttributeWrapper> result;
+    result.reserve(count);
+    for (auto ref : refs)
+      result.emplace_back(ref, m_context_token);
+    return result;
+  }
+
+  std::optional<LLVMAttributeWrapper> get_enum_by_kind(unsigned kind_id) const {
+    check_valid();
+    LLVMAttributeRef ref = nullptr;
+    if (m_target == LLVMAttributeAccessorTarget::Function) {
+      ref = LLVMGetEnumAttributeAtIndex(m_ref, m_idx, kind_id);
+    } else {
+      ref = LLVMGetCallSiteEnumAttribute(m_ref, m_idx, kind_id);
+    }
+    if (!ref)
+      return std::nullopt;
+    return LLVMAttributeWrapper(ref, m_context_token);
+  }
+
+  std::optional<LLVMAttributeWrapper> get_string(const std::string &key) const {
+    check_valid();
+    LLVMAttributeRef ref = nullptr;
+    if (m_target == LLVMAttributeAccessorTarget::Function) {
+      ref = LLVMGetStringAttributeAtIndex(m_ref, m_idx, key.c_str(),
+                                          key.size());
+    } else {
+      ref = LLVMGetCallSiteStringAttribute(m_ref, m_idx, key.c_str(),
+                                           key.size());
+    }
+    if (!ref)
+      return std::nullopt;
+    return LLVMAttributeWrapper(ref, m_context_token);
+  }
+
+  std::optional<LLVMAttributeWrapper> get(const std::string &name) const {
+    unsigned kind_id = lookup_enum_attribute_kind(name);
+    if (kind_id != 0) {
+      auto attr = get_enum_by_kind(kind_id);
+      if (attr)
+        return attr;
+    }
+    return get_string(name);
+  }
+
+  bool contains(const std::string &name) const { return get(name).has_value(); }
+
+  void add(const LLVMAttributeWrapper &attr) {
+    check_valid();
+    attr.check_valid();
+    if (m_context_token != attr.m_context_token) {
+      throw LLVMAssertionError(
+          "AttributeAccessor.add requires an attribute from the same context");
+    }
+    if (m_target == LLVMAttributeAccessorTarget::Function) {
+      LLVMAddAttributeAtIndex(m_ref, m_idx, attr.m_ref);
+    } else {
+      LLVMAddCallSiteAttribute(m_ref, m_idx, attr.m_ref);
+    }
+  }
+
+  void add(const std::string &name, uint64_t value = 0) {
+    LLVMContextRef ctx = context_ref("AttributeAccessor.add");
+    unsigned kind_id = require_enum_attribute_kind(name);
+    LLVMAttributeRef attr = LLVMCreateEnumAttribute(ctx, kind_id, value);
+    LLVMAttributeWrapper wrapped(attr, m_context_token);
+    add(wrapped);
+  }
+
+  void add_type(const std::string &name, const LLVMTypeWrapper &type) {
+    check_valid();
+    type.check_valid();
+    if (m_context_token != type.m_context_token) {
+      throw LLVMAssertionError(
+          "AttributeAccessor.add_type requires a type from the same context");
+    }
+    unsigned kind_id = require_enum_attribute_kind(name);
+    LLVMAttributeRef attr = LLVMCreateTypeAttribute(
+        context_ref("AttributeAccessor.add_type"), kind_id, type.m_ref);
+    LLVMAttributeWrapper wrapped(attr, m_context_token);
+    add(wrapped);
+  }
+
+  void add_string(const std::string &key, const std::string &value = "") {
+    LLVMAttributeRef attr = LLVMCreateStringAttribute(
+        context_ref("AttributeAccessor.add_string"), key.c_str(), key.size(),
+        value.c_str(), value.size());
+    LLVMAttributeWrapper wrapped(attr, m_context_token);
+    add(wrapped);
+  }
+
+  void remove(const std::string &name) {
+    check_valid();
+    unsigned kind_id = lookup_enum_attribute_kind(name);
+    if (kind_id != 0) {
+      if (m_target == LLVMAttributeAccessorTarget::Function) {
+        LLVMRemoveEnumAttributeAtIndex(m_ref, m_idx, kind_id);
+      } else {
+        LLVMRemoveCallSiteEnumAttribute(m_ref, m_idx, kind_id);
+      }
+      return;
+    }
+
+    if (m_target == LLVMAttributeAccessorTarget::Function) {
+      LLVMRemoveStringAttributeAtIndex(m_ref, m_idx, name.c_str(),
+                                       name.size());
+    } else {
+      LLVMRemoveCallSiteStringAttribute(m_ref, m_idx, name.c_str(),
+                                        name.size());
+    }
+  }
+
+  void remove_string(const std::string &key) {
+    check_valid();
+    if (m_target == LLVMAttributeAccessorTarget::Function) {
+      LLVMRemoveStringAttributeAtIndex(m_ref, m_idx, key.c_str(), key.size());
+    } else {
+      LLVMRemoveCallSiteStringAttribute(m_ref, m_idx, key.c_str(), key.size());
+    }
   }
 };
 
@@ -6861,9 +6995,10 @@ struct LLVMContextWrapper : NoMoveCopy {
     return LLVMBasicBlockWrapper(bb, m_token);
   }
 
-  // Attribute creation method (moved from global function)
-  LLVMAttributeWrapper create_enum_attribute(unsigned kind_id, uint64_t val) {
+  LLVMAttributeWrapper create_enum_attribute(const std::string &kind_name,
+                                             uint64_t val) {
     check_valid();
+    unsigned kind_id = require_enum_attribute_kind(kind_name);
     LLVMAttributeRef ref = LLVMCreateEnumAttribute(m_ref, kind_id, val);
     return LLVMAttributeWrapper(ref, m_token);
   }
@@ -6878,7 +7013,7 @@ struct LLVMContextWrapper : NoMoveCopy {
   }
 
   /// Create a type attribute.
-  LLVMAttributeWrapper create_type_attribute(unsigned kind_id,
+  LLVMAttributeWrapper create_type_attribute(const std::string &kind_name,
                                              const LLVMTypeWrapper &type_ref);
 
   // Get metadata kind ID for a named metadata kind
@@ -9587,10 +9722,11 @@ inline LLVMMetadataWrapper LLVMContextWrapper::create_debug_location(
 // Implementation of LLVMContextWrapper::create_type_attribute() - needs
 // LLVMTypeWrapper
 inline LLVMAttributeWrapper
-LLVMContextWrapper::create_type_attribute(unsigned kind_id,
+LLVMContextWrapper::create_type_attribute(const std::string &kind_name,
                                           const LLVMTypeWrapper &type_ref) {
   check_valid();
   type_ref.check_valid();
+  unsigned kind_id = require_enum_attribute_kind(kind_name);
   LLVMAttributeRef ref =
       LLVMCreateTypeAttribute(m_ref, kind_id, type_ref.m_ref);
   return LLVMAttributeWrapper(ref, m_token);
@@ -12729,34 +12865,42 @@ Only call this when the instruction is known to carry debug records.
 TODO: needs safe LLVM-C API equivalent.
 
 <sub>C API: LLVMGetLastDbgRecord</sub>)")
-      // Callsite attribute methods (for call/invoke instructions)
-      .def("get_callsite_attribute_count",
-           &LLVMValueWrapper::get_callsite_attribute_count, "idx"_a,
-           R"(Get the number of attributes at a call site index.
-
-Valid when:
-  - value is a call/invoke/callbr instruction
-  - -1 <= idx <= num_arg_operands
-
-<sub>C API: LLVMGetCallSiteAttributeCount</sub>)")
-      .def("get_callsite_enum_attribute",
-           &LLVMValueWrapper::get_callsite_enum_attribute, "idx"_a, "kind_id"_a,
-           R"(Get an enum attribute at a call site index (None if not found).
-
-Valid when:
-  - value is a call/invoke/callbr instruction
-  - -1 <= idx <= num_arg_operands
-
-<sub>C API: LLVMGetCallSiteEnumAttribute</sub>)")
-      .def("add_callsite_attribute", &LLVMValueWrapper::add_callsite_attribute,
-           "idx"_a, "attr"_a,
-           R"(Add an attribute to a call site at the given index.
-
-Valid when:
-  - value is a call/invoke/callbr instruction
-  - -1 <= idx <= num_arg_operands
-
-<sub>C API: LLVMAddCallSiteAttribute</sub>)")
+      .def_prop_ro(
+          "callsite_attributes",
+          [](const LLVMValueWrapper &self) {
+            self.check_valid();
+            unsigned idx = LLVMAttributeAccessorWrapper::normalize_callsite_index(
+                self.m_ref, "callsite_attributes", LLVMAttributeFunctionIndex);
+            return LLVMAttributeAccessorWrapper(
+                self.m_ref, self.m_context_token, idx,
+                LLVMAttributeAccessorTarget::CallSite);
+          },
+          R"(Callsite-level attributes for a call/invoke/callbr instruction.)")
+      .def_prop_ro(
+          "callsite_return_attributes",
+          [](const LLVMValueWrapper &self) {
+            self.check_valid();
+            unsigned idx = LLVMAttributeAccessorWrapper::normalize_callsite_index(
+                self.m_ref, "callsite_return_attributes",
+                LLVMAttributeReturnIndex);
+            return LLVMAttributeAccessorWrapper(
+                self.m_ref, self.m_context_token, idx,
+                LLVMAttributeAccessorTarget::CallSite);
+          },
+          R"(Return-value callsite attributes for a call/invoke/callbr instruction.)")
+      .def(
+          "callsite_param_attributes",
+          [](const LLVMValueWrapper &self, int index) {
+            self.check_valid();
+            unsigned idx =
+                LLVMAttributeAccessorWrapper::normalize_callsite_param_index(
+                    self.m_ref, "callsite_param_attributes", index);
+            return LLVMAttributeAccessorWrapper(
+                self.m_ref, self.m_context_token, idx,
+                LLVMAttributeAccessorTarget::CallSite);
+          },
+          "index"_a,
+          R"(Attributes for a callsite argument, using a 0-based Python index.)")
       // Unified metadata method
       .def("set_metadata", &LLVMValueWrapper::set_metadata, "kind"_a, "md"_a,
            "ctx"_a,
@@ -13034,67 +13178,41 @@ Valid when:
                    R"(Previous function.
 
 <sub>C API: LLVMGetPreviousFunction</sub>)")
-      // Attribute methods
-      .def("get_attribute_count", &LLVMFunctionWrapper::get_attribute_count,
-           "idx"_a, R"(Attribute count.
-
-Valid when:
-  - -1 <= idx <= param_count
-  - idx=-1 is function attrs, idx=0 is return attrs, idx>=1 are parameter attrs
-
-<sub>C API: LLVMGetAttributeCountAtIndex</sub>)")
-      .def("get_enum_attribute", &LLVMFunctionWrapper::get_enum_attribute,
-           "idx"_a, "kind_id"_a,
-           R"(Get enum attribute.
-
-Valid when:
-  - -1 <= idx <= param_count
-  - idx=-1 is function attrs, idx=0 is return attrs, idx>=1 are parameter attrs
-
-<sub>C API: LLVMGetEnumAttributeAtIndex</sub>)")
-      .def("add_attribute", &LLVMFunctionWrapper::add_attribute, "idx"_a,
-           "attr"_a, R"(Add attribute.
-
-Valid when:
-  - -1 <= idx <= param_count
-  - idx=-1 is function attrs, idx=0 is return attrs, idx>=1 are parameter attrs
-
-<sub>C API: LLVMAddAttributeAtIndex</sub>)")
-      .def("get_attributes", &LLVMFunctionWrapper::get_attributes, "idx"_a,
-           R"(Get all attributes.
-
-Valid when:
-  - -1 <= idx <= param_count
-  - idx=-1 is function attrs, idx=0 is return attrs, idx>=1 are parameter attrs
-
-<sub>C API: LLVMGetAttributesAtIndex</sub>)")
-      .def("get_string_attribute", &LLVMFunctionWrapper::get_string_attribute,
-           "idx"_a, "key"_a,
-           R"(Get string attribute.
-
-Valid when:
-  - -1 <= idx <= param_count
-  - idx=-1 is function attrs, idx=0 is return attrs, idx>=1 are parameter attrs
-
-<sub>C API: LLVMGetStringAttributeAtIndex</sub>)")
-      .def("remove_enum_attribute", &LLVMFunctionWrapper::remove_enum_attribute,
-           "idx"_a, "kind_id"_a,
-           R"(Remove enum attribute.
-
-Valid when:
-  - -1 <= idx <= param_count
-  - idx=-1 is function attrs, idx=0 is return attrs, idx>=1 are parameter attrs
-
-<sub>C API: LLVMRemoveEnumAttributeAtIndex</sub>)")
-      .def("remove_string_attribute",
-           &LLVMFunctionWrapper::remove_string_attribute, "idx"_a, "key"_a,
-           R"(Remove string attribute.
-
-Valid when:
-  - -1 <= idx <= param_count
-  - idx=-1 is function attrs, idx=0 is return attrs, idx>=1 are parameter attrs
-
-<sub>C API: LLVMRemoveStringAttributeAtIndex</sub>)")
+      .def_prop_ro(
+          "attributes",
+          [](const LLVMFunctionWrapper &self) {
+            self.check_valid();
+            unsigned idx = LLVMAttributeAccessorWrapper::normalize_function_index(
+                self.m_ref, "attributes", LLVMAttributeFunctionIndex);
+            return LLVMAttributeAccessorWrapper(
+                self.m_ref, self.m_context_token, idx,
+                LLVMAttributeAccessorTarget::Function);
+          },
+          R"(Function-level attributes.)")
+      .def_prop_ro(
+          "return_attributes",
+          [](const LLVMFunctionWrapper &self) {
+            self.check_valid();
+            unsigned idx = LLVMAttributeAccessorWrapper::normalize_function_index(
+                self.m_ref, "return_attributes", LLVMAttributeReturnIndex);
+            return LLVMAttributeAccessorWrapper(
+                self.m_ref, self.m_context_token, idx,
+                LLVMAttributeAccessorTarget::Function);
+          },
+          R"(Return-value attributes.)")
+      .def(
+          "param_attributes",
+          [](const LLVMFunctionWrapper &self, int index) {
+            self.check_valid();
+            unsigned idx =
+                LLVMAttributeAccessorWrapper::normalize_function_param_index(
+                    self.m_ref, "param_attributes", index);
+            return LLVMAttributeAccessorWrapper(
+                self.m_ref, self.m_context_token, idx,
+                LLVMAttributeAccessorTarget::Function);
+          },
+          "index"_a,
+          R"(Attributes for a function parameter, using a 0-based Python index.)")
       .def("add_target_attribute", &LLVMFunctionWrapper::add_target_attribute,
            "key"_a, "value"_a,
            R"(Add target attribute.
@@ -13744,14 +13862,48 @@ Valid when:
 
   // Attribute wrapper
   nb::class_<LLVMAttributeWrapper>(m, "Attribute")
+      .def_static(
+          "enum",
+          [](LLVMContextWrapper &ctx, const std::string &name,
+             uint64_t value) { return ctx.create_enum_attribute(name, value); },
+          "context"_a, "name"_a, "value"_a = 0,
+          R"(Create an enum attribute by name.
+
+Examples:
+    Attribute.enum(ctx, "noreturn")
+    Attribute.enum(ctx, "align", 16)
+
+<sub>C API: LLVMCreateEnumAttribute</sub>)")
+      .def_static(
+          "type",
+          [](LLVMContextWrapper &ctx, const std::string &name,
+             const LLVMTypeWrapper &type) {
+            return ctx.create_type_attribute(name, type);
+          },
+          "context"_a, "name"_a, "type"_a,
+          R"(Create a type attribute by name.
+
+Example:
+    Attribute.type(ctx, "byval", i32)
+
+<sub>C API: LLVMCreateTypeAttribute</sub>)")
+      .def_static(
+          "string",
+          [](LLVMContextWrapper &ctx, const std::string &key,
+             const std::string &value) {
+            return ctx.create_string_attribute(key, value);
+          },
+          "context"_a, "key"_a, "value"_a = "",
+          R"(Create a string attribute.
+
+Example:
+    Attribute.string(ctx, "frame-pointer", "all")
+
+<sub>C API: LLVMCreateStringAttribute</sub>)")
       .def_prop_ro("is_valid", &LLVMAttributeWrapper::is_valid,
                    R"(Check if attribute is valid.
 
 <sub>C API: LLVMIsEnumAttribute</sub>)")
-      .def_prop_ro("kind", &LLVMAttributeWrapper::get_kind,
-                   R"(Get kind ID.
-
-<sub>C API: LLVMGetEnumAttributeKind</sub>)")
       .def_prop_ro("value", &LLVMAttributeWrapper::get_value,
                    R"(Get enum attribute value.
 
@@ -13783,6 +13935,55 @@ Valid when:
                    R"(Get type value.
 
 <sub>C API: LLVMGetTypeAttributeValue</sub>)");
+
+  nb::class_<LLVMAttributeAccessorWrapper>(m, "AttributeAccessor")
+      .def("__len__", &LLVMAttributeAccessorWrapper::size)
+      .def(
+          "__iter__",
+          [](const LLVMAttributeAccessorWrapper &self) {
+            nb::object attrs = nb::cast(self.get_all());
+            return nb::iter(attrs);
+          },
+          R"(Iterate over attributes in this slot.)")
+      .def("__contains__", &LLVMAttributeAccessorWrapper::contains,
+           "name"_a,
+           R"(Return True when this slot has an enum or string attribute by name.)")
+      .def("get", &LLVMAttributeAccessorWrapper::get, "name"_a,
+           R"(Get an enum or string attribute by name, or None.)")
+      .def("get_string", &LLVMAttributeAccessorWrapper::get_string, "key"_a,
+           R"(Get a string attribute by key, or None.)")
+      .def("all", &LLVMAttributeAccessorWrapper::get_all,
+           R"(Return all attributes in this slot.)")
+      .def("add",
+           nb::overload_cast<const LLVMAttributeWrapper &>(
+               &LLVMAttributeAccessorWrapper::add),
+           "attr"_a,
+           R"(Add a pre-built Attribute to this slot.)")
+      .def("add",
+           nb::overload_cast<const std::string &, uint64_t>(
+               &LLVMAttributeAccessorWrapper::add),
+           "name"_a, "value"_a = 0,
+           R"(Add an enum attribute by name.
+
+Examples:
+    attrs.add("noreturn")
+    attrs.add("align", 16)
+
+<sub>C API: LLVMAddAttributeAtIndex / LLVMAddCallSiteAttribute</sub>)")
+      .def("add_type", &LLVMAttributeAccessorWrapper::add_type, "name"_a,
+           "type"_a,
+           R"(Add a type attribute by name.)")
+      .def("add_string", &LLVMAttributeAccessorWrapper::add_string, "key"_a,
+           "value"_a = "",
+           R"(Add a string attribute.)")
+      .def("remove", &LLVMAttributeAccessorWrapper::remove, "name"_a,
+           R"(Remove an enum or string attribute by name.
+
+If name is a known enum attribute, removes that enum attribute. Otherwise
+removes a string attribute with the same key.)")
+      .def("remove_string", &LLVMAttributeAccessorWrapper::remove_string,
+           "key"_a,
+           R"(Remove a string attribute by key.)");
 
   // Comdat wrapper (for Windows/COFF COMDAT sections)
   nb::class_<LLVMComdatWrapper>(m, "Comdat",
@@ -14411,36 +14612,6 @@ Returns a BuilderManager for use with Python's 'with' statement.
            R"(Clear accumulated diagnostics.
 
 <sub>C API: LLVMContextSetDiagnosticHandler</sub>)")
-      // Attribute creation methods
-      .def("create_enum_attribute", &LLVMContextWrapper::create_enum_attribute,
-           "kind_id"_a, "val"_a,
-           R"(Create enum attribute.
-
-<sub>C API: LLVMCreateEnumAttribute</sub>)")
-      .def("create_string_attribute",
-           &LLVMContextWrapper::create_string_attribute, "key"_a, "value"_a,
-           R"(Create a string attribute.
-
-Args:
-    key: The attribute key (e.g., "target-cpu")
-    value: The attribute value (e.g., "skylake")
-
-Returns:
-    A new string attribute.
-
-<sub>C API: LLVMCreateStringAttribute</sub>)")
-      .def("create_type_attribute", &LLVMContextWrapper::create_type_attribute,
-           "kind_id"_a, "type"_a,
-           R"(Create a type attribute.
-
-Args:
-    kind_id: The attribute kind ID
-    type: The type to attach to the attribute
-
-Returns:
-    A new type attribute.
-
-<sub>C API: LLVMCreateTypeAttribute</sub>)")
       .def("const_string",
            nb::overload_cast<const std::string &, bool>(
                &LLVMContextWrapper::const_string),
@@ -15462,15 +15633,6 @@ Valid when:
   // BinaryManager.from_file().
 
   // BitReader functions
-
-  // Attribute index constants
-  m.attr("AttributeReturnIndex") =
-      nb::int_(static_cast<int>(LLVMAttributeReturnIndex));
-  m.attr("AttributeFunctionIndex") =
-      nb::int_(static_cast<int>(LLVMAttributeFunctionIndex));
-
-  // Static attribute registry value
-  m.attr("last_enum_attribute_kind") = nb::int_(LLVMGetLastEnumAttributeKind());
 
   // Static metadata function
   m.def(
