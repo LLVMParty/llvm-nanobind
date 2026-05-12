@@ -348,7 +348,7 @@ def main():
                 # Verify
                 if not mod.verify():
                     print(
-                        f"Error: Module verification failed: {mod.get_verification_error()}",
+                        f"Error: Module verification failed: {mod.verification_error}",
                         file=sys.stderr,
                     )
                     return 1

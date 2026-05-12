@@ -149,11 +149,11 @@ def main():
             origin_const = point_ty.named_struct_const(origin_vals)
             origin_global = mod.add_global(point_ty, "origin")
             origin_global.initializer = origin_const
-            origin_global.set_constant(True)
+            origin_global.is_global_constant = True
 
             # Verify module
             if not mod.verify():
-                print(f"; Verification failed: {mod.get_verification_error()}")
+                print(f"; Verification failed: {mod.verification_error}")
                 return 1
 
             # Print diagnostic comments

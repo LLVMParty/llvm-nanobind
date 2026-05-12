@@ -9,8 +9,8 @@ Output should match the C++ golden master test.
 LLVM Python APIs tested:
 - fn.verify(), fn.verify_and_print()
 - fn.intrinsic_id, fn.is_intrinsic
-- fn.has_personality_fn, fn.get_personality_fn(), fn.set_personality_fn()
-- fn.get_gc(), fn.set_gc()
+- fn.has_personality_fn, fn.personality_fn property
+- fn.gc property
 - mod.get_intrinsic_declaration()
 - llvm.lookup_intrinsic_id()
 """
@@ -124,14 +124,14 @@ def main():
                 f";     has_personality_fn: {'yes' if with_personality_fn.has_personality_fn else 'no'}"
             )
 
-            with_personality_fn.set_personality_fn(personality_fn)
+            with_personality_fn.personality_fn = personality_fn
 
             print(";   After setting personality:")
             print(
                 f";     has_personality_fn: {'yes' if with_personality_fn.has_personality_fn else 'no'}"
             )
 
-            got_personality = with_personality_fn.get_personality_fn()
+            got_personality = with_personality_fn.personality_fn
             if got_personality:
                 print(f";     personality fn name: {got_personality.name}")
 
@@ -150,13 +150,13 @@ def main():
             gc_fn = mod.add_function("gc_function", gc_fn_ty)
 
             print(";   Before setting GC:")
-            gc_before = gc_fn.get_gc()
+            gc_before = gc_fn.gc
             print(f";     GC name: {gc_before if gc_before else '(none)'}")
 
-            gc_fn.set_gc("statepoint-example")
+            gc_fn.gc = "statepoint-example"
 
             print(";   After setting GC:")
-            gc_after = gc_fn.get_gc()
+            gc_after = gc_fn.gc
             print(f";     GC name: {gc_after if gc_after else '(none)'}")
 
             # Add entry block

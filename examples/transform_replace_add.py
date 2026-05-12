@@ -59,7 +59,7 @@ def transform(ir_text: str) -> str:
                     inst.replace_all_uses_with(replacement)
                     inst.erase_from_parent()
 
-            assert mod.verify(), mod.get_verification_error()
+            assert mod.verify(), mod.verification_error
             return str(mod)
 
 

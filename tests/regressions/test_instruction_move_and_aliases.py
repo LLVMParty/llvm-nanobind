@@ -89,7 +89,7 @@ def test_instruction_aliases_and_movement():
             except Exception as e:
                 assert "terminator" in str(e).lower(), f"Unexpected error: {e}"
 
-            assert mod.verify(), mod.get_verification_error()
+            assert mod.verify(), mod.verification_error
 
 
 def test_instruction_move_rejects_cross_context():
@@ -184,7 +184,7 @@ def test_instruction_move_rejects_invalid_placement():
                     f"Unexpected error: {e}"
                 )
 
-            assert m.verify(), m.get_verification_error()
+            assert m.verify(), m.verification_error
 
 
 def test_landingpad_move_rejected_and_ir_unchanged():
@@ -200,7 +200,7 @@ def test_landingpad_move_rejected_and_ir_unchanged():
 
             fn_ty = ctx.types.function(void_ty, [])
             fn = m.add_function("f", fn_ty)
-            fn.set_personality_fn(personality_fn)
+            fn.personality_fn = personality_fn
 
             entry = fn.append_basic_block("entry")
             normal = fn.append_basic_block("normal")
@@ -218,7 +218,7 @@ def test_landingpad_move_rejected_and_ir_unchanged():
                 b.position_at_end(unwind)
                 lp_ty = ctx.types.struct([ctx.types.ptr, i32_ty])
                 landing = b.landing_pad(lp_ty, 0, "lp")
-                landing.set_cleanup(True)
+                landing.is_cleanup = True
                 payload = b.extract_value(landing, 0, "payload")
                 b.ret_void()
 
@@ -244,7 +244,7 @@ def test_landingpad_move_rejected_and_ir_unchanged():
                 f"Block mutated on failed move: {unwind_before} -> {unwind_after}"
             )
             assert after == before, "Module IR changed after rejected move"
-            assert m.verify(), m.get_verification_error()
+            assert m.verify(), m.verification_error
 
 
 if __name__ == "__main__":

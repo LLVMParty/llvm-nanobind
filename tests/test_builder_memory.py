@@ -35,7 +35,7 @@ def main():
 
                 # Alloca with explicit alignment
                 alloca_aligned = builder.alloca(i64, "local_aligned")
-                alloca_aligned.set_inst_alignment(16)
+                alloca_aligned.inst_alignment = 16
 
                 # Array alloca (dynamic size)
                 array_size = i32.constant(5)
@@ -54,13 +54,13 @@ def main():
 
                 # Volatile load/store
                 volatile_store = builder.store(val, alloca_i32)
-                volatile_store.set_volatile(True)
+                volatile_store.is_volatile = True
                 volatile_load = builder.load(i32, alloca_i32, "volatile_loaded")
-                volatile_load.set_volatile(True)
+                volatile_load.is_volatile = True
 
                 # Load with alignment
                 aligned_load = builder.load(i64, alloca_aligned, "aligned_loaded")
-                aligned_load.set_inst_alignment(16)
+                aligned_load.inst_alignment = 16
 
                 # GEP into array (static)
                 indices = [i64.constant(0), i64.constant(3)]
@@ -95,7 +95,7 @@ def main():
 
             # Verify module
             if not mod.verify():
-                print(f"; Verification failed: {mod.get_verification_error()}")
+                print(f"; Verification failed: {mod.verification_error}")
                 return 1
 
             # Print diagnostic comments

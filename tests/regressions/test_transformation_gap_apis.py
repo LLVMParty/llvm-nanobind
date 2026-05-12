@@ -43,7 +43,7 @@ def test_replace_uses_of_with_rewrites_only_selected_operands() -> None:
                 mul.replace_uses_of_with(add, replacement)
                 b.ret(mul)
 
-            assert mod.verify(), mod.get_verification_error()
+            assert mod.verify(), mod.verification_error
             text = mod.to_string()
             assert "mul i32 %replacement, %replacement" in text
 
@@ -93,7 +93,7 @@ def test_basic_block_erase_from_parent() -> None:
             assert fn.basic_block_count == 2
             dead.erase_from_parent()
             assert fn.basic_block_count == 1
-            assert mod.verify(), mod.get_verification_error()
+            assert mod.verify(), mod.verification_error
 
 
 def test_builder_vector_splat() -> None:
@@ -109,7 +109,7 @@ def test_builder_vector_splat() -> None:
                 lane2 = b.extract_element(splat, i32.constant(2, False), "lane2")
                 b.ret(lane2)
 
-            assert mod.verify(), mod.get_verification_error()
+            assert mod.verify(), mod.verification_error
             text = mod.to_string()
             assert "shufflevector" in text
             assert str(vec4) in text

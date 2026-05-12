@@ -245,7 +245,7 @@ def build_fixture(ctx: llvm.Context, mod: llvm.Module):
 
     inv_fn_ty = ctx.types.function(void, [], False)
     inv_fn = mod.add_function("inv_fn", inv_fn_ty)
-    inv_fn.set_personality_fn(personality_fn)
+    inv_fn.personality_fn = personality_fn
     inv_entry = inv_fn.append_basic_block("entry")
     inv_normal = inv_fn.append_basic_block("normal")
     inv_unwind = inv_fn.append_basic_block("unwind")
@@ -260,7 +260,7 @@ def build_fixture(ctx: llvm.Context, mod: llvm.Module):
         lp_ty = ctx.types.struct([ptr, i32])
         landing_inst = b.landing_pad(lp_ty, 1, "lp")
         landing_inst.add_clause(ptr.null())
-        landing_inst.set_cleanup(True)
+        landing_inst.is_cleanup = True
         b.ret_void()
 
     refs["invoke_inst"] = invoke_inst
@@ -304,7 +304,7 @@ def build_fixture(ctx: llvm.Context, mod: llvm.Module):
     # CatchSwitch/CatchPad/CleanupPad.
     eh_fn_ty = ctx.types.function(void, [], False)
     eh_fn = mod.add_function("eh_fn", eh_fn_ty)
-    eh_fn.set_personality_fn(personality_fn)
+    eh_fn.personality_fn = personality_fn
     cs_entry = eh_fn.append_basic_block("cs_entry")
     cs_pad1 = eh_fn.append_basic_block("cs_pad1")
     cs_pad2 = eh_fn.append_basic_block("cs_pad2")
@@ -398,8 +398,8 @@ def test_value_accessor_guard_matrix_negative():
                     "global ifunc value",
                 ),
                 (
-                    "set_global_ifunc_resolver",
-                    lambda: bad.set_global_ifunc_resolver(refs["resolver0"]),
+                    "global_ifunc_resolver",
+                    lambda: setattr(bad, "global_ifunc_resolver", refs["resolver0"]),
                     "global ifunc value",
                 ),
                 (
@@ -419,7 +419,7 @@ def test_value_accessor_guard_matrix_negative():
                 ),
                 ("unnamed_address", lambda: bad.unnamed_address, "global value"),
                 (
-                    "set_unnamed_address",
+                    "unnamed_address",
                     lambda: setattr(bad, "unnamed_address", g0.unnamed_address),
                     "global value",
                 ),
@@ -435,15 +435,15 @@ def test_value_accessor_guard_matrix_negative():
                 ),
                 ("personality_fn", lambda: bad.personality_fn, "function value"),
                 (
-                    "set_personality_fn",
-                    lambda: bad.set_personality_fn(personality_fn),
+                    "personality_fn",
+                    lambda: setattr(bad, "personality_fn", personality_fn),
                     "function value",
                 ),
                 ("has_prefix_data", lambda: bad.has_prefix_data, "function value"),
                 ("prefix_data", lambda: bad.prefix_data, "function value"),
                 (
-                    "set_prefix_data",
-                    lambda: bad.set_prefix_data(ctx.types.ptr.null()),
+                    "prefix_data",
+                    lambda: setattr(bad, "prefix_data", ctx.types.ptr.null()),
                     "function value",
                 ),
                 (
@@ -453,8 +453,8 @@ def test_value_accessor_guard_matrix_negative():
                 ),
                 ("prologue_data", lambda: bad.prologue_data, "function value"),
                 (
-                    "set_prologue_data",
-                    lambda: bad.set_prologue_data(ctx.types.ptr.null()),
+                    "prologue_data",
+                    lambda: setattr(bad, "prologue_data", ctx.types.ptr.null()),
                     "function value",
                 ),
                 (
@@ -474,22 +474,22 @@ def test_value_accessor_guard_matrix_negative():
                 ("nuw", lambda: br_inst.nuw, "overflowing binary"),
                 ("exact", lambda: br_inst.exact, "exact-eligible"),
                 ("nneg", lambda: br_inst.nneg, "zext"),
-                ("set_nsw", lambda: br_inst.set_nsw(True), "overflowing binary"),
-                ("set_nuw", lambda: br_inst.set_nuw(True), "overflowing binary"),
-                ("set_exact", lambda: br_inst.set_exact(True), "exact-eligible"),
-                ("set_nneg", lambda: br_inst.set_nneg(True), "zext"),
+                ("nsw", lambda: setattr(br_inst, "nsw", True), "overflowing binary"),
+                ("nuw", lambda: setattr(br_inst, "nuw", True), "overflowing binary"),
+                ("exact", lambda: setattr(br_inst, "exact", True), "exact-eligible"),
+                ("nneg", lambda: setattr(br_inst, "nneg", True), "zext"),
                 ("is_disjoint", lambda: add_inst.is_disjoint, "or instruction"),
-                ("set_is_disjoint", lambda: add_inst.set_is_disjoint(True), "or instruction"),
+                ("is_disjoint", lambda: setattr(add_inst, "is_disjoint", True), "or instruction"),
                 ("icmp_same_sign", lambda: add_inst.icmp_same_sign, "icmp instruction"),
                 (
-                    "set_icmp_same_sign",
-                    lambda: add_inst.set_icmp_same_sign(True),
+                    "icmp_same_sign",
+                    lambda: setattr(add_inst, "icmp_same_sign", True),
                     "icmp instruction",
                 ),
                 ("ordering", lambda: add_inst.ordering, "atomic-capable memory"),
                 (
-                    "set_ordering",
-                    lambda: add_inst.set_ordering(llvm.AtomicOrdering.Monotonic),
+                    "ordering",
+                    lambda: setattr(add_inst, "ordering", llvm.AtomicOrdering.Monotonic),
                     "atomic-capable memory",
                 ),
                 ("is_atomic", lambda: bad.is_atomic, "instruction value"),
@@ -499,8 +499,8 @@ def test_value_accessor_guard_matrix_negative():
                     "atomic-capable memory",
                 ),
                 (
-                    "set_atomic_sync_scope_id",
-                    lambda: add_inst.set_atomic_sync_scope_id(0),
+                    "atomic_sync_scope_id",
+                    lambda: setattr(add_inst, "atomic_sync_scope_id", 0),
                     "atomic-capable memory",
                 ),
                 ("atomic_rmw_bin_op", lambda: add_inst.atomic_rmw_bin_op, "atomicrmw"),
@@ -515,11 +515,11 @@ def test_value_accessor_guard_matrix_negative():
                     "cmpxchg",
                 ),
                 ("weak", lambda: add_inst.weak, "cmpxchg"),
-                ("set_weak", lambda: add_inst.set_weak(True), "cmpxchg"),
+                ("weak", lambda: setattr(add_inst, "weak", True), "cmpxchg"),
                 ("tail_call_kind", lambda: add_inst.tail_call_kind, "call or invoke"),
                 (
-                    "set_tail_call_kind",
-                    lambda: add_inst.set_tail_call_kind(refs["call_plain_inst"].tail_call_kind),
+                    "tail_call_kind",
+                    lambda: setattr(add_inst, "tail_call_kind", refs["call_plain_inst"].tail_call_kind),
                     "call or invoke",
                 ),
                 ("num_incoming", lambda: add_inst.num_incoming, "a PHI instruction"),
@@ -570,8 +570,8 @@ def test_value_accessor_guard_matrix_negative():
                     "call, invoke, or callbr",
                 ),
                 (
-                    "set_called_operand",
-                    lambda: add_inst.set_called_operand(call_target),
+                    "called_value",
+                    lambda: setattr(add_inst, "called_value", call_target),
                     "call, invoke, or callbr",
                 ),
                 (
@@ -673,8 +673,8 @@ def test_value_accessor_guard_matrix_negative():
                     "a landingpad instruction",
                 ),
                 (
-                    "set_cleanup",
-                    lambda: add_inst.set_cleanup(True),
+                    "is_cleanup",
+                    lambda: setattr(add_inst, "is_cleanup", True),
                     "a landingpad instruction",
                 ),
                 ("add_clause", lambda: add_inst.add_clause(bad), "landingpad instruction"),
@@ -719,8 +719,8 @@ def test_value_accessor_guard_matrix_negative():
                     "supports fast-math flags",
                 ),
                 (
-                    "set_fast_math_flags",
-                    lambda: add_inst.set_fast_math_flags(0),
+                    "fast_math_flags",
+                    lambda: setattr(add_inst, "fast_math_flags", 0),
                     "supports fast-math flags",
                 ),
                 ("const_bitcast", lambda: add_inst.const_bitcast(ctx.types.ptr), "constant value"),
@@ -806,7 +806,7 @@ def test_value_accessor_guard_matrix_negative():
                     lambda: setattr(bad, "initializer", i32.constant(0, False)),
                     "global variable",
                 ),
-                ("set_constant", lambda: bad.set_constant(True), "global variable"),
+                ("is_global_constant", lambda: setattr(bad, "is_global_constant", True), "global variable"),
                 ("is_global_constant", lambda: bad.is_global_constant, "global variable"),
                 ("linkage", lambda: bad.linkage, "global value"),
                 (
@@ -827,14 +827,14 @@ def test_value_accessor_guard_matrix_negative():
                     "global value",
                 ),
                 ("comdat", lambda: bad.comdat, "global object"),
-                ("set_comdat", lambda: bad.set_comdat(mod.add_comdat("x")), "global object"),
+                ("comdat", lambda: setattr(bad, "comdat", mod.add_comdat("x")), "global object"),
                 ("section", lambda: bad.section, "global object"),
                 ("section", lambda: setattr(bad, "section", ".foo"), "global object"),
-                ("set_thread_local", lambda: bad.set_thread_local(True), "global variable"),
+                ("is_thread_local", lambda: setattr(bad, "is_thread_local", True), "global variable"),
                 ("is_thread_local", lambda: bad.is_thread_local, "global variable"),
                 (
-                    "set_externally_initialized",
-                    lambda: bad.set_externally_initialized(True),
+                    "is_externally_initialized",
+                    lambda: setattr(bad, "is_externally_initialized", True),
                     "global variable",
                 ),
                 (
@@ -911,7 +911,7 @@ def test_value_accessor_guard_matrix_positive():
             assert ifunc0.next_global_ifunc == ifunc1
             assert ifunc1.prev_global_ifunc == ifunc0
             assert ifunc0.global_ifunc_resolver == resolver0
-            ifunc0.set_global_ifunc_resolver(resolver1)
+            ifunc0.global_ifunc_resolver = resolver1
             assert ifunc0.global_ifunc_resolver == resolver1
 
             ifunc_remove = mod.add_global_ifunc(
@@ -935,11 +935,11 @@ def test_value_accessor_guard_matrix_positive():
 
             # Function value.
             assert not f.has_personality_fn
-            f.set_personality_fn(personality_fn)
+            f.personality_fn = personality_fn
             assert f.has_personality_fn
             assert f.personality_fn == personality_fn
-            f.set_prefix_data(ctx.types.ptr.null())
-            f.set_prologue_data(ctx.types.ptr.null())
+            f.prefix_data = ctx.types.ptr.null()
+            f.prologue_data = ctx.types.ptr.null()
             assert f.has_prefix_data
             assert f.prefix_data is not None
             assert f.has_prologue_data
@@ -958,40 +958,40 @@ def test_value_accessor_guard_matrix_positive():
             # Opcode-specific predicates/flags.
             assert icmp_inst.icmp_predicate == llvm.IntPredicate.EQ
             assert fcmp_inst.fcmp_predicate == llvm.RealPredicate.OEQ
-            add_wrap_inst.set_nsw(True)
+            add_wrap_inst.nsw = True
             assert add_wrap_inst.nsw
-            add_wrap_inst.set_nuw(True)
+            add_wrap_inst.nuw = True
             assert add_wrap_inst.nuw
-            sdiv_inst.set_exact(True)
+            sdiv_inst.exact = True
             assert sdiv_inst.exact
-            lshr_inst.set_exact(True)
+            lshr_inst.exact = True
             assert lshr_inst.exact
-            zext_inst.set_nneg(True)
+            zext_inst.nneg = True
             assert zext_inst.nneg
-            or_inst.set_is_disjoint(True)
+            or_inst.is_disjoint = True
             assert or_inst.is_disjoint
-            icmp_inst.set_icmp_same_sign(True)
+            icmp_inst.icmp_same_sign = True
             assert icmp_inst.icmp_same_sign
 
             # Alignment/volatile/ordering/atomic families.
             a = g0.alignment
             g0.alignment = a
             assert load_inst.is_volatile is False
-            load_inst.set_volatile(True)
+            load_inst.is_volatile = True
             assert load_inst.is_volatile
-            store_inst.set_volatile(True)
+            store_inst.is_volatile = True
             assert store_inst.is_volatile
             assert atomic_rmw_inst.ordering == llvm.AtomicOrdering.SequentiallyConsistent
-            atomic_rmw_inst.set_ordering(llvm.AtomicOrdering.Monotonic)
+            atomic_rmw_inst.ordering = llvm.AtomicOrdering.Monotonic
             assert atomic_rmw_inst.ordering == llvm.AtomicOrdering.Monotonic
             assert atomic_rmw_inst.is_atomic
             scope_id = atomic_rmw_inst.atomic_sync_scope_id
-            atomic_rmw_inst.set_atomic_sync_scope_id(scope_id)
+            atomic_rmw_inst.atomic_sync_scope_id = scope_id
             _ = atomic_rmw_inst.atomic_rmw_bin_op
             _ = cmpxchg_inst.cmpxchg_success_ordering
             _ = cmpxchg_inst.cmpxchg_failure_ordering
             weak_before = cmpxchg_inst.weak
-            cmpxchg_inst.set_weak(not weak_before)
+            cmpxchg_inst.weak = not weak_before
             assert cmpxchg_inst.weak == (not weak_before)
             _ = fence_inst.ordering
 
@@ -1012,9 +1012,9 @@ def test_value_accessor_guard_matrix_positive():
             assert ob.num_args == 1
             assert call_arg_inst.called_function_type.kind == llvm.TypeKind.Function
             assert call_arg_inst.called_value == refs["call_arg_callee"]
-            call_arg_inst.set_called_operand(refs["call_arg_callee"])
+            call_arg_inst.called_value = refs["call_arg_callee"]
             _ = call_arg_inst.tail_call_kind
-            call_arg_inst.set_tail_call_kind(call_arg_inst.tail_call_kind)
+            call_arg_inst.tail_call_kind = call_arg_inst.tail_call_kind
 
             # Arg-operand instructions.
             assert call_arg_inst.num_arg_operands == 1
@@ -1045,9 +1045,9 @@ def test_value_accessor_guard_matrix_positive():
             assert landing_inst.num_clauses == 1
             assert landing_inst.get_clause(0) is not None
             assert landing_inst.is_cleanup
-            landing_inst.set_cleanup(False)
+            landing_inst.is_cleanup = False
             assert not landing_inst.is_cleanup
-            landing_inst.set_cleanup(True)
+            landing_inst.is_cleanup = True
             assert landing_inst.is_cleanup
 
             # CatchPad/CatchSwitch.
@@ -1074,7 +1074,7 @@ def test_value_accessor_guard_matrix_positive():
             # Fast-math flags.
             assert fadd_inst.can_use_fast_math_flags
             fmf = fadd_inst.fast_math_flags
-            fadd_inst.set_fast_math_flags(fmf)
+            fadd_inst.fast_math_flags = fmf
             assert fadd_inst.fast_math_flags == fmf
 
             # const_bitcast/replace/callsite attributes.
@@ -1141,7 +1141,7 @@ def test_value_accessor_guard_matrix_positive():
             # Global helper-backed APIs.
             assert g0.initializer is not None
             g0.initializer = ctx.types.i32.constant(123, False)
-            g0.set_constant(True)
+            g0.is_global_constant = True
             assert g0.is_global_constant
             link = g0.linkage
             g0.linkage = link
@@ -1151,12 +1151,12 @@ def test_value_accessor_guard_matrix_positive():
             g0.dll_storage_class = dll
             section = g0.section
             g0.section = section
-            g0.set_thread_local(True)
+            g0.is_thread_local = True
             assert g0.is_thread_local
-            g0.set_externally_initialized(True)
+            g0.is_externally_initialized = True
             assert g0.is_externally_initialized
             c = mod.add_comdat("value_guard_positive_comdat")
-            g0.set_comdat(c)
+            g0.comdat = c
             assert g0.comdat is not None
             g_del = mod.add_global(ctx.types.i32, "g_del")
             g_del.delete_global()

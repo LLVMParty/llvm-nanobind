@@ -1764,7 +1764,7 @@ struct LLVMValueWrapper {
 
   void set_global_ifunc_resolver(const LLVMValueWrapper &resolver) {
     check_valid();
-    require_global_ifunc("set_global_ifunc_resolver");
+    require_global_ifunc("global_ifunc_resolver");
     resolver.check_valid();
     LLVMSetGlobalIFuncResolver(m_ref, resolver.m_ref);
   }
@@ -1819,7 +1819,7 @@ struct LLVMValueWrapper {
 
   void set_unnamed_address(LLVMUnnamedAddr unnamed_addr) {
     check_valid();
-    require_global_value("set_unnamed_address");
+    require_global_value("unnamed_address");
     LLVMSetUnnamedAddress(m_ref, unnamed_addr);
   }
 
@@ -1847,7 +1847,7 @@ struct LLVMValueWrapper {
 
   void set_personality_fn(const LLVMValueWrapper &fn) {
     check_valid();
-    require_function_value("set_personality_fn");
+    require_function_value("personality_fn");
     fn.check_valid();
     LLVMSetPersonalityFn(m_ref, fn.m_ref);
   }
@@ -1874,7 +1874,7 @@ struct LLVMValueWrapper {
 
   void set_prefix_data(const LLVMValueWrapper &data) {
     check_valid();
-    require_function_value("set_prefix_data");
+    require_function_value("prefix_data");
     data.check_valid();
     LLVMSetPrefixData(m_ref, data.m_ref);
   }
@@ -1903,7 +1903,7 @@ struct LLVMValueWrapper {
 
   void set_prologue_data(const LLVMValueWrapper &data) {
     check_valid();
-    require_function_value("set_prologue_data");
+    require_function_value("prologue_data");
     data.check_valid();
     LLVMSetPrologueData(m_ref, data.m_ref);
   }
@@ -2535,27 +2535,27 @@ struct LLVMValueWrapper {
   void set_nsw(bool nsw) {
     check_valid();
     require_instruction_opcodes<LLVMAdd, LLVMSub, LLVMMul, LLVMShl>(
-        "set_nsw", "an overflowing binary operator");
+        "nsw", "an overflowing binary operator");
     LLVMSetNSW(m_ref, nsw);
   }
 
   void set_nuw(bool nuw) {
     check_valid();
     require_instruction_opcodes<LLVMAdd, LLVMSub, LLVMMul, LLVMShl>(
-        "set_nuw", "an overflowing binary operator");
+        "nuw", "an overflowing binary operator");
     LLVMSetNUW(m_ref, nuw);
   }
 
   void set_exact(bool exact) {
     check_valid();
     require_instruction_opcodes<LLVMUDiv, LLVMSDiv, LLVMLShr, LLVMAShr>(
-        "set_exact", "an exact-eligible binary operator");
+        "exact", "an exact-eligible binary operator");
     LLVMSetExact(m_ref, exact);
   }
 
   void set_nneg(bool nneg) {
     check_valid();
-    require_instruction_opcodes<LLVMZExt>("set_nneg");
+    require_instruction_opcodes<LLVMZExt>("nneg");
     LLVMSetNNeg(m_ref, nneg);
   }
 
@@ -2568,7 +2568,7 @@ struct LLVMValueWrapper {
 
   void set_is_disjoint(bool is_disjoint) {
     check_valid();
-    require_instruction_opcodes<LLVMOr>("set_is_disjoint");
+    require_instruction_opcodes<LLVMOr>("is_disjoint");
     LLVMSetIsDisjoint(m_ref, is_disjoint);
   }
 
@@ -2581,7 +2581,7 @@ struct LLVMValueWrapper {
 
   void set_icmp_same_sign(bool same_sign) {
     check_valid();
-    require_instruction_opcodes<LLVMICmp>("set_icmp_same_sign");
+    require_instruction_opcodes<LLVMICmp>("icmp_same_sign");
     LLVMSetICmpSameSign(m_ref, same_sign);
   }
 
@@ -2590,7 +2590,7 @@ struct LLVMValueWrapper {
     check_valid();
     require_instruction_opcodes<LLVMLoad, LLVMStore, LLVMFence, LLVMAtomicRMW,
                                 LLVMAtomicCmpXchg>(
-        "set_ordering", "an atomic-capable memory instruction");
+        "ordering", "an atomic-capable memory instruction");
     LLVMSetOrdering(m_ref, ordering);
   }
 
@@ -2613,7 +2613,7 @@ struct LLVMValueWrapper {
     check_valid();
     require_instruction_opcodes<LLVMLoad, LLVMStore, LLVMFence, LLVMAtomicRMW,
                                 LLVMAtomicCmpXchg>(
-        "set_atomic_sync_scope_id", "an atomic-capable memory instruction");
+        "atomic_sync_scope_id", "an atomic-capable memory instruction");
     LLVMSetAtomicSyncScopeID(m_ref, scope_id);
   }
 
@@ -2648,7 +2648,7 @@ struct LLVMValueWrapper {
 
   void set_weak(bool is_weak) {
     check_valid();
-    require_instruction_opcodes<LLVMAtomicCmpXchg>("set_weak");
+    require_instruction_opcodes<LLVMAtomicCmpXchg>("weak");
     LLVMSetWeak(m_ref, is_weak);
   }
 
@@ -2662,7 +2662,7 @@ struct LLVMValueWrapper {
 
   void set_tail_call_kind(LLVMTailCallKind kind) {
     check_valid();
-    require_instruction_opcodes<LLVMCall, LLVMInvoke>("set_tail_call_kind",
+    require_instruction_opcodes<LLVMCall, LLVMInvoke>("tail_call_kind",
                                                       "a call or invoke");
     LLVMSetTailCallKind(m_ref, kind);
   }
@@ -2694,7 +2694,7 @@ struct LLVMValueWrapper {
 
   void set_called_operand(const LLVMValueWrapper &val) {
     check_valid();
-    require_call_like_instruction("set_called_operand");
+    require_call_like_instruction("called_value");
     val.check_valid();
     // In LLVM's CallBase, the callee is the last operand
     unsigned num_ops = static_cast<unsigned>(LLVMGetNumOperands(m_ref));
@@ -2759,7 +2759,7 @@ struct LLVMValueWrapper {
 
   void set_cleanup(bool is_cleanup_val) {
     check_valid();
-    require_landingpad_instruction("set_cleanup");
+    require_landingpad_instruction("is_cleanup");
     LLVMSetCleanup(m_ref, is_cleanup_val);
   }
 
@@ -2876,7 +2876,7 @@ struct LLVMValueWrapper {
     check_valid();
     if (!LLVMCanValueUseFastMathFlags(m_ref)) {
       throw LLVMAssertionError(
-          "set_fast_math_flags requires a value that supports fast-math flags");
+          "fast_math_flags requires a value that supports fast-math flags");
     }
     LLVMSetFastMathFlags(m_ref, flags);
   }
@@ -4131,13 +4131,13 @@ struct LLVMFunctionWrapper : LLVMValueWrapper {
     check_valid();
     if (!has_personality_fn()) {
       throw LLVMAssertionError(
-          "get_personality_fn requires a personality function "
+          "personality_fn requires a personality function "
           "(check has_personality_fn first)");
     }
     LLVMValueRef fn = LLVMGetPersonalityFn(m_ref);
     if (!fn) {
       throw LLVMAssertionError(
-          "get_personality_fn: personality function is unexpectedly null");
+          "personality_fn: personality function is unexpectedly null");
     }
     return LLVMValueWrapper(fn, m_context_token);
   }
@@ -7643,7 +7643,7 @@ void global_set_initializer(LLVMValueWrapper &global,
 
 void global_set_constant(LLVMValueWrapper &global, bool is_const) {
   global.check_valid();
-  global.require_global_variable("set_constant");
+  global.require_global_variable("is_global_constant");
   LLVMSetGlobalConstant(global.m_ref, is_const);
 }
 
@@ -7709,7 +7709,7 @@ void global_set_comdat(LLVMValueWrapper &global,
                        const LLVMComdatWrapper &comdat) {
   global.check_valid();
   comdat.check_valid();
-  global.require_global_object("set_comdat");
+  global.require_global_object("comdat");
   LLVMSetComdat(global.m_ref, comdat.m_ref);
 }
 
@@ -7728,7 +7728,7 @@ std::string global_get_section(const LLVMValueWrapper &global) {
 
 void global_set_thread_local(LLVMValueWrapper &global, bool is_tls) {
   global.check_valid();
-  global.require_global_variable("set_thread_local");
+  global.require_global_variable("is_thread_local");
   LLVMSetThreadLocal(global.m_ref, is_tls);
 }
 
@@ -7740,7 +7740,7 @@ bool global_is_thread_local(const LLVMValueWrapper &global) {
 
 void global_set_externally_initialized(LLVMValueWrapper &global, bool is_ext) {
   global.check_valid();
-  global.require_global_variable("set_externally_initialized");
+  global.require_global_variable("is_externally_initialized");
   LLVMSetExternallyInitialized(global.m_ref, is_ext);
 }
 
@@ -10905,7 +10905,7 @@ NB_MODULE(llvm, m) {
 
   exc_parse.doc() = "LLVM IR/bitcode parsing error with diagnostics.\n\n"
                     "Raised when parsing LLVM IR or bitcode fails. Use "
-                    "ctx.get_diagnostics()\n"
+                    "ctx.diagnostics\n"
                     "to retrieve detailed diagnostic information after "
                     "catching this exception.\n\n"
                     "Example:\n"
@@ -10913,7 +10913,7 @@ NB_MODULE(llvm, m) {
                     "        mod = ctx.parse_ir('invalid')\n"
                     "    except LLVMParseError as e:\n"
                     "        print(f'Parse failed: {e}')\n"
-                    "        for diag in ctx.get_diagnostics():\n"
+                    "        for diag in ctx.diagnostics:\n"
                     "            print(f'{diag.severity}: {diag.message}')";
 
   // Diagnostic class
@@ -11823,10 +11823,6 @@ Valid when:
                    R"(Get or set the initializer.
 
 <sub>C API: LLVMGetInitializer, LLVMSetInitializer</sub>)")
-      .def("set_constant", &global_set_constant, "is_const"_a,
-           R"(Set whether this global is constant.
-
-<sub>C API: LLVMSetGlobalConstant</sub>)")
       .def_prop_rw("is_global_constant", &global_is_constant,
                    &global_set_constant,
                    R"(Get or set whether this global is constant.
@@ -11845,14 +11841,10 @@ Valid when:
                    R"(DLL storage class for Windows PE/COFF targets.
 
 <sub>C API: LLVMGetDLLStorageClass, LLVMSetDLLStorageClass</sub>)")
-      .def_prop_ro("comdat", &global_get_comdat,
-                   R"(Get the COMDAT section for this global (None if not set).
+      .def_prop_rw("comdat", &global_get_comdat, &global_set_comdat,
+                   R"(Get or set the COMDAT section for this global (None if not set).
 
-<sub>C API: LLVMGetComdat</sub>)")
-      .def("set_comdat", &global_set_comdat, "comdat"_a,
-           R"(Set the COMDAT section for this global.
-
-<sub>C API: LLVMSetComdat</sub>)")
+<sub>C API: LLVMGetComdat, LLVMSetComdat</sub>)")
       .def_prop_rw("alignment", &LLVMValueWrapper::get_alignment,
                    &LLVMValueWrapper::set_alignment,
                    R"(Get or set alignment.
@@ -11862,20 +11854,11 @@ Valid when:
                    R"(Get or set section.
 
 <sub>C API: LLVMGetSection, LLVMSetSection</sub>)")
-      .def("set_thread_local", &global_set_thread_local, "is_tls"_a,
-           R"(Set whether this global is thread-local.
-
-<sub>C API: LLVMSetThreadLocal</sub>)")
       .def_prop_rw("is_thread_local", &global_is_thread_local,
                    &global_set_thread_local,
                    R"(Get or set whether this global is thread-local.
 
 <sub>C API: LLVMIsThreadLocal, LLVMSetThreadLocal</sub>)")
-      .def("set_externally_initialized", &global_set_externally_initialized,
-           "is_ext"_a,
-           R"(Set whether this global is initialized externally.
-
-<sub>C API: LLVMSetExternallyInitialized</sub>)")
       .def_prop_rw("is_externally_initialized",
                    &global_is_externally_initialized,
                    &global_set_externally_initialized,
@@ -11970,19 +11953,11 @@ operands are `[cond, false_dest, true_dest]`.
 
 <sub>C API: LLVMGetNumSuccessors, LLVMGetSuccessor</sub>)")
       // Load/Store helpers
-      .def("set_volatile", &LLVMValueWrapper::set_volatile, "is_volatile"_a,
-           R"(Set volatile flag.
-
-<sub>C API: LLVMSetVolatile</sub>)")
       .def_prop_rw("is_volatile", &LLVMValueWrapper::get_volatile,
                    &LLVMValueWrapper::set_volatile,
                    R"(Get or set volatile flag.
 
 <sub>C API: LLVMGetVolatile, LLVMSetVolatile</sub>)")
-      .def("set_inst_alignment", &LLVMValueWrapper::set_alignment, "align"_a,
-           R"(Set instruction alignment.
-
-<sub>C API: LLVMSetAlignment</sub>)")
       .def_prop_rw("inst_alignment", &LLVMValueWrapper::get_alignment,
                    &LLVMValueWrapper::set_alignment,
                    R"(Get or set instruction alignment.
@@ -12249,16 +12224,12 @@ Warning:
                    R"(Get the previous indirect function (IFunc) in the module.
 
 <sub>C API: LLVMGetPreviousGlobalIFunc</sub>)")
-      .def_prop_ro("global_ifunc_resolver",
+      .def_prop_rw("global_ifunc_resolver",
                    &LLVMValueWrapper::get_global_ifunc_resolver,
-                   R"(Get the resolver function for this indirect function.
+                   &LLVMValueWrapper::set_global_ifunc_resolver,
+                   R"(Get or set the resolver function for this indirect function.
 
-<sub>C API: LLVMGetGlobalIFuncResolver</sub>)")
-      .def("set_global_ifunc_resolver",
-           &LLVMValueWrapper::set_global_ifunc_resolver, "resolver"_a,
-           R"(Set the resolver function for this indirect function.
-
-<sub>C API: LLVMSetGlobalIFuncResolver</sub>)")
+<sub>C API: LLVMGetGlobalIFuncResolver, LLVMSetGlobalIFuncResolver</sub>)")
       .def("erase_from_parent_ifunc",
            &LLVMValueWrapper::erase_from_parent_ifunc,
            R"(Erase this global IFunc from its parent module and delete it when parented.
@@ -12300,49 +12271,40 @@ TODO: needs safe LLVM-C API equivalent.
           R"(Check if this function has an exception handling personality function.
 
 <sub>C API: LLVMHasPersonalityFn</sub>)")
-      .def_prop_ro("personality_fn", &LLVMValueWrapper::get_personality_fn,
-                   R"(Get the exception handling personality function.
+      .def_prop_rw("personality_fn", &LLVMValueWrapper::get_personality_fn,
+                   &LLVMValueWrapper::set_personality_fn,
+                   R"(Get or set the exception handling personality function.
 
-Valid when:
+Valid when reading:
   - has_personality_fn is True
 
-<sub>C API: LLVMGetPersonalityFn</sub>)")
-      .def("set_personality_fn", &LLVMValueWrapper::set_personality_fn, "fn"_a,
-           R"(Set the exception handling personality function.
-
-<sub>C API: LLVMSetPersonalityFn</sub>)")
+<sub>C API: LLVMGetPersonalityFn, LLVMSetPersonalityFn</sub>)")
       .def_prop_ro(
           "has_prefix_data", &LLVMValueWrapper::has_prefix_data,
           R"(Check if this function has prefix data (data before function entry).
 
 <sub>C API: LLVMHasPrefixData</sub>)")
-      .def_prop_ro("prefix_data", &LLVMValueWrapper::get_prefix_data,
-                   R"(Get prefix data (data before function entry).
+      .def_prop_rw("prefix_data", &LLVMValueWrapper::get_prefix_data,
+                   &LLVMValueWrapper::set_prefix_data,
+                   R"(Get or set prefix data (data before function entry).
 
-Valid when:
+Valid when reading:
   - has_prefix_data is True
 
-<sub>C API: LLVMGetPrefixData</sub>)")
-      .def("set_prefix_data", &LLVMValueWrapper::set_prefix_data, "data"_a,
-           R"(Set prefix data (data before function entry).
-
-<sub>C API: LLVMSetPrefixData</sub>)")
+<sub>C API: LLVMGetPrefixData, LLVMSetPrefixData</sub>)")
       .def_prop_ro(
           "has_prologue_data", &LLVMValueWrapper::has_prologue_data,
           R"(Check if this function has prologue data (data at function entry).
 
 <sub>C API: LLVMHasPrologueData</sub>)")
-      .def_prop_ro("prologue_data", &LLVMValueWrapper::get_prologue_data,
-                   R"(Get prologue data (data at function entry).
+      .def_prop_rw("prologue_data", &LLVMValueWrapper::get_prologue_data,
+                   &LLVMValueWrapper::set_prologue_data,
+                   R"(Get or set prologue data (data at function entry).
 
-Valid when:
+Valid when reading:
   - has_prologue_data is True
 
-<sub>C API: LLVMGetPrologueData</sub>)")
-      .def("set_prologue_data", &LLVMValueWrapper::set_prologue_data, "data"_a,
-           R"(Set prologue data (data at function entry).
-
-<sub>C API: LLVMSetPrologueData</sub>)")
+<sub>C API: LLVMGetPrologueData, LLVMSetPrologueData</sub>)")
       // Instruction properties
       .def_prop_ro("opcode", &LLVMValueWrapper::get_instruction_opcode,
                    R"(Get instruction opcode.
@@ -12351,27 +12313,32 @@ Valid when:
       .def_prop_ro("opcode_name", &LLVMValueWrapper::get_opcode_name,
                    R"(Get the mnemonic string for this instruction's opcode (e.g. "add", "br", "call").)")
       // Instruction flags
-      .def_prop_ro("nsw", &LLVMValueWrapper::get_nsw,
-                   R"(Get NSW flag.
+      .def_prop_rw("nsw", &LLVMValueWrapper::get_nsw,
+                   &LLVMValueWrapper::set_nsw,
+                   R"(Get or set NSW flag.
 
-<sub>C API: LLVMGetNSW</sub>)")
-      .def_prop_ro("nuw", &LLVMValueWrapper::get_nuw,
-                   R"(Get NUW flag.
+<sub>C API: LLVMGetNSW, LLVMSetNSW</sub>)")
+      .def_prop_rw("nuw", &LLVMValueWrapper::get_nuw,
+                   &LLVMValueWrapper::set_nuw,
+                   R"(Get or set NUW flag.
 
-<sub>C API: LLVMGetNUW</sub>)")
-      .def_prop_ro("exact", &LLVMValueWrapper::get_exact,
-                   R"(Get exact flag.
+<sub>C API: LLVMGetNUW, LLVMSetNUW</sub>)")
+      .def_prop_rw("exact", &LLVMValueWrapper::get_exact,
+                   &LLVMValueWrapper::set_exact,
+                   R"(Get or set exact flag.
 
-<sub>C API: LLVMGetExact</sub>)")
-      .def_prop_ro("nneg", &LLVMValueWrapper::get_nneg,
-                   R"(Get nneg flag.
+<sub>C API: LLVMGetExact, LLVMSetExact</sub>)")
+      .def_prop_rw("nneg", &LLVMValueWrapper::get_nneg,
+                   &LLVMValueWrapper::set_nneg,
+                   R"(Get or set nneg flag.
 
-<sub>C API: LLVMGetNNeg</sub>)")
+<sub>C API: LLVMGetNNeg, LLVMSetNNeg</sub>)")
       // Memory access properties
-      .def_prop_ro("ordering", &LLVMValueWrapper::get_ordering,
-                   R"(Get atomic ordering.
+      .def_prop_rw("ordering", &LLVMValueWrapper::get_ordering,
+                   &LLVMValueWrapper::set_ordering,
+                   R"(Get or set atomic ordering.
 
-<sub>C API: LLVMGetOrdering</sub>)")
+<sub>C API: LLVMGetOrdering, LLVMSetOrdering</sub>)")
       // Call/invoke properties
       .def_prop_ro("num_arg_operands", &LLVMValueWrapper::get_num_arg_operands,
                    R"(Get number of arg operands.
@@ -12449,62 +12416,28 @@ Returns True when the alloca size operand is not the constant 1.
                    R"(Check if inline assembly can unwind the stack.
 
 <sub>C API: LLVMGetInlineAsmCanUnwind</sub>)")
-      // Flag setters
-      .def("set_nsw", &LLVMValueWrapper::set_nsw, "nsw"_a,
-           R"(Set NSW flag.
+      // Flag properties
+      .def_prop_rw("is_disjoint", &LLVMValueWrapper::get_is_disjoint,
+                   &LLVMValueWrapper::set_is_disjoint,
+                   R"(Get or set disjoint flag.
 
-<sub>C API: LLVMSetNSW</sub>)")
-      .def("set_nuw", &LLVMValueWrapper::set_nuw, "nuw"_a,
-           R"(Set NUW flag.
+<sub>C API: LLVMGetIsDisjoint, LLVMSetIsDisjoint</sub>)")
+      .def_prop_rw("icmp_same_sign", &LLVMValueWrapper::get_icmp_same_sign,
+                   &LLVMValueWrapper::set_icmp_same_sign,
+                   R"(Get or set same sign flag.
 
-<sub>C API: LLVMSetNUW</sub>)")
-      .def("set_exact", &LLVMValueWrapper::set_exact, "exact"_a,
-           R"(Set exact flag.
-
-<sub>C API: LLVMSetExact</sub>)")
-      .def("set_nneg", &LLVMValueWrapper::set_nneg, "nneg"_a,
-           R"(Set nneg flag.
-
-<sub>C API: LLVMSetNNeg</sub>)")
-      .def_prop_ro("is_disjoint", &LLVMValueWrapper::get_is_disjoint,
-                   R"(Get disjoint flag.
-
-<sub>C API: LLVMGetIsDisjoint</sub>)")
-      .def("set_is_disjoint", &LLVMValueWrapper::set_is_disjoint,
-           "is_disjoint"_a, R"(Set disjoint flag.
-
-<sub>C API: LLVMSetIsDisjoint</sub>)")
-      .def_prop_ro("icmp_same_sign", &LLVMValueWrapper::get_icmp_same_sign,
-                   R"(Get same sign flag.
-
-<sub>C API: LLVMGetICmpSameSign</sub>)")
-      .def("set_icmp_same_sign", &LLVMValueWrapper::set_icmp_same_sign,
-           "same_sign"_a, R"(Set same sign flag.
-
-<sub>C API: LLVMSetICmpSameSign</sub>)")
-      .def("set_ordering", &LLVMValueWrapper::set_ordering, "ordering"_a,
-           R"(Set atomic ordering.
-
-<sub>C API: LLVMSetOrdering</sub>)")
-      .def("set_volatile", &LLVMValueWrapper::set_volatile, "is_volatile"_a,
-           R"(Set volatile flag.
-
-<sub>C API: LLVMSetVolatile</sub>)")
+<sub>C API: LLVMGetICmpSameSign, LLVMSetICmpSameSign</sub>)")
       // Atomic properties
       .def_prop_ro("is_atomic", &LLVMValueWrapper::is_atomic,
                    R"(Check if this atomic operation uses singlethread ordering.
 
 <sub>C API: LLVMIsAtomicSingleThread</sub>)")
-      .def_prop_ro("atomic_sync_scope_id",
+      .def_prop_rw("atomic_sync_scope_id",
                    &LLVMValueWrapper::get_atomic_sync_scope_id,
-                   R"(Get sync scope ID.
+                   &LLVMValueWrapper::set_atomic_sync_scope_id,
+                   R"(Get or set sync scope ID.
 
-<sub>C API: LLVMGetAtomicSyncScopeID</sub>)")
-      .def("set_atomic_sync_scope_id",
-           &LLVMValueWrapper::set_atomic_sync_scope_id, "scope_id"_a,
-           R"(Set sync scope ID.
-
-<sub>C API: LLVMSetAtomicSyncScopeID</sub>)")
+<sub>C API: LLVMGetAtomicSyncScopeID, LLVMSetAtomicSyncScopeID</sub>)")
       .def_prop_ro(
           "atomic_rmw_bin_op", &LLVMValueWrapper::get_atomic_rmw_bin_op,
           R"(Get the operation kind for an atomic read-modify-write instruction.
@@ -12522,39 +12455,29 @@ Returns True when the alloca size operand is not the constant 1.
           R"(Get the memory ordering on failure for a compare-exchange instruction.
 
 <sub>C API: LLVMGetCmpXchgFailureOrdering</sub>)")
-      .def_prop_ro("weak", &LLVMValueWrapper::get_weak,
-                   R"(Get weak flag.
+      .def_prop_rw("weak", &LLVMValueWrapper::get_weak,
+                   &LLVMValueWrapper::set_weak,
+                   R"(Get or set weak flag.
 
-<sub>C API: LLVMGetWeak</sub>)")
-      .def("set_weak", &LLVMValueWrapper::set_weak, "is_weak"_a,
-           R"(Set weak flag.
-
-<sub>C API: LLVMSetWeak</sub>)")
+<sub>C API: LLVMGetWeak, LLVMSetWeak</sub>)")
       // Tail call kind
-      .def_prop_ro("tail_call_kind", &LLVMValueWrapper::get_tail_call_kind,
-                   R"(Get tail call kind.
+      .def_prop_rw("tail_call_kind", &LLVMValueWrapper::get_tail_call_kind,
+                   &LLVMValueWrapper::set_tail_call_kind,
+                   R"(Get or set tail call kind.
 
-<sub>C API: LLVMGetTailCallKind</sub>)")
-      .def("set_tail_call_kind", &LLVMValueWrapper::set_tail_call_kind,
-           "kind"_a, R"(Set tail call kind.
-
-<sub>C API: LLVMSetTailCallKind</sub>)")
+<sub>C API: LLVMGetTailCallKind, LLVMSetTailCallKind</sub>)")
       // Called function
       .def_prop_ro("called_function_type",
                    &LLVMValueWrapper::get_called_function_type,
                    R"(Get called function type.
 
 <sub>C API: LLVMGetCalledFunctionType</sub>)")
-      .def_prop_ro("called_value", &LLVMValueWrapper::get_called_value,
-                   R"(Get called value.
-
-<sub>C API: LLVMGetCalledValue</sub>)")
-      .def("set_called_operand", &LLVMValueWrapper::set_called_operand,
-           "val"_a,
-           R"(Set the called operand (callee) of a call/invoke instruction.
+      .def_prop_rw("called_value", &LLVMValueWrapper::get_called_value,
+                   &LLVMValueWrapper::set_called_operand,
+                   R"(Get or set the called value of a call/invoke instruction.
 The callee is the last operand of a CallBase instruction.
 
-<sub>C API: LLVMSetOperand</sub>)")
+<sub>C API: LLVMGetCalledValue, LLVMSetOperand</sub>)")
       .def_prop_rw("instruction_call_conv",
           &LLVMValueWrapper::get_instruction_call_conv,
           &LLVMValueWrapper::set_instruction_call_conv,
@@ -12570,14 +12493,11 @@ The callee is the last operand of a CallBase instruction.
            R"(Get clause at index.
 
 <sub>C API: LLVMGetClause</sub>)")
-      .def_prop_ro("is_cleanup", &LLVMValueWrapper::is_cleanup,
-                   R"(Check if cleanup.
+      .def_prop_rw("is_cleanup", &LLVMValueWrapper::is_cleanup,
+                   &LLVMValueWrapper::set_cleanup,
+                   R"(Get or set cleanup flag.
 
-<sub>C API: LLVMIsCleanup</sub>)")
-      .def("set_cleanup", &LLVMValueWrapper::set_cleanup, "is_cleanup"_a,
-           R"(Set cleanup flag.
-
-<sub>C API: LLVMSetCleanup</sub>)")
+<sub>C API: LLVMIsCleanup, LLVMSetCleanup</sub>)")
       // Catch switch/pad properties
       .def_prop_ro("parent_catch_switch",
                    &LLVMValueWrapper::get_parent_catch_switch,
@@ -12604,14 +12524,11 @@ The callee is the last operand of a CallBase instruction.
                    R"(Can use fast-math flags.
 
 <sub>C API: LLVMCanValueUseFastMathFlags</sub>)")
-      .def_prop_ro("fast_math_flags", &LLVMValueWrapper::get_fast_math_flags,
-                   R"(Get fast-math flags.
+      .def_prop_rw("fast_math_flags", &LLVMValueWrapper::get_fast_math_flags,
+                   &LLVMValueWrapper::set_fast_math_flags,
+                   R"(Get or set fast-math flags.
 
-<sub>C API: LLVMGetFastMathFlags</sub>)")
-      .def("set_fast_math_flags", &LLVMValueWrapper::set_fast_math_flags,
-           "flags"_a, R"(Set fast-math flags.
-
-<sub>C API: LLVMSetFastMathFlags</sub>)")
+<sub>C API: LLVMGetFastMathFlags, LLVMSetFastMathFlags</sub>)")
       // Call instruction arg operand
       .def("get_arg_operand", &LLVMValueWrapper::get_arg_operand, "index"_a,
            R"(Get arg operand for a call/invoke instruction at index.
@@ -13232,31 +13149,24 @@ Valid when:
                    R"(Check if this function has a personality function.
 
 <sub>C API: LLVMHasPersonalityFn</sub>)")
-      .def("get_personality_fn", &LLVMFunctionWrapper::get_personality_fn,
-           R"(Get the personality function.
+      .def_prop_rw("personality_fn", &LLVMFunctionWrapper::get_personality_fn,
+                   &LLVMFunctionWrapper::set_personality_fn,
+                   R"(Get or set the personality function.
 
-Valid when:
+Valid when reading:
   - has_personality_fn is True
 
-<sub>C API: LLVMGetPersonalityFn</sub>)")
-      .def("set_personality_fn", &LLVMFunctionWrapper::set_personality_fn,
-           "fn"_a,
-           R"(Set the personality function.
-
-<sub>C API: LLVMSetPersonalityFn</sub>)")
+<sub>C API: LLVMGetPersonalityFn, LLVMSetPersonalityFn</sub>)")
       // =====================================================================
       // GC name
       // =====================================================================
-      .def("get_gc", &LLVMFunctionWrapper::get_gc,
-           R"(Get the GC name for this function.
+      .def_prop_rw("gc", &LLVMFunctionWrapper::get_gc,
+                   &LLVMFunctionWrapper::set_gc,
+                   R"(Get or set the GC name for this function.
            
            Returns None if no GC is set.
 
-<sub>C API: LLVMGetGC</sub>)")
-      .def("set_gc", &LLVMFunctionWrapper::set_gc, "gc"_a,
-           R"(Set the GC name for this function.
-
-<sub>C API: LLVMSetGC</sub>)")
+<sub>C API: LLVMGetGC, LLVMSetGC</sub>)")
       .def("block_address", &LLVMFunctionWrapper::block_address, "bb"_a,
            R"(Create a BlockAddress constant for a basic block in this function.
 Used for computed goto (indirect branch) support.
@@ -14030,8 +13940,8 @@ rename collisions with a suffix like `.0`.
            R"(Verify the module.
 
 <sub>C API: LLVMVerifyModule</sub>)")
-      .def("get_verification_error", &LLVMModuleWrapper::get_verification_error,
-           R"(Get verification error message.
+      .def_prop_ro("verification_error", &LLVMModuleWrapper::get_verification_error,
+                   R"(Get verification error message.
 
 <sub>C API: LLVMVerifyModule</sub>)")
       .def("verify_or_raise", &LLVMModuleWrapper::verify_or_raise,
@@ -14493,8 +14403,8 @@ Returns a BuilderManager for use with Python's 'with' statement.
 
 <sub>C API: LLVMParseIRInContext</sub>)")
       // Diagnostics
-      .def("get_diagnostics", &LLVMContextWrapper::get_diagnostics,
-           R"(Get accumulated diagnostics.
+      .def_prop_ro("diagnostics", &LLVMContextWrapper::get_diagnostics,
+                   R"(Get accumulated diagnostics.
 
 <sub>C API: LLVMContextSetDiagnosticHandler</sub>)")
       .def("clear_diagnostics", &LLVMContextWrapper::clear_diagnostics,

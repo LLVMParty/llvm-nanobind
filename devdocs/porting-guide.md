@@ -554,7 +554,7 @@ gv.setLinkage(GlobalValue::InternalLinkage);
 
 **Python:**
 ```python
-gv.set_constant(False)  # Method, not property setter
+gv.is_global_constant = False
 gv.linkage = llvm.Linkage.Internal  # Property setter
 ```
 

@@ -323,7 +323,7 @@ PRIORITY 2: API CONSISTENCY
 ────────────────────────────────────────────────────────────
 │                                                          │
 │  ptr() vs ptr ───────────── Inconsistent access pattern  │
-│  set_constant() vs = ────── Mixed setter styles          │
+│  property setters ───────── Consistent mutation style    │
 │  .block vs .parent ──────── Confusing naming             │
 │  .is_terminator ─────────── Terminator predicate         │
 │                                                          │

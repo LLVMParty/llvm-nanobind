@@ -40,7 +40,7 @@ with llvm.create_context() as ctx:
         with entry.create_builder() as builder:
             builder.ret(i32.constant(42))
 
-        assert mod.verify(), mod.get_verification_error()
+        assert mod.verify(), mod.verification_error
         print(mod)
 ```
 

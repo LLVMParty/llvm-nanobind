@@ -47,7 +47,7 @@ def _parse_verified_module(ir_text: str) -> tuple[bool, str]:
             with ctx.parse_ir(ir_text) as mod:
                 if mod.verify():
                     return True, ""
-                return False, mod.get_verification_error()
+                return False, mod.verification_error
     except BaseException as exc:
         return False, f"Parse/verify error: {type(exc).__name__}: {exc}"
 

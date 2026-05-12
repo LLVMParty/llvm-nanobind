@@ -182,7 +182,7 @@ def main():
             # Verify module
             if not mod.verify():
                 print(
-                    f"; ERROR: Module verification failed: {mod.get_verification_error()}",
+                    f"; ERROR: Module verification failed: {mod.verification_error}",
                     file=sys.stderr,
                 )
                 return 1

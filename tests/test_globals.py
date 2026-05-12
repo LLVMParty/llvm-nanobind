@@ -56,7 +56,7 @@ def main():
             # ==========================================
             global_const = mod.add_global(i32, "magic_number")
             global_const.initializer = i32.constant(42)
-            global_const.set_constant(True)
+            global_const.is_global_constant = True
 
             # ==========================================
             # Global with alignment
@@ -99,13 +99,13 @@ def main():
             # ==========================================
             global_tls = mod.add_global(i32, "tls_var")
             global_tls.initializer = i32.constant(0)
-            global_tls.set_thread_local(True)
+            global_tls.is_thread_local = True
 
             # ==========================================
             # Externally initialized global (no initializer)
             # ==========================================
             global_extern = mod.add_global(i32, "extern_var")
-            global_extern.set_externally_initialized(True)
+            global_extern.is_externally_initialized = True
 
             # ==========================================
             # Global in address space
@@ -137,7 +137,7 @@ def main():
 
             # Verify module
             if not mod.verify():
-                print(f"; Verification failed: {mod.get_verification_error()}")
+                print(f"; Verification failed: {mod.verification_error}")
                 return 1
 
             # Print diagnostic comments

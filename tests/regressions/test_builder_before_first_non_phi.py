@@ -44,7 +44,7 @@ merge:
             assert opcodes[1] == llvm.Opcode.Call
             assert opcodes[2] == llvm.Opcode.Ret
 
-            assert mod.verify(), mod.get_verification_error()
+            assert mod.verify(), mod.verification_error
 
 
 def test_insert_at_end_when_no_non_phi_exists():
@@ -63,7 +63,7 @@ def test_insert_at_end_when_no_non_phi_exists():
             assert bb.first_instruction is not None
             assert bb.first_instruction.opcode == llvm.Opcode.Ret
 
-            assert mod.verify(), mod.get_verification_error()
+            assert mod.verify(), mod.verification_error
 
 
 if __name__ == "__main__":

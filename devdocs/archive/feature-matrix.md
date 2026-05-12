@@ -45,7 +45,7 @@ Implement remaining LLVM-C API bindings to reach ~85% coverage of the C API, wit
 
 **Comdat.h (all 5 functions):**
 - `mod.add_comdat(name)` - Add/create COMDAT, or return the existing one
-- `gv.comdat` / `gv.set_comdat(comdat)` - Global COMDAT access
+- `gv.comdat` - Global COMDAT property access
 - `comdat.selection_kind` - Selection kind property
 
 ## Explicitly Skipped

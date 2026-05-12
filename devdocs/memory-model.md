@@ -110,7 +110,7 @@ try:
     mod = ctx.parse_bitcode_from_bytes(bad_bitcode)
 except llvm.LLVMParseError as e:
     print(f"Parse error: {e}")
-    for diag in e.get_diagnostics():
+    for diag in ctx.diagnostics:
         print(f"  {diag.severity}: {diag.message}")
 ```
 
@@ -601,7 +601,7 @@ with llvm.create_context() as ctx:
             
             # Types created through dst_ctx are in the same context as src
             # So syncscope IDs from src are valid in dst
-            sync_id = src_inst.get_atomic_sync_scope_id()
+            sync_id = src_inst.atomic_sync_scope_id
             
             # This works because dst_ctx points to the same context as ctx
             builder.atomic_rmw_sync_scope(..., sync_id)

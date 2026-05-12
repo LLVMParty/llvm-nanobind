@@ -197,7 +197,7 @@ def main():
             # Verify the optimized module is still valid
             if not mod_o2.verify():
                 print(
-                    f"; ERROR: Optimized module verification failed: {mod_o2.get_verification_error()}",
+                    f"; ERROR: Optimized module verification failed: {mod_o2.verification_error}",
                     file=sys.stderr,
                 )
             else:
