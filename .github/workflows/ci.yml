@@ -172,6 +172,7 @@ jobs:
     needs: [sdist, test-wheel]
     runs-on: ubuntu-24.04
     if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
+    environment: pypi
     permissions:
       id-token: write
       contents: read
