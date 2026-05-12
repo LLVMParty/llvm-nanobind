@@ -9203,7 +9203,7 @@ struct LLVMDIBuilderWrapper : NoMoveCopy {
                                    const std::string &value);
 
   // =========================================================================
-  // Missing DIBuilder Methods (from debuginfo.md TODO)
+  // DIBuilder methods originally tracked in debuginfo.md
   // =========================================================================
 
   void finalize_subprogram(const LLVMMetadataWrapper &subprogram);
