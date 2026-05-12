@@ -93,9 +93,12 @@ Python developers expect `object.operation()`, not `module.operation(object)`.
 **Principle**: Module-level functions should only exist when there's no natural object to attach them to.
 
 **Acceptable globals**:
-- Factory functions: `create_context()`, `create_binary_from_file()`
+- Ownerless factories: `create_context()`
 - Initialization: `initialize_all_targets()`
 - Registry lookups: `get_md_kind_id()` (no object owns the metadata registry)
+
+Factories with a natural owner should be static methods instead (for example,
+`BinaryManager.from_file()` rather than a module-level binary factory).
 
 **Not acceptable**: Any function that takes an LLVM object as its first argument.
 
