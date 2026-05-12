@@ -183,8 +183,8 @@ def clone_constant_impl(cst: llvm.Value, m: llvm.Module) -> llvm.Value:
     if cst.is_constant_data_array:
         check_value_kind(cst, llvm.ValueKind.ConstantDataArray)
         ty = TypeCloner(m).clone(cst)
-        size, data = cst.raw_data_values
-        return llvm.const_data_array(ty.element_type, data)
+        _size, data = cst.raw_data_values
+        return ty.element_type.array_const(data)
 
     # Try constant array
     if cst.is_constant_array:
@@ -194,7 +194,7 @@ def clone_constant_impl(cst: llvm.Value, m: llvm.Module) -> llvm.Value:
         elts = [
             clone_constant(cst.get_aggregate_element(i), m) for i in range(elt_count)
         ]
-        return llvm.const_array(ty.element_type, elts)
+        return ty.element_type.array_const(elts)
 
     # Try constant struct
     if cst.is_constant_struct:
@@ -203,7 +203,7 @@ def clone_constant_impl(cst: llvm.Value, m: llvm.Module) -> llvm.Value:
         elt_count = ty.struct_element_count
         elts = [clone_constant(cst.get_operand(i), m) for i in range(elt_count)]
         if ty.struct_name:
-            return llvm.const_named_struct(ty, elts)
+            return ty.named_struct_const(elts)
         return llvm.const_struct(elts, ty.is_packed_struct, m.context)
 
     # Try ConstantPointerNull
@@ -276,13 +276,13 @@ def clone_constant_impl(cst: llvm.Value, m: llvm.Module) -> llvm.Value:
                 return None
 
             int_ty = m.context.types.int_n(bit_width)
-            return int_ty.constant_from_string(hex_digits, 16).const_bitcast(fp_ty)
+            return int_ty.constant(hex_digits, 16).const_bitcast(fp_ty)
 
         bitpattern = clone_fp_bitpattern_from_literal(ty, literal)
         if bitpattern is not None:
             return bitpattern
 
-        return ty.real_constant_from_string(literal)
+        return ty.real_constant(literal)
 
     # Try ConstantVector or ConstantDataVector
     if cst.is_constant_vector or cst.is_constant_data_vector:

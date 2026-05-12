@@ -201,9 +201,9 @@ This section captures guard preconditions for wrapper classes other than
 - Element-type family:
   - `element_type` requires pointer/vector/array type.
 - Constant constructors:
-  - `constant`, `constant_from_string` require integer type.
-  - `real_constant`, `real_constant_from_string` require floating type.
-  - `constant_from_string` additionally requires `2 <= radix <= 36`.
+  - `constant` requires an integer type.
+  - `real_constant` requires a floating type.
+  - `constant(str, radix)` requires `2 <= radix <= 36`.
 - Struct body mutation:
   - `set_body` requires identified opaque struct type (not literal, not already
     non-opaque).

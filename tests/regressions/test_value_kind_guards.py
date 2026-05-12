@@ -150,8 +150,8 @@ def build_fixture(ctx: llvm.Context, mod: llvm.Module):
         gep_inst = b.gep(i32, alloca_inst, [i32.constant(0, False)], "gep0")
 
         struct_ty = ctx.types.struct([i32, i32])
-        struct_const = llvm.const_named_struct(
-            struct_ty, [i32.constant(10, False), i32.constant(20, False)]
+        struct_const = struct_ty.named_struct_const(
+            [i32.constant(10, False), i32.constant(20, False)]
         )
         struct_slot = b.alloca(struct_ty, "struct_slot")
         b.store(struct_const, struct_slot)

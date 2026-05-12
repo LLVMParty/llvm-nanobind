@@ -53,7 +53,7 @@ def test_const_data_array_accepts_bytes_without_utf8_expansion():
             assert arr_global.type.array_length == len(raw)
 
             # Type helper overload.
-            arr_method = i8.const_data_array(raw)
+            arr_method = i8.array_const(raw)
             assert arr_method.type.array_length == len(raw)
 
             g1 = mod.add_global(i8.array(len(raw)), "g1")

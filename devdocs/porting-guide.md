@@ -632,10 +632,8 @@ Constant* dataArr = ConstantDataArray::get(ctx, arrayRef);
 
 **Python:**
 ```python
-arr = llvm.const_array(elem_ty, [elem1, elem2])
-data_arr = llvm.const_data_array(ctx.types.i8, b"\xff\x80B")
-# Equivalent type helper overload:
-data_arr = ctx.types.i8.const_data_array(b"\xff\x80B")
+arr = llvm.array_const(elem_ty, [elem1, elem2])
+data_arr = llvm.const_data_array(elem_ty, string_data)
 ```
 
 ### Struct Constants
@@ -647,7 +645,7 @@ Constant* s = ConstantStruct::get(structTy, {field1, field2});
 
 **Python:**
 ```python
-s = llvm.const_named_struct(struct_ty, [field1, field2])
+s = llvm.named_struct_const(struct_ty, [field1, field2])
 ```
 
 ---

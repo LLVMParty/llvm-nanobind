@@ -1268,14 +1268,13 @@ def encrypt_strings_module(mod: llvm.Module, seed: int) -> None:
             continue
 
         size, raw = init.raw_data_values
-        raw_bytes = raw.encode("latin-1")
-        if len(raw_bytes) != size:
+        if len(raw) != size:
             continue
-        if len(raw_bytes) <= 4:
+        if len(raw) <= 4:
             continue
-        if raw_bytes[-1] != 0:
+        if raw[-1] != 0:
             continue
-        strings.append((gv, raw_bytes))
+        strings.append((gv, raw))
 
     for index, (gv, raw_bytes) in enumerate(strings):
         key = rng.getrandbits(32) or 1

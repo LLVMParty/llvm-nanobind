@@ -754,14 +754,14 @@ struct LLVMTypeWrapper {
   // Integer constant: ty.constant(42)
   LLVMValueWrapper constant(long long val, bool sign_extend = false) const;
 
-  // Integer constant from string: ty.constant_from_string("123456789", 10)
+  // Integer constant from string: ty.constant("123456789", 10)
   LLVMValueWrapper constant_from_string(const std::string &text,
                                         unsigned radix = 10) const;
 
   // Float constant: ty.real_constant(3.14)
   LLVMValueWrapper real_constant(double val) const;
 
-  // Float constant from string: ty.real_constant_from_string("3.14159")
+  // Float constant from string: ty.real_constant("3.14159")
   LLVMValueWrapper real_constant_from_string(const std::string &text) const;
 
   // Null value (works for all types): ty.null()
@@ -2012,13 +2012,13 @@ struct LLVMValueWrapper {
   }
 
   // Constant data access
-  std::pair<size_t, std::string> get_raw_data_values() const {
+  std::pair<size_t, nb::bytes> get_raw_data_values() const {
     check_valid();
     if (!is_a_constant_data_array())
       throw LLVMAssertionError("Value is not a constant data array");
     size_t size;
     const char *data = LLVMGetRawDataValues(m_ref, &size);
-    return {size, std::string(data, size)};
+    return {size, nb::bytes(data, size)};
   }
 
   LLVMValueWrapper get_aggregate_element(unsigned index) const {
@@ -6944,7 +6944,7 @@ LLVMValueWrapper get_poison(const LLVMTypeWrapper &ty) {
   return LLVMValueWrapper(LLVMGetPoison(ty.m_ref), ty.m_context_token);
 }
 
-LLVMValueWrapper const_array(const LLVMTypeWrapper &elem_ty,
+LLVMValueWrapper array_const(const LLVMTypeWrapper &elem_ty,
                              const Iterable<LLVMValueWrapper> &vals) {
   elem_ty.check_valid();
   std::vector<LLVMValueRef> refs;
@@ -7011,7 +7011,7 @@ LLVMValueWrapper const_pointer_null(const LLVMTypeWrapper &ty) {
   return LLVMValueWrapper(LLVMConstPointerNull(ty.m_ref), ty.m_context_token);
 }
 
-LLVMValueWrapper const_named_struct(const LLVMTypeWrapper &struct_ty,
+LLVMValueWrapper named_struct_const(const LLVMTypeWrapper &struct_ty,
                                     const Iterable<LLVMValueWrapper> &vals) {
   struct_ty.check_valid();
   std::vector<LLVMValueRef> refs;
@@ -10966,7 +10966,7 @@ Valid when:
   - this type is an integer type
 
 <sub>C API: LLVMConstInt</sub>)")
-      .def("constant_from_string", &LLVMTypeWrapper::constant_from_string,
+      .def("constant", &LLVMTypeWrapper::constant_from_string,
            "text"_a, "radix"_a = 10,
            R"(Create an integer constant from a string.
 
@@ -10988,7 +10988,7 @@ Valid when:
   - this type is a floating-point type
 
 <sub>C API: LLVMConstReal</sub>)")
-      .def("real_constant_from_string",
+      .def("real_constant",
            &LLVMTypeWrapper::real_constant_from_string, "text"_a,
            R"(Create a floating-point constant from a string.
 
@@ -11031,7 +11031,7 @@ Args:
 
 <sub>C API: LLVMPointerType</sub>)")
       // Constant creation from type
-      .def("const_array", [](const LLVMTypeWrapper &self,
+      .def("array_const", [](const LLVMTypeWrapper &self,
                              const Iterable<LLVMValueWrapper> &vals) {
         self.check_valid();
         std::vector<LLVMValueRef> refs;
@@ -11047,7 +11047,7 @@ Args:
            R"(Create an array constant of this element type.
 
 <sub>C API: LLVMConstArray2</sub>)")
-      .def("const_named_struct", [](const LLVMTypeWrapper &self,
+      .def("named_struct_const", [](const LLVMTypeWrapper &self,
                                     const Iterable<LLVMValueWrapper> &vals) {
         self.check_valid();
         std::vector<LLVMValueRef> refs;
@@ -11063,17 +11063,7 @@ Args:
            R"(Create a named struct constant of this struct type.
 
 <sub>C API: LLVMConstNamedStruct</sub>)")
-      .def("const_data_array", [](const LLVMTypeWrapper &self,
-                                  const std::string &data) {
-        self.check_valid();
-        return LLVMValueWrapper(
-            LLVMConstDataArray(self.m_ref, data.data(), data.size()),
-            self.m_context_token);
-      }, "data"_a,
-           R"(Create a data array constant of this element type from a string.
-
-<sub>C API: LLVMConstDataArray</sub>)")
-      .def("const_data_array", [](const LLVMTypeWrapper &self,
+      .def("array_const", [](const LLVMTypeWrapper &self,
                                   const nb::bytes &data) {
         self.check_valid();
         return LLVMValueWrapper(
@@ -13886,10 +13876,6 @@ Valid when:
   // still needed:
   // TODO: these need to be refactored to not be in the llvm module as globals
   // they are specific to values and therefore to a context (or even module?)
-  m.def("const_array", &const_array, "elem_ty"_a, "vals"_a,
-        R"(Create array constant.
-
-<sub>C API: LLVMConstArray2</sub>)");
   m.def("const_struct", &const_struct, "vals"_a, "packed"_a, "ctx"_a,
         R"(Create struct constant.
 
@@ -13915,24 +13901,13 @@ Valid when:
         R"(Create raw-bytes constant.
 
 <sub>C API: LLVMConstStringInContext2</sub>)");
-  m.def("const_named_struct", &const_named_struct, "struct_ty"_a, "vals"_a,
-        R"(Create named struct constant.
 
-<sub>C API: LLVMConstNamedStruct</sub>)");
   // Advanced constant creation
   m.def("const_int_of_arbitrary_precision", &const_int_of_arbitrary_precision,
         "ty"_a, "words"_a,
         R"(Arbitrary precision int.
 
 <sub>C API: LLVMConstIntOfArbitraryPrecision</sub>)");
-  m.def("const_data_array",
-        static_cast<LLVMValueWrapper (*)(const LLVMTypeWrapper &,
-                                         const std::string &)>(
-            &const_data_array),
-        "elem_ty"_a, "data"_a,
-        R"(Create data array.
-
-<sub>C API: LLVMConstDataArray</sub>)");
   m.def("const_data_array",
         static_cast<LLVMValueWrapper (*)(const LLVMTypeWrapper &,
                                          const nb::bytes &)>(

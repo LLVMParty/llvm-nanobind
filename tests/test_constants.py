@@ -77,7 +77,7 @@ def main():
                 i32.constant(4),
                 i32.constant(5),
             ]
-            const_array = llvm.const_array(i32, arr_elems)
+            array_const = i32.array_const(arr_elems)
 
             # ==========================================
             # Anonymous struct constant
@@ -100,7 +100,7 @@ def main():
                 i32.constant(10),
                 i32.constant(20),
             ]
-            const_named_struct = llvm.const_named_struct(named_struct_ty, point_vals)
+            named_struct_const = named_struct_ty.named_struct_const(point_vals)
 
             # ==========================================
             # Vector constant
@@ -154,7 +154,7 @@ def main():
 
             arr_ty = i32.array(5)
             g = mod.add_global(arr_ty, "const_array")
-            g.initializer = const_array
+            g.initializer = array_const
             g.set_constant(True)
 
             # Struct type for global
@@ -164,7 +164,7 @@ def main():
             g.set_constant(True)
 
             g = mod.add_global(named_struct_ty, "const_point")
-            g.initializer = const_named_struct
+            g.initializer = named_struct_const
             g.set_constant(True)
 
             vec_ty = i32.vector(4)
