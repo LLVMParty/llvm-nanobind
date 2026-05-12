@@ -30,7 +30,11 @@
 #include <llvm-c/Transforms/PassBuilder.h>
 
 #include <llvm/IR/Instruction.h>
+#include <llvm/IR/InstrTypes.h>
+#include <llvm/IR/Metadata.h>
 #include <llvm/IR/Value.h>
+#include <llvm/Object/ObjectFile.h>
+#include <llvm/Object/SymbolSize.h>
 #include <llvm/Support/Casting.h>
 
 // Vector that produces collections.abc.Iterable[T] type hint
@@ -2310,10 +2314,20 @@ struct LLVMValueWrapper {
     return LLVMGetOrdering(m_ref);
   }
 
-  // Call/invoke properties
+  // Call/invoke/funclet argument properties
   unsigned get_num_arg_operands() const {
     check_valid();
     require_arg_operands_instruction("num_arg_operands");
+    LLVMOpcode op = LLVMGetInstructionOpcode(m_ref);
+    if (op == LLVMCall || op == LLVMInvoke || op == LLVMCallBr) {
+      auto *value = reinterpret_cast<llvm::Value *>(m_ref);
+      auto *call_base = llvm::dyn_cast<llvm::CallBase>(value);
+      if (!call_base) {
+        throw LLVMAssertionError(
+            "num_arg_operands requires a call-like instruction");
+      }
+      return static_cast<unsigned>(call_base->arg_size());
+    }
     return LLVMGetNumArgOperands(m_ref);
   }
 
@@ -2816,18 +2830,32 @@ struct LLVMValueWrapper {
     LLVMSetFastMathFlags(m_ref, flags);
   }
 
-  // Get arg operand (for call instructions)
+  // Get arg operand for call-like and funcletpad instructions.
   LLVMValueWrapper get_arg_operand(unsigned index) const {
     check_valid();
     require_arg_operands_instruction("get_arg_operand");
-    unsigned count = LLVMGetNumArgOperands(m_ref);
+    unsigned count = get_num_arg_operands();
     if (index >= count) {
       throw LLVMAssertionError("get_arg_operand: arg operand index " +
                                std::to_string(index) +
                                " out of range (num_arg_operands=" +
                                std::to_string(count) + ")");
     }
-    LLVMValueRef arg = LLVMGetArgOperand(m_ref, index);
+
+    LLVMValueRef arg = nullptr;
+    LLVMOpcode op = LLVMGetInstructionOpcode(m_ref);
+    if (op == LLVMCall || op == LLVMInvoke || op == LLVMCallBr) {
+      auto *value = reinterpret_cast<llvm::Value *>(m_ref);
+      auto *call_base = llvm::dyn_cast<llvm::CallBase>(value);
+      if (!call_base) {
+        throw LLVMAssertionError(
+            "get_arg_operand requires a call-like instruction");
+      }
+      arg = reinterpret_cast<LLVMValueRef>(call_base->getArgOperand(index));
+    } else {
+      arg = LLVMGetArgOperand(m_ref, index);
+    }
+
     if (!arg) {
       throw LLVMAssertionError("get_arg_operand: arg operand at index " +
                                std::to_string(index) + " is null");
@@ -8621,21 +8649,14 @@ struct LLVMSymbolIteratorWrapper : NoMoveCopy {
     check_valid();
     check_not_at_end("SymbolIterator.size");
 
-    // Some symbol kinds (e.g. file symbols) have no containing section.
-    // LLVMGetSymbolSize can assert on those in debug builds.
-    LLVMSectionIteratorRef sect = LLVMObjectFileCopySectionIterator(m_binary_ref);
-    if (!sect)
-      return 0;
-
-    LLVMMoveToContainingSection(sect, m_ref);
-    bool HasContainingSection =
-        !LLVMObjectFileIsSectionIteratorAtEnd(m_binary_ref, sect);
-    LLVMDisposeSectionIterator(sect);
-
-    if (!HasContainingSection)
-      return 0;
-
-    return LLVMGetSymbolSize(m_ref);
+    auto *it = reinterpret_cast<llvm::object::symbol_iterator *>(m_ref);
+    const llvm::object::SymbolRef &current = **it;
+    const llvm::object::ObjectFile *object = current.getObject();
+    for (const auto &entry : llvm::object::computeSymbolSizes(*object)) {
+      if (entry.first == current)
+        return entry.second;
+    }
+    return 0;
   }
 
   // For Python iteration
@@ -9368,12 +9389,21 @@ inline void LLVMValueWrapper::set_metadata(unsigned kind,
   check_valid();
   md.check_valid();
   ctx.check_valid();
+
+  LLVMMetadataRef metadata_ref = md.m_ref;
+  auto *metadata = reinterpret_cast<llvm::Metadata *>(metadata_ref);
+  if (!llvm::isa<llvm::MDNode>(metadata) &&
+      !llvm::isa<llvm::ConstantAsMetadata>(metadata)) {
+    LLVMMetadataRef refs[] = {metadata_ref};
+    metadata_ref = LLVMMDNodeInContext2(ctx.m_ref, refs, 1);
+  }
+
   // Check if this is a global value or an instruction
   if (LLVMIsAGlobalValue(m_ref)) {
-    LLVMGlobalSetMetadata(m_ref, kind, md.m_ref);
+    LLVMGlobalSetMetadata(m_ref, kind, metadata_ref);
   } else {
     // For instructions, convert metadata to value using provided context
-    LLVMValueRef md_val = LLVMMetadataAsValue(ctx.m_ref, md.m_ref);
+    LLVMValueRef md_val = LLVMMetadataAsValue(ctx.m_ref, metadata_ref);
     LLVMSetMetadata(m_ref, kind, md_val);
   }
 }
