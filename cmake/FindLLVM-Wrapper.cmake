@@ -148,13 +148,14 @@ endif()
 
 add_library(LLVM-C-Wrapper INTERFACE)
 target_include_directories(LLVM-C-Wrapper SYSTEM INTERFACE ${LLVM_INCLUDE_DIRS})
-if(TARGET LLVM-C)
-    target_link_libraries(LLVM-C-Wrapper INTERFACE LLVM-C)
-elseif(LLVM_LINK_LLVM_DYLIB)
-    # apt.llvm.org packages don't build libLLVM-C, but all C API symbols
+if(TARGET LLVM)
+    # Not all distributions of LLVM include LLVM-C, but all the C API symbols
     # are available in the monolithic libLLVM.so shared library.
-    message(STATUS "LLVM-C target not found, falling back to LLVM (LLVM_LINK_LLVM_DYLIB=ON)")
+    message(STATUS "Linking to LLVM shared library")
     target_link_libraries(LLVM-C-Wrapper INTERFACE LLVM)
+elseif(TARGET LLVM-C)
+    message(STATUS "Linking to LLVM-C")
+    target_link_libraries(LLVM-C-Wrapper INTERFACE LLVM-C)
 else()
     message(FATAL_ERROR "LLVM-C target not found. Make sure LLVM is built with the C bindings.")
 endif()
