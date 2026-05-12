@@ -52,14 +52,25 @@ def test_module_add_get_or_insert_semantics() -> None:
             alias = mod.add_alias(i32, 0, g, "alias")
             assert mod.add_alias(i32, 0, g, "alias") == alias
             expect_raises(lambda: mod.add_alias(i64, 0, g, "alias"), "different type")
+            raw_alias = mod.add_alias(i32, 0, g, "alias", get_or_insert=False)
+            assert raw_alias.name != "alias"
 
             resolver = mod.add_function("resolver", resolver_ty)
+            other_resolver = mod.add_function("other_resolver", resolver_ty)
             ifunc = mod.add_global_ifunc("ifunc", resolver_ty, 0, resolver)
             assert mod.add_global_ifunc("ifunc", resolver_ty, 0, resolver) == ifunc
             expect_raises(
                 lambda: mod.add_global_ifunc("ifunc", resolver_ty, 1, resolver),
                 "address space",
             )
+            expect_raises(
+                lambda: mod.add_global_ifunc("ifunc", resolver_ty, 0, other_resolver),
+                "different resolver",
+            )
+            raw_ifunc = mod.add_global_ifunc(
+                "ifunc", resolver_ty, 0, resolver, get_or_insert=False
+            )
+            assert raw_ifunc.name != "ifunc"
 
 
 def test_member_factories_and_builder_navigation() -> None:
