@@ -2893,7 +2893,11 @@ struct LLVMValueWrapper {
                                std::to_string(count) + ")");
     }
 
-    LLVMValueRef arg = LLVMGetOperand(m_ref, index);
+    LLVMOpcode op = LLVMGetInstructionOpcode(m_ref);
+    LLVMValueRef arg =
+        (op == LLVMCatchPad || op == LLVMCleanupPad)
+            ? LLVMGetArgOperand(m_ref, index)
+            : LLVMGetOperand(m_ref, index);
     if (!arg) {
       throw LLVMAssertionError("get_arg_operand: arg operand at index " +
                                std::to_string(index) + " is null");
