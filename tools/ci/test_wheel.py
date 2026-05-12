@@ -62,13 +62,6 @@ def make_test_env(llvm_root: Path) -> dict[str, str]:
         path_entries.append(existing_path)
     env["PATH"] = os.pathsep.join(path_entries)
 
-    if sys.platform == "darwin":
-        key = "DYLD_LIBRARY_PATH"
-        env[key] = os.pathsep.join([str(llvm_root / "lib"), env.get(key, "")]).rstrip(os.pathsep)
-    elif sys.platform != "win32":
-        key = "LD_LIBRARY_PATH"
-        env[key] = os.pathsep.join([str(llvm_root / "lib"), env.get(key, "")]).rstrip(os.pathsep)
-
     return env
 
 

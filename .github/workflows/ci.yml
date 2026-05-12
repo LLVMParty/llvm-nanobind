@@ -120,7 +120,6 @@ jobs:
           CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
           CIBW_ENVIRONMENT_LINUX: >-
             CMAKE_PREFIX_PATH="/project/.llvm"
-            LD_LIBRARY_PATH="/project/.llvm/lib:$LD_LIBRARY_PATH"
           CIBW_BEFORE_BUILD_LINUX: >-
             python /project/tools/ci/install_llvm.py
             --version "${{ env.LLVM_VERSION }}"
@@ -136,7 +135,6 @@ jobs:
             CMAKE_PREFIX_PATH="${{ github.workspace }}/.llvm"
             CMAKE_OSX_DEPLOYMENT_TARGET="13.0"
             MACOSX_DEPLOYMENT_TARGET="13.0"
-            DYLD_LIBRARY_PATH="${{ github.workspace }}/.llvm/lib:$DYLD_LIBRARY_PATH"
           CIBW_BEFORE_BUILD_MACOS: >-
             python "${{ github.workspace }}/tools/ci/install_llvm.py"
             --version "${{ env.LLVM_VERSION }}"
