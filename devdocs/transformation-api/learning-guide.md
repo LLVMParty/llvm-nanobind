@@ -530,7 +530,7 @@ The porting process revealed API gaps:
 
 ```python
 encrypted = bytes([0xFF, 0x80, 0x42])
-const = llvm.const_string(ctx, encrypted, dont_null_terminate=True)
+const = ctx.const_string(encrypted, dont_null_terminate=True)
 assert const.type.array_length == len(encrypted)
 ```
 

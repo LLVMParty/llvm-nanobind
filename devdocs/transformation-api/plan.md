@@ -20,7 +20,7 @@ These issues completely block certain use cases.
 
 ```python
 raw = bytes([0xFF, 0x80, 0x42])
-const = llvm.const_string(ctx, raw, dont_null_terminate=True)
+const = ctx.const_string(raw, dont_null_terminate=True)
 assert const.type.array_length == len(raw)
 
 arr = i8.array_const(raw)

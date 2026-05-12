@@ -82,6 +82,7 @@ def test_member_factories_and_builder_navigation() -> None:
         fn_ty = ctx.types.function(i32, [])
 
         assert i64.constant([1]).const_zext_value == 1
+        assert i32.vector_const([i32.constant(1), i32.constant(2)]).is_constant
         assert i32.constant(1).get_cast_opcode(False, i64, False) == llvm.Opcode.ZExt
         assert ctx.get_intrinsic_type(llvm.lookup_intrinsic_id("llvm.memcpy"), [ptr, ptr, i64]).kind == llvm.TypeKind.Function
         asm_ty = ctx.types.function(ctx.types.void, [])

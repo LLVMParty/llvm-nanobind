@@ -204,7 +204,7 @@ def clone_constant_impl(cst: llvm.Value, m: llvm.Module) -> llvm.Value:
         elts = [clone_constant(cst.get_operand(i), m) for i in range(elt_count)]
         if ty.struct_name:
             return ty.named_struct_const(elts)
-        return llvm.const_struct(elts, ty.is_packed_struct, m.context)
+        return m.context.const_struct(elts, ty.is_packed_struct)
 
     # Try ConstantPointerNull
     if cst.is_constant_pointer_null:
@@ -295,7 +295,7 @@ def clone_constant_impl(cst: llvm.Value, m: llvm.Module) -> llvm.Value:
         elts = [
             clone_constant(cst.get_aggregate_element(i), m) for i in range(elt_count)
         ]
-        return llvm.const_vector(elts)
+        return ty.element_type.vector_const(elts)
 
     # Try ConstantPtrAuth
     if cst.is_constant_ptr_auth:
@@ -927,7 +927,7 @@ class FunCloner:
                     mask_elts.append(int64_ty.undef())
                 else:
                     mask_elts.append(int64_ty.constant(val, True))
-            mask = llvm.const_vector(mask_elts)
+            mask = int64_ty.vector_const(mask_elts)
             dst = builder.shuffle_vector(agg0, agg1, mask, name)
 
         elif op == llvm.Opcode.Freeze:

@@ -187,7 +187,7 @@ def build_fixture(ctx: llvm.Context, mod: llvm.Module):
     shuf_fn = mod.add_function("shuf_fn", shuf_fn_ty)
     shuf_entry = shuf_fn.append_basic_block("entry")
     with shuf_entry.create_builder() as b:
-        mask = llvm.const_vector(
+        mask = i32.vector_const(
             [
                 i32.constant(0, False),
                 i32.constant(5, False),

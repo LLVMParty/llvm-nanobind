@@ -62,9 +62,9 @@ def main():
             # String constant
             # ==========================================
             str_val = "Hello, LLVM!"
-            const_string = llvm.const_string(ctx, str_val, dont_null_terminate=False)
-            const_string_no_null = llvm.const_string(
-                ctx, str_val, dont_null_terminate=True
+            const_string = ctx.const_string(str_val, dont_null_terminate=False)
+            const_string_no_null = ctx.const_string(
+                str_val, dont_null_terminate=True
             )
 
             # ==========================================
@@ -87,8 +87,8 @@ def main():
                 f64.real_constant(3.14),
                 i64.constant(999),
             ]
-            const_struct = llvm.const_struct(struct_elems, False, ctx)
-            const_packed_struct = llvm.const_struct(struct_elems, True, ctx)
+            const_struct = ctx.const_struct(struct_elems, False)
+            const_packed_struct = ctx.const_struct(struct_elems, True)
 
             # ==========================================
             # Named struct constant
@@ -111,7 +111,7 @@ def main():
                 i32.constant(3),
                 i32.constant(4),
             ]
-            const_vector = llvm.const_vector(vec_elems)
+            const_vector = i32.vector_const(vec_elems)
 
             # ==========================================
             # Add globals to expose constants in output

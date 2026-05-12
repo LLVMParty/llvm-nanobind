@@ -615,8 +615,8 @@ Constant* str = ConstantDataArray::getString(ctx, "hello", true);
 
 **Python:**
 ```python
-str_const = llvm.const_string(ctx, "hello", dont_null_terminate=False)
-raw_const = llvm.const_string(ctx, b"\xff\x80B", dont_null_terminate=True)
+str_const = ctx.const_string("hello", dont_null_terminate=False)
+raw_const = ctx.const_string(b"\xff\x80B", dont_null_terminate=True)
 assert raw_const.type.array_length == 3
 ```
 
@@ -814,7 +814,7 @@ val = i64_ty.constant(-1)  # Same bit pattern, works
 ```python
 # Encrypted bytes or other binary payloads: pass bytes, not str.
 encrypted = bytes([0xFF, 0x80, 0x42])
-const = llvm.const_string(ctx, encrypted, dont_null_terminate=True)
+const = ctx.const_string(encrypted, dont_null_terminate=True)
 assert const.type.array_length == len(encrypted)
 ```
 

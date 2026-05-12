@@ -2,7 +2,7 @@
 Full-tree regression matrix for remaining wrapper guard paths.
 
 This complements value/type/non-value matrices with:
-- helper API assertions (phi/switch/indirectbr, call builders, const_vector)
+- helper API assertions (phi/switch/indirectbr, call builders, vector_const)
 - manager state-machine guards (Context/Module/Builder/DIBuilder/Binary)
 - wrapper lifetime guards (TypeFactory/Attribute/Comdat/NamedMDNode/Use/
   ValueMetadataEntries)
@@ -138,7 +138,7 @@ def test_helper_assertions_and_call_guards():
                 )
                 b.ret_void()
 
-            assert_llvm_assertion(lambda: llvm.const_vector([]), "empty vector")
+            assert_llvm_assertion(lambda: ctx.types.i32.vector_const([]), "empty vector")
 
 
 def test_attribute_operand_bundle_and_entries_guards():

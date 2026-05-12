@@ -151,8 +151,8 @@ c = i32.constant(42)
 c = i32.constant(-1)  # signed OK
 
 # Strings and raw bytes
-c = llvm.const_string(ctx, "text", dont_null_terminate=False)
-raw = llvm.const_string(ctx, b"\xff\x80B", dont_null_terminate=True)
+c = ctx.const_string("text", dont_null_terminate=False)
+raw = ctx.const_string(b"\xff\x80B", dont_null_terminate=True)
 
 # Null pointer
 null = llvm.ConstantPointerNull.get(ptr_ty)
@@ -246,7 +246,7 @@ subs = find_by_opcode(func, llvm.Opcode.Sub)
 | `mod = ctx.parse_ir(...)` | Gets manager, not module | Use `with ... as mod` |
 | `bb.terminator` on unterminated block | Raises `LLVMAssertionError` | Check `bb.has_terminator` first |
 | `inst.set_operand(i, value_of_wrong_type)` | Raises `LLVMAssertionError` | Use a value with the exact expected type |
-| `llvm.const_string(ctx, "\xff")` for raw bytes | Uses text/UTF-8 path | Pass `bytes`: `b"\xff"` |
+| `ctx.const_string("\xff")` for raw bytes | Uses text/UTF-8 path | Pass `bytes`: `b"\xff"` |
 
 ---
 

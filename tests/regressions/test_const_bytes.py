@@ -17,10 +17,10 @@ def test_const_string_accepts_bytes_without_utf8_expansion():
             raw = bytes([0xFF, 0x80, 0x42, 0x00, 0x7F])
 
             # bytes path: exact raw length
-            const_raw = llvm.const_string(ctx, raw, dont_null_terminate=True)
+            const_raw = ctx.const_string(raw, dont_null_terminate=True)
             assert const_raw.type.array_length == len(raw)
 
-            const_raw_nt = llvm.const_string(ctx, raw, dont_null_terminate=False)
+            const_raw_nt = ctx.const_string(raw, dont_null_terminate=False)
             assert const_raw_nt.type.array_length == len(raw) + 1
 
             # Context method should behave identically.
@@ -29,7 +29,7 @@ def test_const_string_accepts_bytes_without_utf8_expansion():
 
             # str path still follows UTF-8 behavior for non-ASCII code points.
             legacy = raw.decode("latin-1")
-            const_legacy = llvm.const_string(ctx, legacy, dont_null_terminate=True)
+            const_legacy = ctx.const_string(legacy, dont_null_terminate=True)
             assert const_legacy.type.array_length > len(raw)
 
             # Materialize constants in globals and verify module validity.

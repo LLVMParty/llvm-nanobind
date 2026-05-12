@@ -787,6 +787,9 @@ struct LLVMTypeWrapper {
   // Poison value: ty.poison()
   LLVMValueWrapper poison() const;
 
+  // Vector constant with this element type.
+  LLVMValueWrapper vector_const(const Iterable<LLVMValueWrapper> &vals) const;
+
   // Constant GEP expression using this type as source element type.
   LLVMValueWrapper gep_const(const LLVMValueWrapper &ptr,
                              const Iterable<LLVMValueWrapper> &indices,
@@ -4179,6 +4182,26 @@ inline LLVMValueWrapper LLVMTypeWrapper::undef() const {
 inline LLVMValueWrapper LLVMTypeWrapper::poison() const {
   check_valid();
   return LLVMValueWrapper(LLVMGetPoison(m_ref), m_context_token);
+}
+
+inline LLVMValueWrapper
+LLVMTypeWrapper::vector_const(const Iterable<LLVMValueWrapper> &vals) const {
+  check_valid();
+  if (vals.empty())
+    throw LLVMAssertionError("Cannot create empty vector constant");
+  std::vector<LLVMValueRef> refs;
+  refs.reserve(vals.size());
+  for (const auto &v : vals) {
+    v.check_valid();
+    if (LLVMTypeOf(v.m_ref) != m_ref) {
+      throw LLVMAssertionError(
+          "vector_const requires all values to have this element type");
+    }
+    refs.push_back(v.m_ref);
+  }
+  return LLVMValueWrapper(
+      LLVMConstVector(refs.data(), static_cast<unsigned>(refs.size())),
+      m_context_token);
 }
 
 inline LLVMValueWrapper LLVMTypeWrapper::gep_const(
@@ -11440,6 +11463,10 @@ Args:
            R"(Create a poison value of this type.
 
 <sub>C API: LLVMGetPoison</sub>)")
+      .def("vector_const", &LLVMTypeWrapper::vector_const, "vals"_a,
+           R"(Create a vector constant with this element type.
+
+<sub>C API: LLVMConstVector</sub>)")
       .def("gep_const", &LLVMTypeWrapper::gep_const, "ptr"_a, "indices"_a,
            "no_wrap_flags"_a,
            R"(Create a constant GEP expression using this source element type.

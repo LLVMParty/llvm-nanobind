@@ -248,7 +248,7 @@ OBFUSCATION = [
             "LLVM does not support byte constants",
         ],
         "correct": 2,
-        "explanation": "Use bytes for binary payloads: llvm.const_string(ctx, data, ...) or "
+        "explanation": "Use bytes for binary payloads: ctx.const_string(data, ...) or "
         "i8.array_const(data). The str overload is for text and follows UTF-8 encoding.",
     },
 ]
