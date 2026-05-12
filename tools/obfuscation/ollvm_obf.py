@@ -246,6 +246,23 @@ def replace_all_uses_with_if(
         user.replace_uses_of_with(old_value, new_value)
 
 
+def poison_internal_uses_before_erasing(
+    inst: llvm.Value,
+    doomed_blocks: set[llvm.BasicBlock],
+) -> None:
+    if inst.type.kind == llvm.TypeKind.Void or not inst.has_uses:
+        return
+
+    for user in inst.users:
+        if not user.is_instruction or user.block not in doomed_blocks:
+            raise RuntimeError(
+                "loop-to-recursion left an unresolved external use of "
+                f"{inst.name or '<unnamed>'}; refusing to rewrite it to poison"
+            )
+
+    inst.replace_all_uses_with(inst.type.poison())
+
+
 def position_after_instruction(builder: llvm.Builder, inst: llvm.Value) -> None:
     next_inst = inst.next_instruction
     if next_inst is not None:
@@ -1268,14 +1285,13 @@ def encrypt_strings_module(mod: llvm.Module, seed: int) -> None:
             continue
 
         size, raw = init.raw_data_values
-        raw_bytes = raw.encode("latin-1")
-        if len(raw_bytes) != size:
+        if len(raw) != size:
             continue
-        if len(raw_bytes) <= 4:
+        if len(raw) <= 4:
             continue
-        if raw_bytes[-1] != 0:
+        if raw[-1] != 0:
             continue
-        strings.append((gv, raw_bytes))
+        strings.append((gv, raw))
 
     for index, (gv, raw_bytes) in enumerate(strings):
         key = rng.getrandbits(32) or 1
@@ -1285,7 +1301,7 @@ def encrypt_strings_module(mod: llvm.Module, seed: int) -> None:
             encrypted[i] = byte ^ state
             state = ((state * 31) + 17 + encrypted[i]) & 0xFF
 
-        enc_const = llvm.const_data_array(i8, bytes(encrypted))
+        enc_const = i8.array_const(bytes(encrypted))
         enc_gv = mod.add_global(enc_const.type, f"__ollvm_str_enc_{index}")
         enc_gv.initializer = enc_const
         enc_gv.linkage = llvm.Linkage.Private
@@ -1498,8 +1514,7 @@ def insert_register_anchor(value: llvm.Value, use) -> None:
         asm_int_ty = value.context.types.i64 if is_ptr else val_ty
         int_val = builder.ptrtoint(value, asm_int_ty, "") if is_ptr else value
         asm_ty = value.context.types.function(asm_int_ty, [asm_int_ty])
-        asm_val = llvm.get_inline_asm(
-            asm_ty,
+        asm_val = asm_ty.inline_asm(
             "",
             "=r,0",
             True,
@@ -2503,6 +2518,13 @@ def loop_to_recursion_module(mod: llvm.Module, seed: int, cfg: FilterConfig) -> 
         for ep in exit_phis:
             ep.phi.erase_from_parent()
 
+        loop_instructions = [
+            inst
+            for bb in loop_blocks
+            for inst in bb.instructions
+        ]
+        for inst in loop_instructions:
+            poison_internal_uses_before_erasing(inst, loop_block_set)
         for bb in loop_blocks:
             for inst in reversed(list(bb.instructions)):
                 inst.erase_from_parent()

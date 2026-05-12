@@ -456,7 +456,7 @@ BlockAddress* addr = BlockAddress::get(func, bb);
 
 **Python:**
 ```python
-addr = llvm.block_address(func, bb)  # Function, not class method
+addr = bb.block_address()  # Function is inferred from the block
 ```
 
 ---
@@ -615,8 +615,8 @@ Constant* str = ConstantDataArray::getString(ctx, "hello", true);
 
 **Python:**
 ```python
-str_const = llvm.const_string(ctx, "hello", dont_null_terminate=False)
-raw_const = llvm.const_string(ctx, b"\xff\x80B", dont_null_terminate=True)
+str_const = ctx.const_string("hello", dont_null_terminate=False)
+raw_const = ctx.const_string(b"\xff\x80B", dont_null_terminate=True)
 assert raw_const.type.array_length == 3
 ```
 
@@ -632,10 +632,8 @@ Constant* dataArr = ConstantDataArray::get(ctx, arrayRef);
 
 **Python:**
 ```python
-arr = llvm.const_array(elem_ty, [elem1, elem2])
-data_arr = llvm.const_data_array(ctx.types.i8, b"\xff\x80B")
-# Equivalent type helper overload:
-data_arr = ctx.types.i8.const_data_array(b"\xff\x80B")
+arr = elem_ty.array_const([elem1, elem2])
+data_arr = elem_ty.array_const(string_data)
 ```
 
 ### Struct Constants
@@ -647,7 +645,7 @@ Constant* s = ConstantStruct::get(structTy, {field1, field2});
 
 **Python:**
 ```python
-s = llvm.const_named_struct(struct_ty, [field1, field2])
+s = struct_ty.named_struct_const([field1, field2])
 ```
 
 ---
@@ -816,7 +814,7 @@ val = i64_ty.constant(-1)  # Same bit pattern, works
 ```python
 # Encrypted bytes or other binary payloads: pass bytes, not str.
 encrypted = bytes([0xFF, 0x80, 0x42])
-const = llvm.const_string(ctx, encrypted, dont_null_terminate=True)
+const = ctx.const_string(encrypted, dont_null_terminate=True)
 assert const.type.array_length == len(encrypted)
 ```
 
@@ -979,7 +977,7 @@ result = builder.select(condition, true_val, false_val, "name")
 
 The original porting effort exposed several blockers. The current bindings have since added the core transformation conveniences:
 
-- raw `bytes` support for `const_string()` / `const_data_array()`
+- raw `bytes` support for `Context.const_string()` / `Type.array_const()`
 - `value.replace_all_uses_with(new_value)`
 - `bb.split_basic_block(...)` and `bb.split_basic_block_before(...)`
 - `inst.erase_from_parent()`

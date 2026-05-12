@@ -27,6 +27,10 @@ type = "nanobind_module"
 sources = ["src/llvm-nanobind.cpp"]
 compile-features = ["cxx_std_20"]
 link-libraries = ["::LLVM-C-Wrapper"]
+# cl.exe: /O2 /Ob2 is brutal on large TUs with heavy templates.
+# /O1 (favor size) with /Ob1 (inline only __inline) is much faster to compile
+# and makes no practical difference for binding glue code.
+compile-options = ["$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<CONFIG:Release>>:/Od>"]
 
 # Test executable template
 [template.test]

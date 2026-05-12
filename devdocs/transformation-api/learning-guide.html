@@ -955,7 +955,7 @@ inst.erase_from_parent()  <span class="comment"># Does both atomically</span></c
                     <div class="expandable-inner">
                         <pre><code><span class="comment"># You want bytes [0xFF, 0x80, 0x42]</span>
 encrypted = <span class="keyword">bytes</span>([<span class="number">0xFF</span>, <span class="number">0x80</span>, <span class="number">0x42</span>]).decode(<span class="string">'latin-1'</span>)
-const = llvm.const_string(ctx, encrypted)
+const = ctx.const_string(encrypted)
 
 <span class="comment"># Expected: [3 x i8]</span>
 <span class="comment"># Actual: [5 x i8] (UTF-8 encoded!)</span></code></pre>

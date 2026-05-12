@@ -27,7 +27,7 @@ def test_type_guard_matrix_negative():
         arr_ty = ctx.types.array(i32, 4)
         vec_ty = ctx.types.vector(i32, 4)
         literal_struct = ctx.types.struct([i32], packed=False)
-        named_struct_with_body = ctx.types.struct([i32], name="NamedWithBody", packed=False)
+        named_struct_with_body = ctx.types.struct("NamedWithBody", [i32], packed=False)
         opaque_struct = ctx.types.opaque_struct("OpaqueS")
 
         cases = [
@@ -67,9 +67,9 @@ def test_type_guard_matrix_negative():
             (lambda: i32.get_target_ext_type_int_param(0), "target extension type"),
             (lambda: f32.constant(1, False), "integer type"),
             (lambda: i32.real_constant(1.0), "floating-point type"),
-            (lambda: i32.constant_from_string("10", 1), "between 2 and 36"),
-            (lambda: f32.constant_from_string("10", 10), "integer type"),
-            (lambda: i32.real_constant_from_string("1.0"), "floating-point type"),
+            (lambda: i32.constant("10", 1), "between 2 and 36"),
+            (lambda: f32.constant("10", 10), "integer type"),
+            (lambda: i32.real_constant("1.0"), "floating-point type"),
         ]
 
         for action, expected in cases:
@@ -127,15 +127,15 @@ def test_type_guard_matrix_positive():
         assert not opaque_struct.is_opaque_struct
 
         assert i32.constant(7, False).is_constant
-        assert i32.constant_from_string("123", 10).is_constant
+        assert i32.constant("123", 10).is_constant
         assert f32.real_constant(1.25).is_constant
-        assert f32.real_constant_from_string("2.5").is_constant
+        assert f32.real_constant("2.5").is_constant
         assert ctx.types.bf16.real_constant(1.25).is_constant
-        assert ctx.types.bf16.real_constant_from_string("2.5").is_constant
+        assert ctx.types.bf16.real_constant("2.5").is_constant
         assert ctx.types.x86_fp80.real_constant(1.25).is_constant
-        assert ctx.types.x86_fp80.real_constant_from_string("2.5").is_constant
+        assert ctx.types.x86_fp80.real_constant("2.5").is_constant
         assert ctx.types.ppc_fp128.real_constant(1.25).is_constant
-        assert ctx.types.ppc_fp128.real_constant_from_string("2.5").is_constant
+        assert ctx.types.ppc_fp128.real_constant("2.5").is_constant
 
         target_ext = None
         try:

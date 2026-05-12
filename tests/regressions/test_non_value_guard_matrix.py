@@ -143,8 +143,8 @@ def test_non_value_guard_matrix_negative():
                 "owned by this function",
             )
             assert_llvm_assertion(
-                lambda: llvm.block_address(fn, other_entry),
-                "owned by the function",
+                lambda: fn.block_address(other_entry),
+                "owned by this function",
             )
 
             high = fn.param_count + 1
@@ -199,13 +199,17 @@ def test_non_value_guard_matrix_negative():
             )
 
             assert_llvm_assertion(
-                lambda: llvm.get_first_dbg_record(fn),
+                lambda: fn.first_dbg_record,
                 "instruction value",
             )
             assert_llvm_assertion(
-                lambda: llvm.get_last_dbg_record(fn),
+                lambda: fn.last_dbg_record,
                 "instruction value",
             )
+
+            # Drop the detached clone before module teardown; it still references
+            # function arguments from this module.
+            detached_clone.delete_instruction()
 
             # Keep the instruction alive to prevent fixture optimization.
             assert first_inst.is_instruction
@@ -229,7 +233,7 @@ def test_non_value_guard_matrix_positive():
             assert fn.basic_block_count == before_blocks + 1
 
             assert fn.block_address(entry).is_constant
-            assert llvm.block_address(fn, entry).is_constant
+            assert entry.block_address().is_constant
 
             idx = llvm.AttributeFunctionIndex
             before_attrs = fn.get_attribute_count(idx)

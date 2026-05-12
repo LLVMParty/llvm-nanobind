@@ -85,7 +85,7 @@ def replace_md_operand():
                 value = node_md.as_value(ctx)
 
                 string2_md = ctx.md_string("bar")
-                llvm.replace_md_node_operand_with(value, 0, string2_md)
+                value.replace_md_node_operand_with(0, string2_md)
 
                 # Verify replacement took effect.
                 operand = value.get_operand(0)

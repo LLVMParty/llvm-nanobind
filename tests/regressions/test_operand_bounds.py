@@ -13,7 +13,7 @@ def test_get_operand_out_of_range():
     """get_operand() on a value with 0 operands should raise, not segfault."""
     with llvm.create_context() as ctx:
         # ConstantDataArray created from const_string has 0 operands
-        val = llvm.const_string(ctx, "hello")
+        val = ctx.const_string("hello")
         assert val.num_operands == 0
 
         try:

@@ -150,8 +150,8 @@ def build_fixture(ctx: llvm.Context, mod: llvm.Module):
         gep_inst = b.gep(i32, alloca_inst, [i32.constant(0, False)], "gep0")
 
         struct_ty = ctx.types.struct([i32, i32])
-        struct_const = llvm.const_named_struct(
-            struct_ty, [i32.constant(10, False), i32.constant(20, False)]
+        struct_const = struct_ty.named_struct_const(
+            [i32.constant(10, False), i32.constant(20, False)]
         )
         struct_slot = b.alloca(struct_ty, "struct_slot")
         b.store(struct_const, struct_slot)
@@ -187,7 +187,7 @@ def build_fixture(ctx: llvm.Context, mod: llvm.Module):
     shuf_fn = mod.add_function("shuf_fn", shuf_fn_ty)
     shuf_entry = shuf_fn.append_basic_block("entry")
     with shuf_entry.create_builder() as b:
-        mask = llvm.const_vector(
+        mask = i32.vector_const(
             [
                 i32.constant(0, False),
                 i32.constant(5, False),
@@ -252,7 +252,7 @@ def build_fixture(ctx: llvm.Context, mod: llvm.Module):
 
     with inv_entry.create_builder() as b:
         invoke_inst = b.invoke_with_operand_bundles(
-            callee_void_ty, may_throw, [], inv_normal, inv_unwind, [], "inv"
+            callee_void_ty, may_throw, [], inv_normal, inv_unwind, [], ""
         )
         b.position_at_end(inv_normal)
         b.ret_void()
@@ -275,8 +275,7 @@ def build_fixture(ctx: llvm.Context, mod: llvm.Module):
     cb_default = cb_fn.append_basic_block("default")
     cb_indirect = cb_fn.append_basic_block("indirect")
     with cb_entry.create_builder() as b:
-        inline_asm = llvm.get_inline_asm(
-            cb_fn_ty,
+        inline_asm = cb_fn_ty.inline_asm(
             "nop",
             "r",
             True,
@@ -291,7 +290,7 @@ def build_fixture(ctx: llvm.Context, mod: llvm.Module):
             [cb_indirect],
             [cb_fn.get_param(0)],
             [],
-            "cb",
+            "",
         )
         b.position_at_end(cb_default)
         b.ret_void()
@@ -919,6 +918,7 @@ def test_value_accessor_guard_matrix_positive():
                 "ifunc_remove", refs["resolver_ty"], 0, resolver0
             )
             ifunc_remove.remove_from_parent_ifunc()
+            ifunc_remove.erase_from_parent_ifunc()
             ifunc_erase = mod.add_global_ifunc("ifunc_erase", refs["resolver_ty"], 0, resolver0)
             ifunc_erase.erase_from_parent_ifunc()
             try:
@@ -1091,6 +1091,7 @@ def test_value_accessor_guard_matrix_positive():
             # Instruction lifecycle APIs.
             cloned = add_inst.instruction_clone()
             assert cloned.is_instruction
+            cloned.delete_instruction()
 
             remove_fn_ty = ctx.types.function(ctx.types.void, [], False)
             remove_fn = mod.add_function("remove_fn", remove_fn_ty)
@@ -1102,6 +1103,8 @@ def test_value_accessor_guard_matrix_positive():
                 removable = b.add(remove_lhs, i32.constant(2, False), "rm")
                 b.ret_void()
             removable.remove_from_parent()
+            assert removable.name == "rm"
+            removable.delete_instruction()
 
             erase_fn_ty = ctx.types.function(ctx.types.void, [], False)
             erase_fn = mod.add_function("erase_fn", erase_fn_ty)

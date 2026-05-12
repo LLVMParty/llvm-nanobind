@@ -1,7 +1,7 @@
 """
 Test all feature matrix items implemented in Session 6.
-This test verifies that all remaining TODO items from the feature matrix
-are properly implemented and accessible.
+This test verifies that the remaining feature-matrix items are properly
+implemented and accessible.
 """
 
 import llvm
@@ -15,7 +15,7 @@ DI_FLAGS_ZERO = 0  # No flags
 
 
 def test_core_get_cast_opcode():
-    """Test LLVMGetCastOpcode → llvm.get_cast_opcode()"""
+    """Test LLVMGetCastOpcode → Value.get_cast_opcode()"""
     with llvm.create_context() as ctx:
         i32 = ctx.types.i32
         i64 = ctx.types.i64
@@ -27,28 +27,28 @@ def test_core_get_cast_opcode():
         f32_val = f32.real_constant(3.14)
 
         # Integer extension (i32 -> i64)
-        opcode = llvm.get_cast_opcode(i32_val, True, i64, True)
+        opcode = i32_val.get_cast_opcode(True, i64, True)
         assert opcode == llvm.Opcode.SExt
 
-        opcode = llvm.get_cast_opcode(i32_val, False, i64, False)
+        opcode = i32_val.get_cast_opcode(False, i64, False)
         assert opcode == llvm.Opcode.ZExt
 
         # Integer truncation (i64 -> i32)
-        opcode = llvm.get_cast_opcode(i64_val, True, i32, True)
+        opcode = i64_val.get_cast_opcode(True, i32, True)
         assert opcode == llvm.Opcode.Trunc
 
         # Float to int
-        opcode = llvm.get_cast_opcode(f32_val, False, i32, True)
+        opcode = f32_val.get_cast_opcode(False, i32, True)
         assert opcode == llvm.Opcode.FPToSI
 
-        opcode = llvm.get_cast_opcode(f32_val, False, i32, False)
+        opcode = f32_val.get_cast_opcode(False, i32, False)
         assert opcode == llvm.Opcode.FPToUI
 
         print("[PASS] get_cast_opcode works correctly")
 
 
 def test_core_intrinsic_get_type():
-    """Test LLVMIntrinsicGetType → llvm.intrinsic_get_type()"""
+    """Test LLVMIntrinsicGetType → Context.get_intrinsic_type()"""
     with llvm.create_context() as ctx:
         # Get the intrinsic ID for llvm.memcpy
         memcpy_id = llvm.lookup_intrinsic_id("llvm.memcpy")
@@ -59,7 +59,7 @@ def test_core_intrinsic_get_type():
         i64 = ctx.types.i64
         i1 = ctx.types.i1
 
-        intrinsic_ty = llvm.intrinsic_get_type(ctx, memcpy_id, [ptr_ty, ptr_ty, i64])
+        intrinsic_ty = ctx.get_intrinsic_type(memcpy_id, [ptr_ty, ptr_ty, i64])
         assert intrinsic_ty is not None
         assert intrinsic_ty.kind == llvm.TypeKind.Function
 
@@ -67,7 +67,7 @@ def test_core_intrinsic_get_type():
 
 
 def test_core_replace_md_node_operand():
-    """Test LLVMReplaceMDNodeOperandWith → llvm.replace_md_node_operand_with()"""
+    """Test LLVMReplaceMDNodeOperandWith → Value.replace_md_node_operand_with()"""
     with llvm.create_context() as ctx:
         # Create metadata nodes
         md1 = ctx.md_string("original")
@@ -79,7 +79,7 @@ def test_core_replace_md_node_operand():
         replacement_val = md2.as_value(ctx)
 
         # Replace operand
-        llvm.replace_md_node_operand_with(md_val, 0, replacement_val.as_metadata())
+        md_val.replace_md_node_operand_with(0, replacement_val.as_metadata())
 
         print("[PASS] replace_md_node_operand_with works correctly")
 
@@ -126,8 +126,8 @@ def test_debuginfo_global_variable_expression():
                 )
 
                 # Get variable and expression back
-                var = llvm.di_global_variable_expression_get_variable(gve)
-                expr = llvm.di_global_variable_expression_get_expression(gve)
+                var = gve.di_gve_variable
+                expr = gve.di_gve_expression
 
                 assert var is not None
                 assert expr is not None
@@ -306,10 +306,10 @@ def test_object_binary_copy_to_memory_buffer():
                 b.ret(ctx.types.i32.constant(42))
 
             # Create target machine
-            triple = llvm.get_default_target_triple()
-            target = llvm.get_target_from_triple(triple)
+            triple = llvm.default_target_triple
+            target = llvm.Target.from_triple(triple)
             assert target is not None
-            tm = llvm.create_target_machine(
+            tm = llvm.TargetMachine.create(
                 target,
                 triple,
                 cpu="generic",
@@ -323,7 +323,7 @@ def test_object_binary_copy_to_memory_buffer():
             obj_data = tm.emit_to_memory_buffer(mod, llvm.CodeGenFileType.ObjectFile)
 
             # Create binary from the object data
-            with llvm.create_binary_from_bytes(obj_data) as binary:
+            with llvm.BinaryManager.from_bytes(obj_data) as binary:
                 # Copy to memory buffer
                 copied_data = binary.copy_to_memory_buffer()
 
@@ -350,10 +350,10 @@ def test_object_section_contains_symbol():
                 b.ret(ctx.types.i32.constant(42))
 
             # Create target machine
-            triple = llvm.get_default_target_triple()
-            target = llvm.get_target_from_triple(triple)
+            triple = llvm.default_target_triple
+            target = llvm.Target.from_triple(triple)
             assert target is not None
-            tm = llvm.create_target_machine(
+            tm = llvm.TargetMachine.create(
                 target,
                 triple,
                 cpu="generic",
@@ -364,7 +364,7 @@ def test_object_section_contains_symbol():
             )
 
             obj_data = tm.emit_to_memory_buffer(mod, llvm.CodeGenFileType.ObjectFile)
-            with llvm.create_binary_from_bytes(obj_data) as binary:
+            with llvm.BinaryManager.from_bytes(obj_data) as binary:
                 # Iterate sections and symbols
                 found_symbol = False
                 for section in binary.sections:

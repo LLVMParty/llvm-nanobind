@@ -3,7 +3,7 @@
 Tests for the Binary/Object File API.
 
 These tests verify:
-1. Basic functionality of create_binary_from_bytes and create_binary_from_file
+1. Basic functionality of BinaryManager.from_bytes and BinaryManager.from_file
 2. Memory safety with validity tokens
 3. Iterator behavior after binary disposal
 4. Error handling
@@ -32,7 +32,7 @@ def test_create_binary_from_bytes():
 
     data = obj_path.read_bytes()
 
-    with llvm.create_binary_from_bytes(data) as binary:
+    with llvm.BinaryManager.from_bytes(data) as binary:
         # Check binary type
         assert binary.type == llvm.BinaryType.ELF64L, (
             f"Expected ELF64L, got {binary.type}"
@@ -67,7 +67,7 @@ def test_create_binary_from_file():
         print(f"SKIP: Test object file not found: {obj_path}")
         return
 
-    with llvm.create_binary_from_file(str(obj_path)) as binary:
+    with llvm.BinaryManager.from_file(str(obj_path)) as binary:
         assert binary.type == llvm.BinaryType.ELF64L
 
         # Iterate sections
@@ -99,7 +99,7 @@ def test_section_iterator_after_binary_disposed():
 
     # Get iterator inside context, try to use outside
     sect_iter = None
-    with llvm.create_binary_from_bytes(data) as binary:
+    with llvm.BinaryManager.from_bytes(data) as binary:
         sect_iter = binary.sections
         # Iterator should work inside the context
         assert not sect_iter.is_at_end()
@@ -133,7 +133,7 @@ def test_symbol_iterator_after_binary_disposed():
     data = obj_path.read_bytes()
 
     sym_iter = None
-    with llvm.create_binary_from_bytes(data) as binary:
+    with llvm.BinaryManager.from_bytes(data) as binary:
         sym_iter = binary.symbols
         # Don't access it - just get it
 
@@ -151,7 +151,7 @@ def test_symbol_iterator_after_binary_disposed():
 def test_invalid_binary_bytes():
     """Test error handling for invalid binary data."""
     try:
-        with llvm.create_binary_from_bytes(b"not a valid object file") as binary:
+        with llvm.BinaryManager.from_bytes(b"not a valid object file") as binary:
             pass
         assert False, "Expected LLVMError for invalid data"
     except llvm.LLVMError as e:
@@ -163,7 +163,7 @@ def test_invalid_binary_bytes():
 def test_nonexistent_file():
     """Test error handling for non-existent file."""
     try:
-        with llvm.create_binary_from_file("/nonexistent/path/to/file.o") as binary:
+        with llvm.BinaryManager.from_file("/nonexistent/path/to/file.o") as binary:
             pass
         assert False, "Expected LLVMError for non-existent file"
     except llvm.LLVMError as e:
@@ -188,7 +188,7 @@ def test_pythonic_iteration():
 
     data = obj_path.read_bytes()
 
-    with llvm.create_binary_from_bytes(data) as binary:
+    with llvm.BinaryManager.from_bytes(data) as binary:
         # Test that we can iterate multiple times
         count1 = sum(1 for _ in binary.sections)
         count2 = sum(1 for _ in binary.sections)
@@ -217,7 +217,7 @@ def test_section_contents():
 
     data = obj_path.read_bytes()
 
-    with llvm.create_binary_from_bytes(data) as binary:
+    with llvm.BinaryManager.from_bytes(data) as binary:
         for sect in binary.sections:
             if sect.name == ".text":
                 contents = sect.contents
@@ -244,7 +244,7 @@ def test_double_enter():
         return
 
     data = obj_path.read_bytes()
-    manager = llvm.create_binary_from_bytes(data)
+    manager = llvm.BinaryManager.from_bytes(data)
 
     with manager as binary:
         pass  # First enter/exit
@@ -275,7 +275,7 @@ def test_dispose_before_enter():
         return
 
     data = obj_path.read_bytes()
-    manager = llvm.create_binary_from_bytes(data)
+    manager = llvm.BinaryManager.from_bytes(data)
 
     # Dispose without entering - should work
     manager.dispose()

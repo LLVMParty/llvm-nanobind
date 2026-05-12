@@ -201,9 +201,17 @@ This section captures guard preconditions for wrapper classes other than
 - Element-type family:
   - `element_type` requires pointer/vector/array type.
 - Constant constructors:
-  - `constant`, `constant_from_string` require integer type.
-  - `real_constant`, `real_constant_from_string` require floating type.
-  - `constant_from_string` additionally requires `2 <= radix <= 36`.
+  - `constant` requires an integer type.
+  - `real_constant` requires a floating type.
+  - `constant(str, radix)` requires `2 <= radix <= 36`.
+- Named struct creation:
+  - `ctx.types.struct("Name", [field_types...])` defaults to
+    `get_or_insert=True`.
+  - Reusing the same name with the same body returns the existing identified
+    struct; reusing an opaque declaration completes it; conflicting bodies or
+    packing raise `LLVMAssertionError`.
+  - Pass `get_or_insert=False` for raw LLVM insertion behavior, which may append
+    a suffix to duplicate names.
 - Struct body mutation:
   - `set_body` requires identified opaque struct type (not literal, not already
     non-opaque).
@@ -238,6 +246,7 @@ This section captures guard preconditions for wrapper classes other than
     `remove_enum_attribute`, `remove_string_attribute`
   - valid index range: `-1` (function), `0` (return), `1..param_count`.
 - `block_address` requires block ownership by that function.
+  Prefer `bb.block_address()` when the function can be inferred.
 - Parent navigation:
   - `module`/`context` require function has a parent module.
 
@@ -253,9 +262,11 @@ This section captures guard preconditions for wrapper classes other than
   - `insert_into_builder_with_name(instr)` requires instruction value.
   - `add_metadata_to_inst(instr)` requires instruction value.
 
-### Global helper `llvm.block_address(fn, bb)`
+### BasicBlock `block_address()`
 
-- Requires `bb` to be owned by `fn`.
+- Requires the block to be attached to a function.
+- `Function.block_address(bb)` is also available when explicitly checking a
+  block against a specific function.
 
 ### OperandBundle (`llvm.OperandBundle`)
 

@@ -35,8 +35,8 @@ def main():
             # Arbitrary precision integer (128-bit) - two 64-bit words (little-endian)
             # words[] = {0xFFFFFFFFFFFFFFFFULL, 0x0000000000000001ULL}
             # Low word first (little-endian): 0xFFFFFFFFFFFFFFFF, 0x0000000000000001
-            const_i128 = llvm.const_int_of_arbitrary_precision(
-                i128, [0xFFFFFFFFFFFFFFFF, 0x0000000000000001]
+            const_i128 = i128.constant(
+                [0xFFFFFFFFFFFFFFFF, 0x0000000000000001]
             )
 
             # ==========================================
@@ -62,9 +62,9 @@ def main():
             # String constant
             # ==========================================
             str_val = "Hello, LLVM!"
-            const_string = llvm.const_string(ctx, str_val, dont_null_terminate=False)
-            const_string_no_null = llvm.const_string(
-                ctx, str_val, dont_null_terminate=True
+            const_string = ctx.const_string(str_val, dont_null_terminate=False)
+            const_string_no_null = ctx.const_string(
+                str_val, dont_null_terminate=True
             )
 
             # ==========================================
@@ -77,7 +77,7 @@ def main():
                 i32.constant(4),
                 i32.constant(5),
             ]
-            const_array = llvm.const_array(i32, arr_elems)
+            array_const = i32.array_const(arr_elems)
 
             # ==========================================
             # Anonymous struct constant
@@ -87,8 +87,8 @@ def main():
                 f64.real_constant(3.14),
                 i64.constant(999),
             ]
-            const_struct = llvm.const_struct(struct_elems, False, ctx)
-            const_packed_struct = llvm.const_struct(struct_elems, True, ctx)
+            const_struct = ctx.const_struct(struct_elems, False)
+            const_packed_struct = ctx.const_struct(struct_elems, True)
 
             # ==========================================
             # Named struct constant
@@ -100,7 +100,7 @@ def main():
                 i32.constant(10),
                 i32.constant(20),
             ]
-            const_named_struct = llvm.const_named_struct(named_struct_ty, point_vals)
+            named_struct_const = named_struct_ty.named_struct_const(point_vals)
 
             # ==========================================
             # Vector constant
@@ -111,7 +111,7 @@ def main():
                 i32.constant(3),
                 i32.constant(4),
             ]
-            const_vector = llvm.const_vector(vec_elems)
+            const_vector = i32.vector_const(vec_elems)
 
             # ==========================================
             # Add globals to expose constants in output
@@ -154,7 +154,7 @@ def main():
 
             arr_ty = i32.array(5)
             g = mod.add_global(arr_ty, "const_array")
-            g.initializer = const_array
+            g.initializer = array_const
             g.set_constant(True)
 
             # Struct type for global
@@ -164,7 +164,7 @@ def main():
             g.set_constant(True)
 
             g = mod.add_global(named_struct_ty, "const_point")
-            g.initializer = const_named_struct
+            g.initializer = named_struct_const
             g.set_constant(True)
 
             vec_ty = i32.vector(4)

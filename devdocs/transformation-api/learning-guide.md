@@ -524,13 +524,13 @@ The porting process revealed API gaps:
 | Replace all uses | `value.replace_all_uses_with(new_value)` |
 | Delete instruction | `inst.erase_from_parent()` |
 | Split block | `bb.split_basic_block(...)` / `bb.split_basic_block_before(...)` |
-| Raw byte constants | `llvm.const_string(ctx, b"...", ...)` and `llvm.const_data_array(i8, b"...")` |
+| Raw byte constants | `ctx.const_string(b"...", ...)` and `i8.array_const(b"...")` |
 
 **Raw bytes example:**
 
 ```python
 encrypted = bytes([0xFF, 0x80, 0x42])
-const = llvm.const_string(ctx, encrypted, dont_null_terminate=True)
+const = ctx.const_string(encrypted, dont_null_terminate=True)
 assert const.type.array_length == len(encrypted)
 ```
 

@@ -75,7 +75,7 @@ def test_symbol_size_crash():
     obj_data = create_test_object()
     print(f"Created test object file: {len(obj_data)} bytes")
 
-    with llvm.create_binary_from_bytes(obj_data) as binary:
+    with llvm.BinaryManager.from_bytes(obj_data) as binary:
         print(f"Binary type: {binary.type}")
 
         # List sections (this works fine)
@@ -120,7 +120,7 @@ def test_with_existing_object():
     with open(simple_o, "rb") as f:
         obj_data = f.read()
 
-    with llvm.create_binary_from_bytes(obj_data) as binary:
+    with llvm.BinaryManager.from_bytes(obj_data) as binary:
         print(f"Binary type: {binary.type}")
 
         sym_iter = binary.symbols

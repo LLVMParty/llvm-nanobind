@@ -90,6 +90,17 @@ endif()
 # Split the definitions properly (https://weliveindetail.github.io/blog/post/2017/07/17/notes-setup.html)
 separate_arguments(LLVM_DEFINITIONS)
 
+# Support dynamically-linked LLVM.dll (experimental)
+if(WIN32 AND EXISTS "${LLVM_TOOLS_BINARY_DIR}/LLVM.dll" AND NOT TARGET LLVM)
+    find_library(LLVM_LIB LLVM PATHS ${LLVM_LIBRARY_DIRS} NO_DEFAULT_PATH NO_CACHE REQUIRED)
+    add_library(LLVM SHARED IMPORTED)
+    set_target_properties(LLVM PROPERTIES
+        IMPORTED_IMPLIB "${LLVM_LIB}"
+        IMPORTED_LOCATION "${LLVM_TOOLS_BINARY_DIR}/LLVM.dll"
+    )
+    # set(LLVM_LINK_LLVM_DYLIB ON) # TODO: this does not work
+endif()
+
 # https://github.com/JonathanSalwan/Triton/issues/1082#issuecomment-1030826696
 if(LLVM_LINK_LLVM_DYLIB)
     set(LLVM-Wrapper_LIBS LLVM)
@@ -148,13 +159,14 @@ endif()
 
 add_library(LLVM-C-Wrapper INTERFACE)
 target_include_directories(LLVM-C-Wrapper SYSTEM INTERFACE ${LLVM_INCLUDE_DIRS})
-if(TARGET LLVM-C)
-    target_link_libraries(LLVM-C-Wrapper INTERFACE LLVM-C)
-elseif(LLVM_LINK_LLVM_DYLIB)
-    # apt.llvm.org packages don't build libLLVM-C, but all C API symbols
+if(TARGET LLVM)
+    # Not all distributions of LLVM include LLVM-C, but all the C API symbols
     # are available in the monolithic libLLVM.so shared library.
-    message(STATUS "LLVM-C target not found, falling back to LLVM (LLVM_LINK_LLVM_DYLIB=ON)")
+    message(STATUS "Linking to LLVM shared library")
     target_link_libraries(LLVM-C-Wrapper INTERFACE LLVM)
+elseif(TARGET LLVM-C)
+    message(STATUS "Linking to LLVM-C")
+    target_link_libraries(LLVM-C-Wrapper INTERFACE LLVM-C)
 else()
     message(FATAL_ERROR "LLVM-C target not found. Make sure LLVM is built with the C bindings.")
 endif()

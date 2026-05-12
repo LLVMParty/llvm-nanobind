@@ -237,9 +237,12 @@ struct LLVMBuilderWrapper;
 struct LLVMModuleManager;
 struct LLVMBuilderManager;
 struct LLVMDIBuilderManager;
+struct LLVMTargetMachineWrapper;
+struct LLVMPassBuilderOptionsWrapper;
 struct LLVMNamedMDNodeWrapper;
 struct LLVMOperandBundleWrapper;
 struct LLVMUseWrapper;
+struct LLVMDbgRecordWrapper;
 
 // =============================================================================
 // Operand Bundle Wrapper (for call/invoke instructions with operand bundles)
@@ -754,14 +757,18 @@ struct LLVMTypeWrapper {
   // Integer constant: ty.constant(42)
   LLVMValueWrapper constant(long long val, bool sign_extend = false) const;
 
-  // Integer constant from string: ty.constant_from_string("123456789", 10)
+  // Integer constant from string: ty.constant("123456789", 10)
   LLVMValueWrapper constant_from_string(const std::string &text,
                                         unsigned radix = 10) const;
+
+  // Arbitrary-precision integer constant: ty.constant([lo, hi, ...])
+  LLVMValueWrapper
+  constant_arbitrary_precision(const Iterable<uint64_t> &words) const;
 
   // Float constant: ty.real_constant(3.14)
   LLVMValueWrapper real_constant(double val) const;
 
-  // Float constant from string: ty.real_constant_from_string("3.14159")
+  // Float constant from string: ty.real_constant("3.14159")
   LLVMValueWrapper real_constant_from_string(const std::string &text) const;
 
   // Null value (works for all types): ty.null()
@@ -775,6 +782,22 @@ struct LLVMTypeWrapper {
 
   // Poison value: ty.poison()
   LLVMValueWrapper poison() const;
+
+  // Vector constant with this element type.
+  LLVMValueWrapper vector_const(const Iterable<LLVMValueWrapper> &vals) const;
+
+  // Constant GEP expression using this type as source element type.
+  LLVMValueWrapper gep_const(const LLVMValueWrapper &ptr,
+                             const Iterable<LLVMValueWrapper> &indices,
+                             unsigned no_wrap_flags) const;
+
+  // Inline assembly value using this function type.
+  LLVMValueWrapper inline_asm(const std::string &asm_string,
+                              const std::string &constraints,
+                              bool has_side_effects,
+                              bool needs_aligned_stack,
+                              LLVMInlineAsmDialect dialect,
+                              bool can_unwind) const;
 
   // =========================================================================
   // Composite type factory methods (Phase 2)
@@ -978,44 +1001,94 @@ struct LLVMTypeFactoryWrapper {
         m_context_token);
   }
 
-  // Unified struct() method: named if name is provided, anonymous otherwise
-  LLVMTypeWrapper struct_(const Iterable<LLVMTypeWrapper> &elem_types,
-                          const std::string &name = "",
-                          bool packed = false) const {
-    check_valid();
+  std::vector<LLVMTypeRef>
+  collect_type_refs(const Iterable<LLVMTypeWrapper> &types) const {
+    std::vector<LLVMTypeRef> refs;
+    refs.reserve(types.size());
+    for (const auto &type : types) {
+      type.check_valid();
+      if (LLVMGetTypeContext(type.m_ref) != m_ctx_ref) {
+        throw LLVMAssertionError(
+            "Struct element types must belong to this context");
+      }
+      refs.push_back(type.m_ref);
+    }
+    return refs;
+  }
 
-    if (!name.empty()) {
-      // Named struct
-      LLVMTypeRef s = LLVMStructCreateNamed(m_ctx_ref, name.c_str());
-      if (!elem_types.empty()) {
-        std::vector<LLVMTypeRef> elems;
-        elems.reserve(elem_types.size());
-        for (const auto &e : elem_types) {
-          e.check_valid();
-          elems.push_back(e.m_ref);
-        }
-        LLVMStructSetBody(s, elems.data(), static_cast<unsigned>(elems.size()),
-                          packed);
+  static void require_same_struct_body(LLVMTypeRef existing,
+                                       const std::vector<LLVMTypeRef> &elems,
+                                       bool packed,
+                                       const std::string &name) {
+    if (LLVMIsOpaqueStruct(existing))
+      return;
+    if (static_cast<bool>(LLVMIsPackedStruct(existing)) != packed) {
+      throw LLVMAssertionError("struct '" + name +
+                               "' already exists with different packing");
+    }
+    unsigned count = LLVMCountStructElementTypes(existing);
+    if (count != elems.size()) {
+      throw LLVMAssertionError("struct '" + name +
+                               "' already exists with a different body");
+    }
+    for (unsigned i = 0; i < count; ++i) {
+      if (LLVMStructGetTypeAtIndex(existing, i) != elems[i]) {
+        throw LLVMAssertionError("struct '" + name +
+                                 "' already exists with a different body");
       }
-      return LLVMTypeWrapper(s, m_context_token);
-    } else {
-      // Anonymous struct
-      std::vector<LLVMTypeRef> elems;
-      elems.reserve(elem_types.size());
-      for (const auto &e : elem_types) {
-        e.check_valid();
-        elems.push_back(e.m_ref);
-      }
-      return LLVMTypeWrapper(
-          LLVMStructTypeInContext(m_ctx_ref, elems.data(),
-                                  static_cast<unsigned>(elems.size()), packed),
-          m_context_token);
     }
   }
 
-  // Opaque named struct (forward declaration)
-  LLVMTypeWrapper opaque_struct(const std::string &name) const {
+  LLVMTypeWrapper struct_with_name(const std::string &name,
+                                   const Iterable<LLVMTypeWrapper> &elem_types,
+                                   bool packed = false,
+                                   bool get_or_insert = true) const {
     check_valid();
+    if (name.empty()) {
+      throw LLVMAssertionError(
+          "Named struct type requires a non-empty name");
+    }
+    std::vector<LLVMTypeRef> elems = collect_type_refs(elem_types);
+
+    if (get_or_insert) {
+      if (LLVMTypeRef existing = LLVMGetTypeByName2(m_ctx_ref, name.c_str())) {
+        require_same_struct_body(existing, elems, packed, name);
+        if (LLVMIsOpaqueStruct(existing)) {
+          LLVMStructSetBody(existing, elems.data(),
+                            static_cast<unsigned>(elems.size()), packed);
+        }
+        return LLVMTypeWrapper(existing, m_context_token);
+      }
+    }
+
+    LLVMTypeRef s = LLVMStructCreateNamed(m_ctx_ref, name.c_str());
+    LLVMStructSetBody(s, elems.data(), static_cast<unsigned>(elems.size()),
+                      packed);
+    return LLVMTypeWrapper(s, m_context_token);
+  }
+
+  // Literal (anonymous) struct type.
+  LLVMTypeWrapper struct_(const Iterable<LLVMTypeWrapper> &elem_types,
+                          bool packed = false) const {
+    check_valid();
+    std::vector<LLVMTypeRef> elems = collect_type_refs(elem_types);
+    return LLVMTypeWrapper(
+        LLVMStructTypeInContext(m_ctx_ref, elems.data(),
+                                static_cast<unsigned>(elems.size()), packed),
+        m_context_token);
+  }
+
+  // Opaque named struct (forward declaration)
+  LLVMTypeWrapper opaque_struct(const std::string &name,
+                                bool get_or_insert = true) const {
+    check_valid();
+    if (name.empty()) {
+      throw LLVMAssertionError("Opaque struct type requires a non-empty name");
+    }
+    if (get_or_insert) {
+      if (LLVMTypeRef existing = LLVMGetTypeByName2(m_ctx_ref, name.c_str()))
+        return LLVMTypeWrapper(existing, m_context_token);
+    }
     return LLVMTypeWrapper(LLVMStructCreateNamed(m_ctx_ref, name.c_str()),
                            m_context_token);
   }
@@ -1153,6 +1226,50 @@ struct LLVMUseWrapper {
   // Matches this Use pointer against LLVMGetOperandUse(user, i) to handle
   // duplicate operands correctly.
   unsigned get_operand_index() const;
+};
+
+// =============================================================================
+// Debug Record Wrapper (opaque, non-owning debug record links)
+// =============================================================================
+
+struct LLVMDbgRecordWrapper {
+  LLVMDbgRecordRef m_ref = nullptr;
+  std::shared_ptr<ValidityToken> m_context_token;
+
+  LLVMDbgRecordWrapper() = default;
+  LLVMDbgRecordWrapper(LLVMDbgRecordRef ref,
+                       std::shared_ptr<ValidityToken> token)
+      : m_ref(ref), m_context_token(std::move(token)) {}
+
+  bool operator==(const LLVMDbgRecordWrapper &other) const {
+    return m_ref == other.m_ref;
+  }
+  bool operator!=(const LLVMDbgRecordWrapper &other) const {
+    return m_ref != other.m_ref;
+  }
+
+  void check_valid() const {
+    if (!m_ref)
+      throw LLVMMemoryError("DbgRecord is null");
+    if (!m_context_token || !m_context_token->is_valid())
+      throw LLVMMemoryError("DbgRecord used after context was destroyed");
+  }
+
+  std::optional<LLVMDbgRecordWrapper> next() const {
+    check_valid();
+    LLVMDbgRecordRef next_ref = LLVMGetNextDbgRecord(m_ref);
+    if (!next_ref)
+      return std::nullopt;
+    return LLVMDbgRecordWrapper(next_ref, m_context_token);
+  }
+
+  std::optional<LLVMDbgRecordWrapper> prev() const {
+    check_valid();
+    LLVMDbgRecordRef prev_ref = LLVMGetPreviousDbgRecord(m_ref);
+    if (!prev_ref)
+      return std::nullopt;
+    return LLVMDbgRecordWrapper(prev_ref, m_context_token);
+  }
 };
 
 // =============================================================================
@@ -1652,20 +1769,39 @@ struct LLVMValueWrapper {
     LLVMSetGlobalIFuncResolver(m_ref, resolver.m_ref);
   }
 
-  // Erase global IFunc from parent module and delete it
+  void clear_global_ifunc_resolver_for_detach() {
+    LLVMValueRef resolver = LLVMGetGlobalIFuncResolver(m_ref);
+    if (resolver) {
+      LLVMValueRef null_resolver = LLVMConstNull(LLVMTypeOf(resolver));
+      LLVMSetGlobalIFuncResolver(m_ref, null_resolver);
+    }
+  }
+
+  // Erase global IFunc from parent module and delete it when parented.
   void erase_from_parent_ifunc() {
     check_valid();
     require_global_ifunc("erase_from_parent_ifunc");
-    LLVMEraseGlobalIFunc(m_ref);
-    m_ref = nullptr; // IFunc is now deleted
+    if (LLVMGetGlobalParent(m_ref)) {
+      LLVMEraseGlobalIFunc(m_ref);
+    } else {
+      // WARNING: LLVM-C has no API to delete a detached GlobalIFunc.
+      // TODO: needs safe LLVM-C API equivalent. Drop resolver uses and
+      // invalidate the wrapper to avoid teardown crashes; the detached ifunc
+      // itself is intentionally leaked rather than deleted through LLVM C++.
+      clear_global_ifunc_resolver_for_detach();
+    }
+    m_ref = nullptr; // IFunc is now deleted or intentionally detached/leaked.
   }
 
-  // Remove global IFunc from parent module but keep it alive
+  // Remove global IFunc from parent module.
   void remove_from_parent_ifunc() {
     check_valid();
     require_global_ifunc("remove_from_parent_ifunc");
+    // WARNING: LLVM-C has no API to delete or reinsert a detached GlobalIFunc.
+    // TODO: needs safe LLVM-C API equivalent. Clear resolver uses before
+    // detaching so the parent module can be destroyed safely.
+    clear_global_ifunc_resolver_for_detach();
     LLVMRemoveGlobalIFunc(m_ref);
-    // IFunc is still alive, just unlinked from module
   }
 
   // Global properties for echo command
@@ -2012,13 +2148,13 @@ struct LLVMValueWrapper {
   }
 
   // Constant data access
-  std::pair<size_t, std::string> get_raw_data_values() const {
+  std::pair<size_t, nb::bytes> get_raw_data_values() const {
     check_valid();
     if (!is_a_constant_data_array())
       throw LLVMAssertionError("Value is not a constant data array");
     size_t size;
     const char *data = LLVMGetRawDataValues(m_ref, &size);
-    return {size, std::string(data, size)};
+    return {size, nb::bytes(data, size)};
   }
 
   LLVMValueWrapper get_aggregate_element(unsigned index) const {
@@ -2239,7 +2375,7 @@ struct LLVMValueWrapper {
     return LLVMGetOrdering(m_ref);
   }
 
-  // Call/invoke properties
+  // Call/invoke/funclet argument properties
   unsigned get_num_arg_operands() const {
     check_valid();
     require_arg_operands_instruction("num_arg_operands");
@@ -2745,18 +2881,23 @@ struct LLVMValueWrapper {
     LLVMSetFastMathFlags(m_ref, flags);
   }
 
-  // Get arg operand (for call instructions)
+  // Get arg operand for call-like and funcletpad instructions.
   LLVMValueWrapper get_arg_operand(unsigned index) const {
     check_valid();
     require_arg_operands_instruction("get_arg_operand");
-    unsigned count = LLVMGetNumArgOperands(m_ref);
+    unsigned count = get_num_arg_operands();
     if (index >= count) {
       throw LLVMAssertionError("get_arg_operand: arg operand index " +
                                std::to_string(index) +
                                " out of range (num_arg_operands=" +
                                std::to_string(count) + ")");
     }
-    LLVMValueRef arg = LLVMGetArgOperand(m_ref, index);
+
+    LLVMOpcode op = LLVMGetInstructionOpcode(m_ref);
+    LLVMValueRef arg =
+        (op == LLVMCatchPad || op == LLVMCleanupPad)
+            ? LLVMGetArgOperand(m_ref, index)
+            : LLVMGetOperand(m_ref, index);
     if (!arg) {
       throw LLVMAssertionError("get_arg_operand: arg operand at index " +
                                std::to_string(index) + " is null");
@@ -2994,6 +3135,32 @@ struct LLVMValueWrapper {
     return LLVMValueWrapper(LLVMConstBitCast(m_ref, ty.m_ref), m_context_token);
   }
 
+  // Constant pointer authentication expression for ARM64e.
+  LLVMValueWrapper const_ptr_auth(const LLVMValueWrapper &key,
+                                  const LLVMValueWrapper &discriminator,
+                                  const LLVMValueWrapper &addr_discriminator) const {
+    check_valid();
+    key.check_valid();
+    discriminator.check_valid();
+    addr_discriminator.check_valid();
+    return LLVMValueWrapper(LLVMConstantPtrAuth(m_ref, key.m_ref,
+                                                discriminator.m_ref,
+                                                addr_discriminator.m_ref),
+                            m_context_token);
+  }
+
+  LLVMOpcode get_cast_opcode(bool src_is_signed,
+                             const LLVMTypeWrapper &dest_ty,
+                             bool dest_is_signed) const {
+    check_valid();
+    dest_ty.check_valid();
+    return LLVMGetCastOpcode(m_ref, src_is_signed, dest_ty.m_ref,
+                             dest_is_signed);
+  }
+
+  void replace_md_node_operand_with(unsigned index,
+                                    const LLVMMetadataWrapper &replacement);
+
   // Delete an instruction from its parent basic block
   void delete_instruction() {
     check_valid();
@@ -3048,7 +3215,7 @@ struct LLVMValueWrapper {
   }
 
   // Replace occurrences of one operand with another within this instruction.
-  // Mirrors llvm::User::replaceUsesOfWith for instruction users.
+  // Mirrors User::replaceUsesOfWith semantics for instruction users.
   void replace_uses_of_with(const LLVMValueWrapper &from_value,
                             const LLVMValueWrapper &to_value) {
     check_valid();
@@ -3141,6 +3308,40 @@ struct LLVMValueWrapper {
   void set_metadata(unsigned kind, const LLVMMetadataWrapper &md,
                     LLVMContextWrapper &ctx);
 
+  bool has_dbg_records() const {
+    check_valid();
+    require_instruction_value("has_dbg_records");
+    // WARNING: LLVM-C exposes LLVMGetFirstDbgRecord/LLVMGetLastDbgRecord but
+    // no safe has-dbg-records predicate. Calling those getters on instructions
+    // without debug-record storage can abort in LLVM. TODO: needs safe LLVM-C
+    // API equivalent.
+    throw LLVMAssertionError(
+        "has_dbg_records is unavailable: LLVM-C has no safe debug-record "
+        "presence query (TODO: needs safe LLVM-C API equivalent)");
+  }
+
+  std::optional<LLVMDbgRecordWrapper> first_dbg_record() const {
+    check_valid();
+    require_instruction_value("first_dbg_record");
+    // WARNING: LLVM-C may abort if this instruction has no debug-record
+    // storage. TODO: needs safe LLVM-C API equivalent.
+    LLVMDbgRecordRef ref = LLVMGetFirstDbgRecord(m_ref);
+    if (!ref)
+      return std::nullopt;
+    return LLVMDbgRecordWrapper(ref, m_context_token);
+  }
+
+  std::optional<LLVMDbgRecordWrapper> last_dbg_record() const {
+    check_valid();
+    require_instruction_value("last_dbg_record");
+    // WARNING: LLVM-C may abort if this instruction has no debug-record
+    // storage. TODO: needs safe LLVM-C API equivalent.
+    LLVMDbgRecordRef ref = LLVMGetLastDbgRecord(m_ref);
+    if (!ref)
+      return std::nullopt;
+    return LLVMDbgRecordWrapper(ref, m_context_token);
+  }
+
   // Create a builder positioned before this instruction
   LLVMBuilderManager *create_builder(bool before_dbg) const;
 };
@@ -3181,6 +3382,16 @@ struct LLVMBasicBlockWrapper {
   LLVMValueWrapper as_value() const {
     check_valid();
     return LLVMValueWrapper(LLVMBasicBlockAsValue(m_ref), m_context_token);
+  }
+
+  LLVMValueWrapper block_address() const {
+    check_valid();
+    LLVMValueRef fn = LLVMGetBasicBlockParent(m_ref);
+    if (!fn) {
+      throw LLVMAssertionError(
+          "block_address requires a basic block attached to a function");
+    }
+    return LLVMValueWrapper(LLVMBlockAddress(fn, m_ref), m_context_token);
   }
 
   // Print the basic block's IR as a string
@@ -4004,6 +4215,18 @@ LLVMTypeWrapper::constant_from_string(const std::string &text,
       m_context_token);
 }
 
+inline LLVMValueWrapper LLVMTypeWrapper::constant_arbitrary_precision(
+    const Iterable<uint64_t> &words) const {
+  check_valid();
+  if (!is_integer())
+    throw LLVMAssertionError(
+        "constant() with words requires integer type");
+  return LLVMValueWrapper(
+      LLVMConstIntOfArbitraryPrecision(
+          m_ref, static_cast<unsigned>(words.size()), words.data()),
+      m_context_token);
+}
+
 inline LLVMValueWrapper
 LLVMTypeWrapper::real_constant_from_string(const std::string &text) const {
   check_valid();
@@ -4033,6 +4256,60 @@ inline LLVMValueWrapper LLVMTypeWrapper::undef() const {
 inline LLVMValueWrapper LLVMTypeWrapper::poison() const {
   check_valid();
   return LLVMValueWrapper(LLVMGetPoison(m_ref), m_context_token);
+}
+
+inline LLVMValueWrapper
+LLVMTypeWrapper::vector_const(const Iterable<LLVMValueWrapper> &vals) const {
+  check_valid();
+  if (vals.empty())
+    throw LLVMAssertionError("Cannot create empty vector constant");
+  std::vector<LLVMValueRef> refs;
+  refs.reserve(vals.size());
+  for (const auto &v : vals) {
+    v.check_valid();
+    if (LLVMTypeOf(v.m_ref) != m_ref) {
+      throw LLVMAssertionError(
+          "vector_const requires all values to have this element type");
+    }
+    refs.push_back(v.m_ref);
+  }
+  return LLVMValueWrapper(
+      LLVMConstVector(refs.data(), static_cast<unsigned>(refs.size())),
+      m_context_token);
+}
+
+inline LLVMValueWrapper LLVMTypeWrapper::gep_const(
+    const LLVMValueWrapper &ptr,
+    const Iterable<LLVMValueWrapper> &indices,
+    unsigned no_wrap_flags) const {
+  check_valid();
+  ptr.check_valid();
+  std::vector<LLVMValueRef> idx_refs;
+  idx_refs.reserve(indices.size());
+  for (const auto &idx : indices) {
+    idx.check_valid();
+    idx_refs.push_back(idx.m_ref);
+  }
+  return LLVMValueWrapper(
+      LLVMConstGEPWithNoWrapFlags(m_ref, ptr.m_ref, idx_refs.data(),
+                                  static_cast<unsigned>(idx_refs.size()),
+                                  no_wrap_flags),
+      ptr.m_context_token);
+}
+
+inline LLVMValueWrapper LLVMTypeWrapper::inline_asm(
+    const std::string &asm_string, const std::string &constraints,
+    bool has_side_effects, bool needs_aligned_stack,
+    LLVMInlineAsmDialect dialect, bool can_unwind) const {
+  check_valid();
+  if (!is_function())
+    throw LLVMAssertionError("inline_asm() requires a function type");
+  return LLVMValueWrapper(
+      LLVMGetInlineAsm(m_ref, asm_string.c_str(), asm_string.size(),
+                       constraints.c_str(), constraints.size(),
+                       has_side_effects, needs_aligned_stack, dialect,
+                       can_unwind),
+      m_context_token);
 }
 
 // Implementation of LLVMUseWrapper methods - need LLVMValueWrapper
@@ -4250,14 +4527,18 @@ LLVMValueWrapper::add_handler(const LLVMBasicBlockWrapper &handler) {
 
 struct LLVMBuilderWrapper : NoMoveCopy {
   LLVMBuilderRef m_ref = nullptr;
+  LLVMContextRef m_ctx_ref = nullptr;
   std::shared_ptr<ValidityToken> m_context_token;
+  std::shared_ptr<ValidityToken> m_module_token;
   std::shared_ptr<ValidityToken> m_token;
 
   // Constructor with basic block (position at end)
   LLVMBuilderWrapper(LLVMContextRef ctx,
                      std::shared_ptr<ValidityToken> context_token,
-                     LLVMBasicBlockRef bb)
-      : m_context_token(std::move(context_token)),
+                     LLVMBasicBlockRef bb,
+                     std::shared_ptr<ValidityToken> module_token = nullptr)
+      : m_ctx_ref(ctx), m_context_token(std::move(context_token)),
+        m_module_token(std::move(module_token)),
         m_token(std::make_shared<ValidityToken>()) {
     m_ref = LLVMCreateBuilderInContext(ctx);
     LLVMPositionBuilderAtEnd(m_ref, bb);
@@ -4266,8 +4547,10 @@ struct LLVMBuilderWrapper : NoMoveCopy {
   // Constructor with instruction (position before/after debug records)
   LLVMBuilderWrapper(LLVMContextRef ctx,
                      std::shared_ptr<ValidityToken> context_token,
-                     LLVMValueRef inst, bool before_dbg)
-      : m_context_token(std::move(context_token)),
+                     LLVMValueRef inst, bool before_dbg,
+                     std::shared_ptr<ValidityToken> module_token = nullptr)
+      : m_ctx_ref(ctx), m_context_token(std::move(context_token)),
+        m_module_token(std::move(module_token)),
         m_token(std::make_shared<ValidityToken>()) {
     if (!LLVMIsAInstruction(inst))
       throw LLVMAssertionError("Builder position requires an instruction");
@@ -4299,6 +4582,8 @@ struct LLVMBuilderWrapper : NoMoveCopy {
       throw LLVMMemoryError("Builder has been disposed");
     if (!m_context_token || !m_context_token->is_valid())
       throw LLVMMemoryError("Builder used after context was destroyed");
+    if (m_module_token && !m_module_token->is_valid())
+      throw LLVMMemoryError("Builder used after module was disposed");
   }
 
   void dispose() {
@@ -4344,6 +4629,20 @@ struct LLVMBuilderWrapper : NoMoveCopy {
       return std::nullopt;
     return LLVMBasicBlockWrapper(bb, m_context_token);
   }
+
+  std::optional<LLVMFunctionWrapper> function() const {
+    check_valid();
+    LLVMBasicBlockRef bb = LLVMGetInsertBlock(m_ref);
+    if (!bb)
+      return std::nullopt;
+    LLVMValueRef fn = LLVMGetBasicBlockParent(bb);
+    if (!fn)
+      return std::nullopt;
+    return LLVMFunctionWrapper(fn, m_context_token);
+  }
+
+  LLVMModuleWrapper *module() const;
+  LLVMContextWrapper *context() const;
 
   void position_at(const LLVMBasicBlockWrapper &bb,
                    const LLVMValueWrapper &inst) {
@@ -5607,11 +5906,13 @@ struct LLVMModuleWrapper : NoMoveCopy {
   // Borrowed wrappers don't dispose the module when destroyed.
   static LLVMModuleWrapper *
   create_borrowed(LLVMModuleRef mod, LLVMContextRef ctx,
-                  std::shared_ptr<ValidityToken> context_token) {
+                  std::shared_ptr<ValidityToken> context_token,
+                  std::shared_ptr<ValidityToken> module_token = nullptr) {
     auto *wrapper = new LLVMModuleWrapper();
     wrapper->m_ref = mod;
     wrapper->m_context_token = std::move(context_token);
-    wrapper->m_token = std::make_shared<ValidityToken>();
+    wrapper->m_token = module_token ? std::move(module_token)
+                                    : std::make_shared<ValidityToken>();
     wrapper->m_ctx_ref = ctx;
     wrapper->m_borrowed = true;
     return wrapper;
@@ -5644,6 +5945,8 @@ struct LLVMModuleWrapper : NoMoveCopy {
 
   void check_valid() const {
     if (!m_ref)
+      throw LLVMMemoryError("Module has been disposed");
+    if (!m_token || !m_token->is_valid())
       throw LLVMMemoryError("Module has been disposed");
     if (!m_context_token || !m_context_token->is_valid())
       throw LLVMMemoryError("Module used after context was destroyed");
@@ -5704,11 +6007,65 @@ struct LLVMModuleWrapper : NoMoveCopy {
     LLVMSetTarget(m_ref, triple.c_str());
   }
 
+  std::optional<std::string> existing_named_value_kind(
+      const std::string &name) const {
+    if (LLVMGetNamedFunction(m_ref, name.c_str()))
+      return "function";
+    if (LLVMGetNamedGlobal(m_ref, name.c_str()))
+      return "global variable";
+    if (LLVMGetNamedGlobalAlias(m_ref, name.c_str(), name.size()))
+      return "global alias";
+    if (LLVMGetNamedGlobalIFunc(m_ref, name.c_str(), name.size()))
+      return "global ifunc";
+    return std::nullopt;
+  }
+
+  static void require_same_type(LLVMTypeRef existing, LLVMTypeRef requested,
+                                const std::string &name,
+                                const std::string &kind) {
+    if (existing != requested) {
+      throw LLVMAssertionError(kind + " '" + name +
+                               "' already exists with a different type");
+    }
+  }
+
+  static void require_same_address_space(LLVMValueRef existing,
+                                         unsigned requested,
+                                         const std::string &name,
+                                         const std::string &kind) {
+    unsigned existing_as = LLVMGetPointerAddressSpace(LLVMTypeOf(existing));
+    if (existing_as != requested) {
+      throw LLVMAssertionError(kind + " '" + name +
+                               "' already exists in address space " +
+                               std::to_string(existing_as) + " (requested " +
+                               std::to_string(requested) + ")");
+    }
+  }
+
+  void require_no_conflicting_named_value(const std::string &name,
+                                          const std::string &expected_kind) const {
+    auto kind = existing_named_value_kind(name);
+    if (kind && *kind != expected_kind) {
+      throw LLVMAssertionError(expected_kind + " '" + name +
+                               "' cannot be inserted because a " + *kind +
+                               " with that name already exists");
+    }
+  }
+
   // Functions
   LLVMFunctionWrapper add_function(const std::string &name,
-                                   const LLVMTypeWrapper &func_ty) {
+                                   const LLVMTypeWrapper &func_ty,
+                                   bool get_or_insert = true) {
     check_valid();
     func_ty.check_valid();
+    if (get_or_insert) {
+      if (LLVMValueRef func = LLVMGetNamedFunction(m_ref, name.c_str())) {
+        require_same_type(LLVMGlobalGetValueType(func), func_ty.m_ref, name,
+                          "function");
+        return LLVMFunctionWrapper(func, m_context_token);
+      }
+      require_no_conflicting_named_value(name, "function");
+    }
     LLVMValueRef func = LLVMAddFunction(m_ref, name.c_str(), func_ty.m_ref);
     return LLVMFunctionWrapper(func, m_context_token);
   }
@@ -5723,18 +6080,27 @@ struct LLVMModuleWrapper : NoMoveCopy {
 
   // Global variables
   LLVMValueWrapper add_global(const LLVMTypeWrapper &ty,
-                              const std::string &name) {
-    check_valid();
-    ty.check_valid();
-    return LLVMValueWrapper(LLVMAddGlobal(m_ref, ty.m_ref, name.c_str()),
-                            m_context_token);
+                              const std::string &name,
+                              bool get_or_insert = true) {
+    return add_global_in_address_space(ty, name, 0, get_or_insert);
   }
 
   LLVMValueWrapper add_global_in_address_space(const LLVMTypeWrapper &ty,
                                                const std::string &name,
-                                               unsigned address_space) {
+                                               unsigned address_space,
+                                               bool get_or_insert = true) {
     check_valid();
     ty.check_valid();
+    if (get_or_insert) {
+      if (LLVMValueRef global = LLVMGetNamedGlobal(m_ref, name.c_str())) {
+        require_same_type(LLVMGlobalGetValueType(global), ty.m_ref, name,
+                          "global variable");
+        require_same_address_space(global, address_space, name,
+                                   "global variable");
+        return LLVMValueWrapper(global, m_context_token);
+      }
+      require_no_conflicting_named_value(name, "global variable");
+    }
     return LLVMValueWrapper(LLVMAddGlobalInAddressSpace(
                                 m_ref, ty.m_ref, name.c_str(), address_space),
                             m_context_token);
@@ -5952,10 +6318,26 @@ struct LLVMModuleWrapper : NoMoveCopy {
   LLVMValueWrapper add_alias(const LLVMTypeWrapper &value_ty,
                              unsigned addr_space,
                              const LLVMValueWrapper &aliasee,
-                             const std::string &name) {
+                             const std::string &name,
+                             bool get_or_insert = true) {
     check_valid();
     value_ty.check_valid();
     aliasee.check_valid();
+    if (get_or_insert) {
+      if (LLVMValueRef alias =
+              LLVMGetNamedGlobalAlias(m_ref, name.c_str(), name.size())) {
+        require_same_type(LLVMGlobalGetValueType(alias), value_ty.m_ref, name,
+                          "global alias");
+        require_same_address_space(alias, addr_space, name, "global alias");
+        LLVMValueRef existing_aliasee = LLVMAliasGetAliasee(alias);
+        if (existing_aliasee && existing_aliasee != aliasee.m_ref) {
+          throw LLVMAssertionError("global alias '" + name +
+                                   "' already exists with a different aliasee");
+        }
+        return LLVMValueWrapper(alias, m_context_token);
+      }
+      require_no_conflicting_named_value(name, "global alias");
+    }
     return LLVMValueWrapper(LLVMAddAlias2(m_ref, value_ty.m_ref, addr_space,
                                           aliasee.m_ref, name.c_str()),
                             m_context_token);
@@ -5991,10 +6373,26 @@ struct LLVMModuleWrapper : NoMoveCopy {
   LLVMValueWrapper add_global_ifunc(const std::string &name,
                                     const LLVMTypeWrapper &ty,
                                     unsigned addr_space,
-                                    const LLVMValueWrapper &resolver) {
+                                    const LLVMValueWrapper &resolver,
+                                    bool get_or_insert = true) {
     check_valid();
     ty.check_valid();
     resolver.check_valid();
+    if (get_or_insert) {
+      if (LLVMValueRef ifunc =
+              LLVMGetNamedGlobalIFunc(m_ref, name.c_str(), name.size())) {
+        require_same_type(LLVMGlobalGetValueType(ifunc), ty.m_ref, name,
+                          "global ifunc");
+        require_same_address_space(ifunc, addr_space, name, "global ifunc");
+        LLVMValueRef existing_resolver = LLVMGetGlobalIFuncResolver(ifunc);
+        if (existing_resolver && existing_resolver != resolver.m_ref) {
+          throw LLVMAssertionError("global ifunc '" + name +
+                                   "' already exists with a different resolver");
+        }
+        return LLVMValueWrapper(ifunc, m_context_token);
+      }
+      require_no_conflicting_named_value(name, "global ifunc");
+    }
     return LLVMValueWrapper(LLVMAddGlobalIFunc(m_ref, name.c_str(), name.size(),
                                                ty.m_ref, addr_space,
                                                resolver.m_ref),
@@ -6125,6 +6523,14 @@ struct LLVMModuleWrapper : NoMoveCopy {
   // create_dibuilder method - returns a DIBuilderManager
   // Declared here, implemented after LLVMDIBuilderManager is defined
   LLVMDIBuilderManager *create_dibuilder();
+
+  // Builder creation convenience methods.
+  LLVMBuilderManager *create_builder(const LLVMBasicBlockWrapper &bb);
+  LLVMBuilderManager *create_builder(const LLVMValueWrapper &inst,
+                                     bool before_dbg);
+
+  void run_passes(const std::string &passes, LLVMTargetMachineWrapper *tm,
+                  LLVMPassBuilderOptionsWrapper *opts);
 
   // Clone - returns a ModuleManager that must be used with 'with' or .dispose()
   LLVMModuleManager *clone() const;
@@ -6487,6 +6893,21 @@ struct LLVMContextWrapper : NoMoveCopy {
     return LLVMGetSyncScopeID(m_ref, name.c_str(), name.size());
   }
 
+  LLVMTypeWrapper
+  get_intrinsic_type(unsigned id,
+                     const Iterable<LLVMTypeWrapper> &param_types) {
+    check_valid();
+    std::vector<LLVMTypeRef> type_refs;
+    type_refs.reserve(param_types.size());
+    for (const auto &ty : param_types) {
+      ty.check_valid();
+      type_refs.push_back(ty.m_ref);
+    }
+    return LLVMTypeWrapper(
+        LLVMIntrinsicGetType(m_ref, id, type_refs.data(), type_refs.size()),
+        m_token);
+  }
+
   // Create a string constant in this context.
   LLVMValueWrapper const_string(const std::string &str,
                                 bool dont_null_terminate = false) {
@@ -6511,6 +6932,9 @@ struct LLVMContextWrapper : NoMoveCopy {
   // LLVMMetadataWrapper
   LLVMMetadataWrapper md_string(const std::string &str);
   LLVMMetadataWrapper md_node(const Iterable<LLVMMetadataWrapper> &mds);
+  LLVMMetadataWrapper create_debug_location(
+      unsigned line, unsigned column, const LLVMMetadataWrapper &scope,
+      const LLVMMetadataWrapper *inlined_at);
 
   // Module creation (returns context manager) - defined after LLVMModuleManager
   LLVMModuleManager *create_module(const std::string &name);
@@ -6626,6 +7050,7 @@ struct LLVMModuleManager : NoMoveCopy {
 struct LLVMBuilderManager : NoMoveCopy {
   LLVMContextWrapper *m_context = nullptr;
   std::shared_ptr<ValidityToken> m_context_token;
+  std::shared_ptr<ValidityToken> m_module_token;
   std::unique_ptr<LLVMBuilderWrapper> m_builder;
   bool m_entered = false;
   bool m_disposed = false;
@@ -6646,18 +7071,22 @@ struct LLVMBuilderManager : NoMoveCopy {
       throw LLVMMemoryError("Builder manager already entered");
     if (!m_context)
       throw LLVMMemoryError("No context provided");
-    // Check context token validity before dereferencing m_context
+    // Check context/module token validity before dereferencing saved IR refs.
     if (!m_context_token || !m_context_token->is_valid())
       throw LLVMMemoryError("Builder's context has been destroyed");
+    if (m_module_token && !m_module_token->is_valid())
+      throw LLVMMemoryError("Builder's module has been disposed");
     m_context->check_valid();
 
     // Create builder with position
     if (m_initial_bb) {
       m_builder = std::make_unique<LLVMBuilderWrapper>(
-          m_context->m_ref, m_context->m_token, *m_initial_bb);
+          m_context->m_ref, m_context->m_token, *m_initial_bb,
+          m_module_token);
     } else if (m_initial_inst) {
       m_builder = std::make_unique<LLVMBuilderWrapper>(
-          m_context->m_ref, m_context->m_token, *m_initial_inst, m_before_dbg);
+          m_context->m_ref, m_context->m_token, *m_initial_inst, m_before_dbg,
+          m_module_token);
     } else {
       throw LLVMMemoryError(
           "Builder must be created with a position (BasicBlock or "
@@ -6944,7 +7373,7 @@ LLVMValueWrapper get_poison(const LLVMTypeWrapper &ty) {
   return LLVMValueWrapper(LLVMGetPoison(ty.m_ref), ty.m_context_token);
 }
 
-LLVMValueWrapper const_array(const LLVMTypeWrapper &elem_ty,
+LLVMValueWrapper array_const(const LLVMTypeWrapper &elem_ty,
                              const Iterable<LLVMValueWrapper> &vals) {
   elem_ty.check_valid();
   std::vector<LLVMValueRef> refs;
@@ -7011,7 +7440,7 @@ LLVMValueWrapper const_pointer_null(const LLVMTypeWrapper &ty) {
   return LLVMValueWrapper(LLVMConstPointerNull(ty.m_ref), ty.m_context_token);
 }
 
-LLVMValueWrapper const_named_struct(const LLVMTypeWrapper &struct_ty,
+LLVMValueWrapper named_struct_const(const LLVMTypeWrapper &struct_ty,
                                     const Iterable<LLVMValueWrapper> &vals) {
   struct_ty.check_valid();
   std::vector<LLVMValueRef> refs;
@@ -7905,6 +8334,12 @@ void run_passes(LLVMModuleWrapper &mod, const std::string &passes,
   }
 }
 
+inline void LLVMModuleWrapper::run_passes(const std::string &passes,
+                                          LLVMTargetMachineWrapper *tm,
+                                          LLVMPassBuilderOptionsWrapper *opts) {
+  ::run_passes(*this, passes, tm, opts);
+}
+
 // =============================================================================
 // Memory Buffer Wrapper
 // =============================================================================
@@ -8276,21 +8711,90 @@ struct LLVMSymbolIteratorWrapper : NoMoveCopy {
     check_valid();
     check_not_at_end("SymbolIterator.size");
 
-    // Some symbol kinds (e.g. file symbols) have no containing section.
-    // LLVMGetSymbolSize can assert on those in debug builds.
-    LLVMSectionIteratorRef sect = LLVMObjectFileCopySectionIterator(m_binary_ref);
-    if (!sect)
-      return 0;
+    // WARNING: LLVMGetSymbolSize calls LLVM's common-symbol-size path and can
+    // abort for ordinary function/data symbols. TODO: needs safe LLVM-C API
+    // equivalent. Approximate llvm-symbolizer-style sizes using only LLVM-C by
+    // computing distance to the next symbol in the same containing section.
+    struct SymbolInfo {
+      std::string name;
+      std::string section_name;
+      uint64_t address = 0;
+      uint64_t section_address = 0;
+      uint64_t section_size = 0;
+      bool has_section = false;
+    };
 
-    LLVMMoveToContainingSection(sect, m_ref);
-    bool HasContainingSection =
-        !LLVMObjectFileIsSectionIteratorAtEnd(m_binary_ref, sect);
+    auto read_info = [&](LLVMSymbolIteratorRef sym,
+                         LLVMSectionIteratorRef sect) -> SymbolInfo {
+      SymbolInfo info;
+      const char *name = LLVMGetSymbolName(sym);
+      info.name = name ? std::string(name) : std::string();
+      info.address = LLVMGetSymbolAddress(sym);
+      if (sect) {
+        LLVMMoveToContainingSection(sect, sym);
+        if (!LLVMObjectFileIsSectionIteratorAtEnd(m_binary_ref, sect)) {
+          const char *section_name = LLVMGetSectionName(sect);
+          info.section_name = section_name ? std::string(section_name)
+                                           : std::string();
+          info.section_address = LLVMGetSectionAddress(sect);
+          info.section_size = LLVMGetSectionSize(sect);
+          info.has_section = true;
+        }
+      }
+      return info;
+    };
+
+    auto same_section = [](const SymbolInfo &a, const SymbolInfo &b) -> bool {
+      return a.has_section && b.has_section &&
+             a.section_address == b.section_address &&
+             a.section_size == b.section_size &&
+             a.section_name == b.section_name;
+    };
+
+    LLVMSectionIteratorRef current_sect =
+        LLVMObjectFileCopySectionIterator(m_binary_ref);
+    SymbolInfo current = read_info(m_ref, current_sect);
+    if (current_sect)
+      LLVMDisposeSectionIterator(current_sect);
+
+    LLVMSymbolIteratorRef sym = LLVMObjectFileCopySymbolIterator(m_binary_ref);
+    LLVMSectionIteratorRef sect = LLVMObjectFileCopySectionIterator(m_binary_ref);
+    if (!sym || !sect) {
+      if (sym)
+        LLVMDisposeSymbolIterator(sym);
+      if (sect)
+        LLVMDisposeSectionIterator(sect);
+      return 0;
+    }
+
+    std::vector<SymbolInfo> symbols;
+    std::optional<size_t> current_index;
+    while (!LLVMObjectFileIsSymbolIteratorAtEnd(m_binary_ref, sym)) {
+      SymbolInfo info = read_info(sym, sect);
+      if (!current_index && info.name == current.name &&
+          info.address == current.address && same_section(info, current)) {
+        current_index = symbols.size();
+      }
+      symbols.push_back(std::move(info));
+      LLVMMoveToNextSymbol(sym);
+    }
+
+    LLVMDisposeSymbolIterator(sym);
     LLVMDisposeSectionIterator(sect);
 
-    if (!HasContainingSection)
+    if (!current_index || !current.has_section ||
+        current.name == current.section_name) {
       return 0;
+    }
 
-    return LLVMGetSymbolSize(m_ref);
+    uint64_t next_address = current.section_address + current.section_size;
+    for (size_t i = 0; i < symbols.size(); ++i) {
+      if (i == *current_index || !same_section(current, symbols[i]))
+        continue;
+      if (symbols[i].address > current.address && symbols[i].address < next_address)
+        next_address = symbols[i].address;
+    }
+    return next_address >= current.address ? next_address - current.address : 0;
   }
 
   // For Python iteration
@@ -8837,7 +9341,7 @@ struct LLVMDIBuilderWrapper : NoMoveCopy {
                                    const std::string &value);
 
   // =========================================================================
-  // Missing DIBuilder Methods (from debuginfo.md TODO)
+  // DIBuilder methods originally tracked in debuginfo.md
   // =========================================================================
 
   void finalize_subprogram(const LLVMMetadataWrapper &subprogram);
@@ -8973,6 +9477,12 @@ struct LLVMMetadataWrapper {
     md.check_valid();
     LLVMMetadataReplaceAllUsesWith(m_ref, md.m_ref);
   }
+
+  void replace_di_subprogram_type(const LLVMMetadataWrapper &type) {
+    check_valid();
+    type.check_valid();
+    LLVMDISubprogramReplaceType(m_ref, type.m_ref);
+  }
 };
 
 // Implementation of get_metadata for ValueMetadataEntriesWrapper
@@ -9001,6 +9511,13 @@ replace_md_node_operand_with(LLVMValueWrapper &val, unsigned index,
   LLVMReplaceMDNodeOperandWith(val.m_ref, index, replacement.m_ref);
 }
 
+inline void LLVMValueWrapper::replace_md_node_operand_with(
+    unsigned index, const LLVMMetadataWrapper &replacement) {
+  check_valid();
+  replacement.check_valid();
+  LLVMReplaceMDNodeOperandWith(m_ref, index, replacement.m_ref);
+}
+
 // Implementation of LLVMValueWrapper::set_metadata() - unified for instructions
 // and globals. Takes a context wrapper to convert metadata to value when
 // needed.
@@ -9010,13 +9527,22 @@ inline void LLVMValueWrapper::set_metadata(unsigned kind,
   check_valid();
   md.check_valid();
   ctx.check_valid();
+
+  LLVMMetadataRef metadata_ref = md.m_ref;
+  LLVMValueRef md_value = LLVMMetadataAsValue(ctx.m_ref, metadata_ref);
+  bool is_md_node = LLVMIsAMDNode(md_value) && !LLVMIsAValueAsMetadata(md_value);
+  if (!is_md_node) {
+    LLVMMetadataRef refs[] = {metadata_ref};
+    metadata_ref = LLVMMDNodeInContext2(ctx.m_ref, refs, 1);
+    md_value = LLVMMetadataAsValue(ctx.m_ref, metadata_ref);
+  }
+
   // Check if this is a global value or an instruction
   if (LLVMIsAGlobalValue(m_ref)) {
-    LLVMGlobalSetMetadata(m_ref, kind, md.m_ref);
+    LLVMGlobalSetMetadata(m_ref, kind, metadata_ref);
   } else {
     // For instructions, convert metadata to value using provided context
-    LLVMValueRef md_val = LLVMMetadataAsValue(ctx.m_ref, md.m_ref);
-    LLVMSetMetadata(m_ref, kind, md_val);
+    LLVMSetMetadata(m_ref, kind, md_value);
   }
 }
 
@@ -9040,6 +9566,22 @@ LLVMContextWrapper::md_node(const Iterable<LLVMMetadataWrapper> &mds) {
   }
   return LLVMMetadataWrapper(
       LLVMMDNodeInContext2(m_ref, refs.data(), refs.size()), m_token);
+}
+
+inline LLVMMetadataWrapper LLVMContextWrapper::create_debug_location(
+    unsigned line, unsigned column, const LLVMMetadataWrapper &scope,
+    const LLVMMetadataWrapper *inlined_at) {
+  check_valid();
+  scope.check_valid();
+  LLVMMetadataRef inlined = nullptr;
+  if (inlined_at) {
+    inlined_at->check_valid();
+    inlined = inlined_at->m_ref;
+  }
+  return LLVMMetadataWrapper(
+      LLVMDIBuilderCreateDebugLocation(m_ref, line, column, scope.m_ref,
+                                       inlined),
+      m_token);
 }
 
 // Implementation of LLVMContextWrapper::create_type_attribute() - needs
@@ -9472,7 +10014,8 @@ LLVMDIBuilderWrapper::create_global_variable_expression(
 inline LLVMMetadataWrapper
 LLVMDIBuilderWrapper::create_expression(const Iterable<uint64_t> &addr) {
   check_valid();
-  // TODO: is this lifetime correct?
+  // DIExpression::get copies the ArrayRef contents, so this buffer only needs
+  // to live through LLVMDIBuilderCreateExpression().
   std::vector<uint64_t> addr_copy = addr;
   return LLVMMetadataWrapper(
       LLVMDIBuilderCreateExpression(m_ref, addr_copy.data(), addr_copy.size()),
@@ -10089,6 +10632,71 @@ inline LLVMDIBuilderManager *LLVMModuleWrapper::create_dibuilder() {
   // but the method is logically const (creates a new object, doesn't modify
   // module)
   return new LLVMDIBuilderManager(const_cast<LLVMModuleWrapper *>(this));
+}
+
+inline LLVMBuilderManager *
+LLVMModuleWrapper::create_builder(const LLVMBasicBlockWrapper &bb) {
+  check_valid();
+  bb.check_valid();
+  LLVMValueRef fn = LLVMGetBasicBlockParent(bb.m_ref);
+  if (!fn)
+    throw LLVMAssertionError("create_builder requires a block in a function");
+  if (LLVMGetGlobalParent(fn) != m_ref) {
+    throw LLVMAssertionError(
+        "create_builder requires a block belonging to this module");
+  }
+  auto manager = new LLVMBuilderManager(get_context());
+  manager->m_module_token = m_token;
+  manager->m_initial_bb = bb.m_ref;
+  return manager;
+}
+
+inline LLVMBuilderManager *
+LLVMModuleWrapper::create_builder(const LLVMValueWrapper &inst,
+                                  bool before_dbg) {
+  check_valid();
+  inst.check_valid();
+  if (!inst.is_a_instruction())
+    throw LLVMAssertionError("create_builder requires an instruction value");
+  LLVMBasicBlockRef bb = LLVMGetInstructionParent(inst.m_ref);
+  if (!bb)
+    throw LLVMAssertionError(
+        "create_builder requires an instruction in a basic block");
+  LLVMValueRef fn = LLVMGetBasicBlockParent(bb);
+  if (!fn)
+    throw LLVMAssertionError("create_builder requires an instruction in a function");
+  if (LLVMGetGlobalParent(fn) != m_ref) {
+    throw LLVMAssertionError(
+        "create_builder requires an instruction belonging to this module");
+  }
+  auto manager = new LLVMBuilderManager(get_context());
+  manager->m_module_token = m_token;
+  manager->m_initial_inst = inst.m_ref;
+  manager->m_before_dbg = before_dbg;
+  return manager;
+}
+
+inline LLVMModuleWrapper *LLVMBuilderWrapper::module() const {
+  check_valid();
+  LLVMBasicBlockRef bb = LLVMGetInsertBlock(m_ref);
+  if (!bb)
+    throw LLVMAssertionError("Builder has no insertion block");
+  LLVMValueRef fn = LLVMGetBasicBlockParent(bb);
+  if (!fn)
+    throw LLVMAssertionError("Builder insertion block has no parent function");
+  LLVMModuleRef mod_ref = LLVMGetGlobalParent(fn);
+  if (!mod_ref)
+    throw LLVMAssertionError("Builder insertion function has no parent module");
+  LLVMContextRef ctx_ref = LLVMGetModuleContext(mod_ref);
+  return LLVMModuleWrapper::create_borrowed(mod_ref, ctx_ref, m_context_token,
+                                            m_module_token);
+}
+
+inline LLVMContextWrapper *LLVMBuilderWrapper::context() const {
+  check_valid();
+  if (!m_ctx_ref)
+    throw LLVMAssertionError("Builder has no context");
+  return new LLVMContextWrapper(m_ctx_ref, m_context_token);
 }
 
 // =============================================================================
@@ -10966,7 +11574,7 @@ Valid when:
   - this type is an integer type
 
 <sub>C API: LLVMConstInt</sub>)")
-      .def("constant_from_string", &LLVMTypeWrapper::constant_from_string,
+      .def("constant", &LLVMTypeWrapper::constant_from_string,
            "text"_a, "radix"_a = 10,
            R"(Create an integer constant from a string.
 
@@ -10981,6 +11589,16 @@ Args:
     radix: The radix (base), 2-36. Default is 10.
 
 <sub>C API: LLVMConstIntOfStringAndSize</sub>)")
+      .def("constant", &LLVMTypeWrapper::constant_arbitrary_precision,
+           "words"_a,
+           R"(Create an arbitrary-precision integer constant from 64-bit words.
+
+Words are in little-endian order, matching LLVMConstIntOfArbitraryPrecision.
+
+Valid when:
+  - this type is an integer type
+
+<sub>C API: LLVMConstIntOfArbitraryPrecision</sub>)")
       .def("real_constant", &LLVMTypeWrapper::real_constant, "val"_a,
            R"(Create a floating-point constant of this type.
 
@@ -10988,7 +11606,7 @@ Valid when:
   - this type is a floating-point type
 
 <sub>C API: LLVMConstReal</sub>)")
-      .def("real_constant_from_string",
+      .def("real_constant",
            &LLVMTypeWrapper::real_constant_from_string, "text"_a,
            R"(Create a floating-point constant from a string.
 
@@ -11017,6 +11635,24 @@ Args:
            R"(Create a poison value of this type.
 
 <sub>C API: LLVMGetPoison</sub>)")
+      .def("vector_const", &LLVMTypeWrapper::vector_const, "vals"_a,
+           R"(Create a vector constant with this element type.
+
+<sub>C API: LLVMConstVector</sub>)")
+      .def("gep_const", &LLVMTypeWrapper::gep_const, "ptr"_a, "indices"_a,
+           "no_wrap_flags"_a,
+           R"(Create a constant GEP expression using this source element type.
+
+<sub>C API: LLVMConstGEPWithNoWrapFlags</sub>)")
+      .def("inline_asm", &LLVMTypeWrapper::inline_asm, "asm_string"_a,
+           "constraints"_a, "has_side_effects"_a,
+           "needs_aligned_stack"_a, "dialect"_a, "can_unwind"_a,
+           R"(Create an inline assembly value using this function type.
+
+Valid when:
+  - this type is a function type
+
+<sub>C API: LLVMGetInlineAsm</sub>)")
       // Phase 2: Composite type factory methods
       .def("array", &LLVMTypeWrapper::array, "count"_a,
            R"(Create an array type with this element type.
@@ -11031,7 +11667,7 @@ Args:
 
 <sub>C API: LLVMPointerType</sub>)")
       // Constant creation from type
-      .def("const_array", [](const LLVMTypeWrapper &self,
+      .def("array_const", [](const LLVMTypeWrapper &self,
                              const Iterable<LLVMValueWrapper> &vals) {
         self.check_valid();
         std::vector<LLVMValueRef> refs;
@@ -11047,7 +11683,7 @@ Args:
            R"(Create an array constant of this element type.
 
 <sub>C API: LLVMConstArray2</sub>)")
-      .def("const_named_struct", [](const LLVMTypeWrapper &self,
+      .def("named_struct_const", [](const LLVMTypeWrapper &self,
                                     const Iterable<LLVMValueWrapper> &vals) {
         self.check_valid();
         std::vector<LLVMValueRef> refs;
@@ -11063,17 +11699,7 @@ Args:
            R"(Create a named struct constant of this struct type.
 
 <sub>C API: LLVMConstNamedStruct</sub>)")
-      .def("const_data_array", [](const LLVMTypeWrapper &self,
-                                  const std::string &data) {
-        self.check_valid();
-        return LLVMValueWrapper(
-            LLVMConstDataArray(self.m_ref, data.data(), data.size()),
-            self.m_context_token);
-      }, "data"_a,
-           R"(Create a data array constant of this element type from a string.
-
-<sub>C API: LLVMConstDataArray</sub>)")
-      .def("const_data_array", [](const LLVMTypeWrapper &self,
+      .def("array_const", [](const LLVMTypeWrapper &self,
                                   const nb::bytes &data) {
         self.check_valid();
         return LLVMValueWrapper(
@@ -11104,14 +11730,32 @@ Args:
            })
       .def_prop_ro("user", &LLVMUseWrapper::get_user,
                    "Obtain the user value for a user.\n\n@api "
-                   "llvm::Use::getUser(), LLVMGetUser")
+                   "LLVMGetUser")
       .def_prop_ro("used_value", &LLVMUseWrapper::get_used_value,
                    "Obtain the value this use corresponds to.\n\n@api "
-                   "llvm::Use::get(), LLVMGetUsedValue")
+                   "LLVMGetUsedValue")
       .def_prop_ro("operand_index", &LLVMUseWrapper::get_operand_index,
                    R"(Get the operand index of this use within the user instruction.
 
 <sub>C API: LLVMGetOperandUse</sub>)");
+
+  nb::class_<LLVMDbgRecordWrapper>(m, "DbgRecord")
+      .def("__eq__", [](const LLVMDbgRecordWrapper &a,
+                        const LLVMDbgRecordWrapper &b) { return a == b; })
+      .def("__ne__", [](const LLVMDbgRecordWrapper &a,
+                        const LLVMDbgRecordWrapper &b) { return a != b; })
+      .def("__hash__",
+           [](const LLVMDbgRecordWrapper &v) {
+             return std::hash<LLVMDbgRecordRef>{}(v.m_ref);
+           })
+      .def_prop_ro("next", &LLVMDbgRecordWrapper::next,
+                   R"(Next debug record, or None.
+
+<sub>C API: LLVMGetNextDbgRecord</sub>)")
+      .def_prop_ro("prev", &LLVMDbgRecordWrapper::prev,
+                   R"(Previous debug record, or None.
+
+<sub>C API: LLVMGetPreviousDbgRecord</sub>)");
 
   // Value wrapper
   nb::class_<LLVMValueWrapper>(m, "Value")
@@ -11617,19 +12261,26 @@ Warning:
 <sub>C API: LLVMSetGlobalIFuncResolver</sub>)")
       .def("erase_from_parent_ifunc",
            &LLVMValueWrapper::erase_from_parent_ifunc,
-           R"(Erase this global IFunc from its parent module and delete it.
+           R"(Erase this global IFunc from its parent module and delete it when parented.
 
 After calling this, the IFunc value is no longer valid and should not be used.
+
+WARNING: LLVM-C has no API to delete a detached GlobalIFunc. If the ifunc was
+already removed from its parent, this method clears resolver uses and
+invalidates the wrapper, intentionally leaking the detached ifunc rather than
+calling LLVM C++ directly.
+TODO: needs safe LLVM-C API equivalent.
 
 <sub>C API: LLVMEraseGlobalIFunc</sub>)")
       .def("remove_from_parent_ifunc",
            &LLVMValueWrapper::remove_from_parent_ifunc,
-           R"(Remove this global IFunc from its parent module but keep it alive.
+           R"(Remove this global IFunc from its parent module.
 
-WARNING: This is a low-level API for advanced use cases like moving an IFunc
-between modules. The removed IFunc will still hold references to values in the
-original module. If those values are deleted before the IFunc, LLVM will crash.
-Prefer using erase_from_parent_ifunc() for most use cases.
+WARNING: LLVM-C has no API to delete or reinsert a detached GlobalIFunc. This
+method clears resolver uses before detaching so the parent module can be
+destroyed safely. The detached ifunc should be considered unusable except for
+invalidating it with erase_from_parent_ifunc().
+TODO: needs safe LLVM-C API equivalent.
 
 <sub>C API: LLVMRemoveGlobalIFunc</sub>)")
       // Global properties
@@ -11963,7 +12614,7 @@ The callee is the last operand of a CallBase instruction.
 <sub>C API: LLVMSetFastMathFlags</sub>)")
       // Call instruction arg operand
       .def("get_arg_operand", &LLVMValueWrapper::get_arg_operand, "index"_a,
-           R"(Get arg operand at index.
+           R"(Get arg operand for a call/invoke instruction at index.
 
 <sub>C API: LLVMGetArgOperand</sub>)")
       // Instruction manipulation
@@ -12092,6 +12743,16 @@ Alias for `.block`.
            R"(Create constant bitcast.
 
 <sub>C API: LLVMConstBitCast</sub>)")
+      .def("const_ptr_auth", &LLVMValueWrapper::const_ptr_auth, "key"_a,
+           "discriminator"_a, "addr_discriminator"_a,
+           R"(Create a constant pointer authentication expression for ARM64e.
+
+<sub>C API: LLVMConstantPtrAuth</sub>)")
+      .def("get_cast_opcode", &LLVMValueWrapper::get_cast_opcode,
+           "src_is_signed"_a, "dest_ty"_a, "dest_is_signed"_a,
+           R"(Get the opcode for casting this value to a destination type.
+
+<sub>C API: LLVMGetCastOpcode</sub>)")
       .def("as_metadata", &LLVMValueWrapper::as_metadata,
            R"(Convert to metadata.
 
@@ -12118,9 +12779,39 @@ Combines remove_from_parent() + delete_instruction() atomically.
            "from_value"_a, "to_value"_a,
            R"(Replace matching operand uses within this instruction.
 
-This mirrors llvm::User::replaceUsesOfWith for instruction users.
+This mirrors User::replaceUsesOfWith semantics for instruction users.
 
 <sub>Custom helper built on LLVMGetOperand/LLVMSetOperand</sub>)")
+      .def("replace_md_node_operand_with",
+           &LLVMValueWrapper::replace_md_node_operand_with, "index"_a,
+           "replacement"_a,
+           R"(Replace a metadata operand in this value's metadata node.
+
+<sub>C API: LLVMReplaceMDNodeOperandWith</sub>)")
+      .def_prop_ro("has_dbg_records", &LLVMValueWrapper::has_dbg_records,
+                   R"(Debug-record presence query.
+
+WARNING: LLVM-C currently has no safe presence predicate. This property raises
+LLVMAssertionError instead of attempting an unsafe query.
+TODO: needs safe LLVM-C API equivalent.
+
+<sub>C API limitation</sub>)")
+      .def_prop_ro("first_dbg_record", &LLVMValueWrapper::first_dbg_record,
+                   R"(First debug record attached to this instruction, or None.
+
+WARNING: LLVM-C may abort if this instruction has no debug-record storage.
+Only call this when the instruction is known to carry debug records.
+TODO: needs safe LLVM-C API equivalent.
+
+<sub>C API: LLVMGetFirstDbgRecord</sub>)")
+      .def_prop_ro("last_dbg_record", &LLVMValueWrapper::last_dbg_record,
+                   R"(Last debug record attached to this instruction, or None.
+
+WARNING: LLVM-C may abort if this instruction has no debug-record storage.
+Only call this when the instruction is known to carry debug records.
+TODO: needs safe LLVM-C API equivalent.
+
+<sub>C API: LLVMGetLastDbgRecord</sub>)")
       // Callsite attribute methods (for call/invoke instructions)
       .def("get_callsite_attribute_count",
            &LLVMValueWrapper::get_callsite_attribute_count, "idx"_a,
@@ -12155,7 +12846,7 @@ Valid when:
            R"(Set metadata on value.
 
 <sub>C API: LLVMSetMetadata, LLVMGlobalSetMetadata</sub>)")
-      // Builder creation for instructions (TODO: add to module too)
+      // Builder creation for instructions.
       .def("create_builder", &LLVMValueWrapper::create_builder, nb::kw_only(),
            "before_dbg"_a = false, nb::rv_policy::take_ownership,
            R"(Create a Builder positioned before this Instruction.
@@ -12191,6 +12882,13 @@ Returns:
            R"(Get as value.
 
 <sub>C API: LLVMBasicBlockAsValue</sub>)")
+      .def("block_address", &LLVMBasicBlockWrapper::block_address,
+           R"(Create a BlockAddress constant for this basic block.
+
+Valid when:
+  - this block is attached to a function
+
+<sub>C API: LLVMBlockAddress</sub>)")
       .def("__str__", &LLVMBasicBlockWrapper::to_string)
       .def("__repr__", &LLVMBasicBlockWrapper::to_string)
       .def_prop_ro("next_block", &LLVMBasicBlockWrapper::next_block,
@@ -12601,6 +13299,23 @@ Valid when:
                    R"(Get current insert block.
 
 <sub>C API: LLVMGetInsertBlock</sub>)")
+      .def_prop_ro("function", &LLVMBuilderWrapper::function,
+                   R"(Get the function containing the current insertion block, or None.
+
+<sub>C API: LLVMGetInsertBlock, LLVMGetBasicBlockParent</sub>)")
+      .def_prop_ro("module", &LLVMBuilderWrapper::module,
+                   nb::rv_policy::take_ownership,
+                   R"(Get the module containing the current insertion block.
+
+Valid when:
+  - builder has an insertion block
+
+<sub>C API: LLVMGetInsertBlock, LLVMGetGlobalParent</sub>)")
+      .def_prop_ro("context", &LLVMBuilderWrapper::context,
+                   nb::rv_policy::take_ownership,
+                   R"(Get the context this builder was created in.
+
+<sub>C API: LLVMCreateBuilderInContext</sub>)")
       // Arithmetic
       .def("add", &LLVMBuilderWrapper::add, "lhs"_a, "rhs"_a, "name"_a = "",
            R"(Build add.
@@ -13244,23 +13959,40 @@ Valid when:
 
 <sub>C API: LLVMGetTarget, LLVMSetTarget</sub>)")
       .def("add_function", &LLVMModuleWrapper::add_function, "name"_a,
-           "func_ty"_a, R"(Add a function.
+           "func_ty"_a, nb::kw_only(), "get_or_insert"_a = true,
+           R"(Add or get a function.
 
-<sub>C API: LLVMAddFunction</sub>)")
+By default, this returns an existing function with the same name when the
+function type matches, and raises if the name exists with an incompatible type
+or as another global value kind. Pass get_or_insert=False for LLVM's raw
+inserting behavior, which may rename collisions with a suffix like `.0`.
+
+<sub>C API: LLVMGetNamedFunction, LLVMAddFunction</sub>)")
       .def("get_function", &LLVMModuleWrapper::get_function, "name"_a,
-           R"(Get a function by name.
+           R"(Get an existing function by name.
 
 <sub>C API: LLVMGetNamedFunction</sub>)")
       .def("add_global", &LLVMModuleWrapper::add_global, "ty"_a, "name"_a,
-           R"(Add a global variable.
+           nb::kw_only(), "get_or_insert"_a = true,
+           R"(Add or get a global variable in address space 0.
 
-<sub>C API: LLVMAddGlobal</sub>)")
+By default, this returns an existing global variable with the same name when
+the element type and address space match, and raises on incompatible existing
+symbols. Pass get_or_insert=False for LLVM's raw inserting behavior, which may
+rename collisions with a suffix like `.0`.
+
+<sub>C API: LLVMGetNamedGlobal, LLVMAddGlobalInAddressSpace</sub>)")
       .def("add_global_in_address_space",
            &LLVMModuleWrapper::add_global_in_address_space, "ty"_a, "name"_a,
-           "address_space"_a,
-           R"(Add global in address space.
+           "address_space"_a, nb::kw_only(), "get_or_insert"_a = true,
+           R"(Add or get a global variable in an address space.
 
-<sub>C API: LLVMAddGlobalInAddressSpace</sub>)")
+By default, this returns an existing global variable with the same name when
+the element type and address space match, and raises on incompatible existing
+symbols. Pass get_or_insert=False for LLVM's raw inserting behavior, which may
+rename collisions with a suffix like `.0`.
+
+<sub>C API: LLVMGetNamedGlobal, LLVMAddGlobalInAddressSpace</sub>)")
       .def("get_global", &LLVMModuleWrapper::get_global, "name"_a,
            R"(Get a global by name.
 
@@ -13332,10 +14064,15 @@ Valid when:
 
 <sub>C API: LLVMGetNamedGlobalAlias</sub>)")
       .def("add_alias", &LLVMModuleWrapper::add_alias, "value_ty"_a,
-           "addr_space"_a, "aliasee"_a, "name"_a,
-           R"(Add a global alias.
+           "addr_space"_a, "aliasee"_a, "name"_a, nb::kw_only(),
+           "get_or_insert"_a = true,
+           R"(Add or get a global alias.
 
-<sub>C API: LLVMAddAlias2</sub>)")
+By default, this returns an existing alias with the same name when its value
+type, address space, and aliasee match. Pass get_or_insert=False for LLVM's raw
+inserting behavior.
+
+<sub>C API: LLVMGetNamedGlobalAlias, LLVMAddAlias2</sub>)")
       // Global IFunc support
       .def_prop_ro("first_global_ifunc", &LLVMModuleWrapper::first_global_ifunc,
                    R"(Get the first indirect function (IFunc) in the module.
@@ -13350,10 +14087,15 @@ Valid when:
 
 <sub>C API: LLVMGetNamedGlobalIFunc</sub>)")
       .def("add_global_ifunc", &LLVMModuleWrapper::add_global_ifunc, "name"_a,
-           "ty"_a, "addr_space"_a, "resolver"_a,
-           R"(Add an indirect function (IFunc) to the module.
+           "ty"_a, "addr_space"_a, "resolver"_a, nb::kw_only(),
+           "get_or_insert"_a = true,
+           R"(Add or get an indirect function (IFunc) in the module.
 
-<sub>C API: LLVMAddGlobalIFunc</sub>)")
+By default, this returns an existing IFunc with the same name when its type,
+address space, and resolver match. Pass get_or_insert=False for LLVM's raw
+inserting behavior.
+
+<sub>C API: LLVMGetNamedGlobalIFunc, LLVMAddGlobalIFunc</sub>)")
       // Named metadata support
       .def_prop_ro("first_named_metadata",
                    &LLVMModuleWrapper::first_named_metadata,
@@ -13491,6 +14233,17 @@ Returns:
            R"(Get intrinsic declaration for this module.
 
 <sub>C API: LLVMGetIntrinsicDeclaration</sub>)")
+      .def("run_passes", &LLVMModuleWrapper::run_passes, "passes"_a,
+           "target_machine"_a.none() = nullptr,
+           "options"_a.none() = nullptr,
+           R"doc(Run optimization passes on this module.
+
+Args:
+    passes: Pass pipeline string (e.g., 'default<O2>')
+    target_machine: Optional target machine for target-specific passes
+    options: Optional PassBuilderOptions
+
+<sub>C API: LLVMRunPasses</sub>)doc")
       .def("create_dibuilder", &LLVMModuleWrapper::create_dibuilder,
            nb::rv_policy::take_ownership,
            R"(Create a debug info builder for this module.
@@ -13501,7 +14254,26 @@ Use with 'with' statement:
         # ... create debug info ...
         dib.finalize()
 
-<sub>C API: LLVMCreateDIBuilder</sub>)");
+<sub>C API: LLVMCreateDIBuilder</sub>)")
+      .def("create_builder",
+           nb::overload_cast<const LLVMBasicBlockWrapper &>(
+               &LLVMModuleWrapper::create_builder),
+           "bb"_a, nb::rv_policy::take_ownership,
+           R"(Create a Builder positioned at the end of a BasicBlock in this module.
+
+Returns a BuilderManager for use with Python's 'with' statement.
+
+<sub>C API: LLVMCreateBuilderInContext, LLVMPositionBuilderAtEnd</sub>)")
+      .def("create_builder",
+           nb::overload_cast<const LLVMValueWrapper &, bool>(
+               &LLVMModuleWrapper::create_builder),
+           "inst"_a, nb::kw_only(), "before_dbg"_a = false,
+           nb::rv_policy::take_ownership,
+           R"(Create a Builder positioned before an Instruction in this module.
+
+Returns a BuilderManager for use with Python's 'with' statement.
+
+<sub>C API: LLVMCreateBuilderInContext, LLVMPositionBuilderBefore</sub>)");
 
   // TypeFactory wrapper (property-based type namespace)
   nb::class_<LLVMTypeFactoryWrapper>(m, "TypeFactory")
@@ -13599,12 +14371,30 @@ Use with 'with' statement:
 
 <sub>C API: LLVMFunctionType</sub>)")
       .def("struct", &LLVMTypeFactoryWrapper::struct_, "elem_types"_a,
-           "name"_a = "", "packed"_a = false,
-           R"(Struct type.
+           "packed"_a = false,
+           R"(Literal (anonymous) struct type.
 
-<sub>C API: LLVMStructTypeInContext, LLVMStructCreateNamed</sub>)")
+Use struct(name, elem_types, ...) for identified named structs.
+
+<sub>C API: LLVMStructTypeInContext</sub>)")
+      .def("struct", &LLVMTypeFactoryWrapper::struct_with_name, "name"_a,
+           "elem_types"_a, "packed"_a = false, nb::kw_only(),
+           "get_or_insert"_a = true,
+           R"(Named struct type.
+
+Named structs default to lookup-first get-or-insert semantics: an existing
+struct with the same name and body is returned, an opaque declaration is
+completed, and a different existing body raises. Pass get_or_insert=False for
+LLVM's raw inserting behavior, which may append a suffix to duplicate names.
+
+<sub>C API: LLVMStructCreateNamed</sub>)")
       .def("opaque_struct", &LLVMTypeFactoryWrapper::opaque_struct, "name"_a,
+           nb::kw_only(), "get_or_insert"_a = true,
            R"(Opaque struct type.
+
+Defaults to returning an existing named struct with this name. Pass
+get_or_insert=False for LLVM's raw inserting behavior, which may append a
+suffix to duplicate names.
 
 <sub>C API: LLVMStructCreateNamed</sub>)")
       .def("array", &LLVMTypeFactoryWrapper::array, "elem_ty"_a, "count"_a,
@@ -13786,7 +14576,17 @@ Returns:
 Maps a synchronization scope name to an ID unique within this context.
 Common scope names include "singlethread" for thread-local synchronization.
 
-<sub>C API: LLVMGetSyncScopeID</sub>)");
+<sub>C API: LLVMGetSyncScopeID</sub>)")
+      .def("get_intrinsic_type", &LLVMContextWrapper::get_intrinsic_type,
+           "id"_a, "param_types"_a,
+           R"(Get the function type of an intrinsic in this context.
+
+<sub>C API: LLVMIntrinsicGetType</sub>)")
+      .def("create_debug_location", &LLVMContextWrapper::create_debug_location,
+           "line"_a, "column"_a, "scope"_a, "inlined_at"_a.none(),
+           R"(Create a debug location metadata node.
+
+<sub>C API: LLVMDIBuilderCreateDebugLocation</sub>)");
 
   // Context manager
   nb::class_<LLVMContextManager>(m, "ContextManager")
@@ -13879,87 +14679,8 @@ Valid when:
 
 <sub>C API: LLVMGetGlobalContext</sub>)");
 
-  // Constant creation functions
-  // Note: Basic constant creation (const_int, const_real, const_null, etc.)
-  // is now available via Type methods: ty.constant(), ty.real_constant(),
-  // ty.null() The following are aggregate/advanced constant creation functions
-  // still needed:
-  // TODO: these need to be refactored to not be in the llvm module as globals
-  // they are specific to values and therefore to a context (or even module?)
-  m.def("const_array", &const_array, "elem_ty"_a, "vals"_a,
-        R"(Create array constant.
-
-<sub>C API: LLVMConstArray2</sub>)");
-  m.def("const_struct", &const_struct, "vals"_a, "packed"_a, "ctx"_a,
-        R"(Create struct constant.
-
-<sub>C API: LLVMConstStructInContext</sub>)");
-  m.def("const_vector", &const_vector, "vals"_a,
-        R"(Create vector constant.
-
-<sub>C API: LLVMConstVector</sub>)");
-  m.def("const_string",
-        static_cast<LLVMValueWrapper (*)(LLVMContextWrapper *,
-                                         const std::string &, bool)>(
-            &const_string),
-        "ctx"_a, "str"_a,
-        "dont_null_terminate"_a = false,
-        R"(Create string constant.
-
-<sub>C API: LLVMConstStringInContext2</sub>)");
-  m.def("const_string",
-        static_cast<LLVMValueWrapper (*)(LLVMContextWrapper *,
-                                         const nb::bytes &, bool)>(
-            &const_string),
-        "ctx"_a, "data"_a, "dont_null_terminate"_a = false,
-        R"(Create raw-bytes constant.
-
-<sub>C API: LLVMConstStringInContext2</sub>)");
-  m.def("const_named_struct", &const_named_struct, "struct_ty"_a, "vals"_a,
-        R"(Create named struct constant.
-
-<sub>C API: LLVMConstNamedStruct</sub>)");
-  // Advanced constant creation
-  m.def("const_int_of_arbitrary_precision", &const_int_of_arbitrary_precision,
-        "ty"_a, "words"_a,
-        R"(Arbitrary precision int.
-
-<sub>C API: LLVMConstIntOfArbitraryPrecision</sub>)");
-  m.def("const_data_array",
-        static_cast<LLVMValueWrapper (*)(const LLVMTypeWrapper &,
-                                         const std::string &)>(
-            &const_data_array),
-        "elem_ty"_a, "data"_a,
-        R"(Create data array.
-
-<sub>C API: LLVMConstDataArray</sub>)");
-  m.def("const_data_array",
-        static_cast<LLVMValueWrapper (*)(const LLVMTypeWrapper &,
-                                         const nb::bytes &)>(
-            &const_data_array),
-        "elem_ty"_a, "data"_a,
-        R"(Create raw-bytes data array.
-
-<sub>C API: LLVMConstDataArray</sub>)");
-  m.def("const_gep_with_no_wrap_flags", &const_gep_with_no_wrap_flags, "ty"_a,
-        "ptr"_a, "indices"_a, "no_wrap_flags"_a,
-        R"(Create a constant GEP expression with explicit no-wrap flags.
-
-<sub>C API: LLVMConstGEPWithNoWrapFlags</sub>)");
-  m.def("const_ptr_auth", &const_ptr_auth, "ptr"_a, "key"_a, "discriminator"_a,
-        "addr_discriminator"_a,
-        R"(Create a constant pointer authentication expression for ARM64e.
-
-<sub>C API: LLVMConstantPtrAuth</sub>)");
-  m.def("block_address", &block_address, "fn"_a, "bb"_a,
-        R"(Create a BlockAddress constant that is the address of a basic block.
-
-This is used for computed goto (indirect branch) support.
-
-Valid when:
-  - bb is owned by fn
-
-<sub>C API: LLVMBlockAddress</sub>)");
+  // NOTE: module-level constant helpers were moved to Context, Type, Value,
+  // Function, and BasicBlock methods.
   m.def("intrinsic_is_overloaded", &intrinsic_is_overloaded, "id"_a,
         R"(Check if intrinsic is overloaded.
 
@@ -13991,26 +14712,7 @@ Valid when:
 
 <sub>C API: LLVMGetUndefMaskElem</sub>)");
 
-  // Get inline assembly
-  // TODO: this should be a method on type instead
-  m.def(
-      "get_inline_asm",
-      [](const LLVMTypeWrapper &fn_ty, const std::string &asm_string,
-         const std::string &constraints, bool has_side_effects,
-         bool needs_aligned_stack, LLVMInlineAsmDialect dialect,
-         bool can_unwind) {
-        return LLVMValueWrapper(
-            LLVMGetInlineAsm(fn_ty.m_ref, asm_string.c_str(), asm_string.size(),
-                             constraints.c_str(), constraints.size(),
-                             has_side_effects, needs_aligned_stack, dialect,
-                             can_unwind),
-            fn_ty.m_context_token);
-      },
-      "fn_ty"_a, "asm_string"_a, "constraints"_a, "has_side_effects"_a,
-      "needs_aligned_stack"_a, "dialect"_a, "can_unwind"_a,
-      R"(Create inline assembly.
-
-<sub>C API: LLVMGetInlineAsm</sub>)");
+  // NOTE: inline assembly creation moved to Type.inline_asm().
 
   // Target wrapper
   nb::class_<LLVMTargetWrapper>(m, "Target")
@@ -14037,9 +14739,20 @@ Valid when:
       .def_prop_ro("next", &LLVMTargetWrapper::next,
                    R"(Next target.
 
-<sub>C API: LLVMGetNextTarget</sub>)");
+<sub>C API: LLVMGetNextTarget</sub>)")
+      .def_static("from_triple", &get_target_from_triple, "triple"_a,
+                  R"(Get a target from a target triple string.
 
-  // Target functions
+Raises LLVMError if the target is not found.
+
+<sub>C API: LLVMGetTargetFromTriple</sub>)")
+      .def_static("from_name", &get_target_from_name, "name"_a,
+                  R"(Get a target from its name, or None.
+
+<sub>C API: LLVMGetTargetFromName</sub>)");
+
+  // Target initialization functions are explicit so callers control process-wide
+  // LLVM target registration.
   m.def("initialize_all", &initialize_all,
         R"(Initialize all targets, MCs, ASM printers, and ASM parsers.
 Convenience function that calls initialize_all_target_infos(),
@@ -14101,36 +14814,15 @@ initialize_all_asm_printers(), and initialize_all_asm_parsers().)");
 <sub>C API: LLVMInitializeNativeDisassembler</sub>)");
 
   // Host target queries
-  m.def("get_default_target_triple", &get_default_target_triple,
-        R"(Get the default target triple for the current host.
-
-<sub>C API: LLVMGetDefaultTargetTriple</sub>)");
+  m.attr("default_target_triple") = get_default_target_triple();
   m.def("normalize_target_triple", &normalize_target_triple, "triple"_a,
         R"(Normalize a target triple string.
 
 <sub>C API: LLVMNormalizeTargetTriple</sub>)");
-  m.def("get_host_cpu_name", &get_host_cpu_name,
-        R"(Get the host CPU name.
+  m.attr("host_cpu_name") = get_host_cpu_name();
+  m.attr("host_cpu_features") = get_host_cpu_features();
 
-<sub>C API: LLVMGetHostCPUName</sub>)");
-  m.def("get_host_cpu_features", &get_host_cpu_features,
-        R"(Get the host CPU features as a feature string.
-
-<sub>C API: LLVMGetHostCPUFeatures</sub>)");
-
-  // Target lookup
-  m.def("get_target_from_triple", &get_target_from_triple, "triple"_a,
-        R"(Get a target from a target triple string.
-        
-        Raises LLVMError if the target is not found.
-
-<sub>C API: LLVMGetTargetFromTriple</sub>)");
-  m.def("get_target_from_name", &get_target_from_name, "name"_a,
-        R"(Get a target from its name.
-        
-        Returns None if the target is not found.
-
-<sub>C API: LLVMGetTargetFromName</sub>)");
+  // NOTE: target lookup moved to Target.from_triple() and Target.from_name().
 
   // ==========================================================================
   // Target Machine Enums
@@ -14248,13 +14940,14 @@ Args:
 Returns:
     An integer type with the same bit width as a pointer.
 
-<sub>C API: LLVMIntPtrTypeForASInContext</sub>)");
-
-  m.def("create_target_data", &create_target_data, "string_rep"_a,
-        nb::rv_policy::take_ownership,
-        R"(Create a target data layout from a string representation.
+<sub>C API: LLVMIntPtrTypeForASInContext</sub>)")
+      .def_static("create", &create_target_data, "string_rep"_a,
+                  nb::rv_policy::take_ownership,
+                  R"(Create a target data layout from a string representation.
 
 <sub>C API: LLVMCreateTargetData</sub>)");
+
+  // NOTE: target data creation moved to TargetData.create().
 
   // ==========================================================================
   // Target Machine Wrapper
@@ -14330,28 +15023,18 @@ Returns:
            Returns:
                bytes: The generated output.
 
-<sub>C API: LLVMTargetMachineEmitToMemoryBuffer</sub>)");
-
-  m.def("create_target_machine", &create_target_machine, "target"_a, "triple"_a,
-        "cpu"_a = "", "features"_a = "",
-        "opt_level"_a = LLVMCodeGenLevelDefault,
-        "reloc_mode"_a = LLVMRelocDefault,
-        "code_model"_a = LLVMCodeModelDefault, nb::rv_policy::take_ownership,
-        R"(Create a target machine for code generation.
-        
-        Args:
-            target: Target to create machine for
-            triple: Target triple string
-            cpu: CPU name (default: "")
-            features: Feature string (default: "")
-            opt_level: Optimization level (default: Default)
-            reloc_mode: Relocation mode (default: Default)
-            code_model: Code model (default: Default)
-            
-        Returns:
-            TargetMachine instance
+<sub>C API: LLVMTargetMachineEmitToMemoryBuffer</sub>)")
+      .def_static("create", &create_target_machine, "target"_a, "triple"_a,
+                  "cpu"_a = "", "features"_a = "",
+                  "opt_level"_a = LLVMCodeGenLevelDefault,
+                  "reloc_mode"_a = LLVMRelocDefault,
+                  "code_model"_a = LLVMCodeModelDefault,
+                  nb::rv_policy::take_ownership,
+                  R"(Create a target machine for code generation.
 
 <sub>C API: LLVMCreateTargetMachine</sub>)");
+
+  // NOTE: target machine creation moved to TargetMachine.create().
 
   // ==========================================================================
   // Pass Builder Options Wrapper
@@ -14427,25 +15110,7 @@ Returns:
 
 <sub>C API: LLVMPassBuilderOptionsSetInlinerThreshold</sub>)");
 
-  m.def("run_passes", &run_passes, "mod"_a, "passes"_a,
-        "target_machine"_a.none() = nullptr, "options"_a.none() = nullptr,
-        R"doc(Run optimization passes on a module.
-        
-        Args:
-            mod: Module to optimize
-            passes: Pass pipeline string (e.g., 'default<O2>', 'function(simplifycfg)')
-            target_machine: Optional target machine for target-specific passes
-            options: Optional PassBuilderOptions
-            
-        Common pass pipelines:
-            - 'default<O0>': No optimization
-            - 'default<O1>': Light optimization
-            - 'default<O2>': Standard optimization  
-            - 'default<O3>': Aggressive optimization
-            - 'default<Os>': Size optimization
-            - 'default<Oz>': Aggressive size optimization
-            
-        <sub>C API: LLVMRunPasses</sub>)doc");
+  // NOTE: pass execution moved to Module.run_passes().
 
   // Memory buffer is internal only - not exposed to Python
 
@@ -14483,7 +15148,15 @@ Args:
 Returns:
     True on success, False on failure.
 
-<sub>C API: LLVMSetDisasmOptions</sub>)");
+<sub>C API: LLVMSetDisasmOptions</sub>)")
+      .def_static("create", &create_disasm_cpu_features, "triple"_a,
+                  "cpu"_a = "", "features"_a = "",
+                  nb::rv_policy::take_ownership,
+                  R"(Create a disassembler for the given triple, CPU, and features.
+
+<sub>C API: LLVMCreateDisasmCPUFeatures</sub>)");
+
+  m.attr("Disasm") = m.attr("DisasmContext");
 
   // Disassembler option constants
   m.attr("DisasmOption_UseMarkup") = nb::int_(1);
@@ -14492,19 +15165,7 @@ Returns:
   m.attr("DisasmOption_SetInstrComments") = nb::int_(8);
   m.attr("DisasmOption_PrintLatency") = nb::int_(16);
 
-  m.def("create_disasm_cpu_features", &create_disasm_cpu_features, "triple"_a,
-        "cpu"_a = "", "features"_a = "", nb::rv_policy::take_ownership,
-        R"(Create a disassembler for the given triple, CPU, and features.
-        
-        Args:
-            triple: Target triple string (e.g., "x86_64-linux-unknown")
-            cpu: CPU name (can be empty)
-            features: Feature string (can be empty or "NULL")
-            
-        Returns:
-            DisasmContext, or one with is_valid=False if creation failed.
-
-<sub>C API: LLVMCreateDisasmCPUFeatures</sub>)");
+  // NOTE: disassembler creation moved to Disasm.create().
 
   // =============================================================================
   // Object File Bindings
@@ -14748,7 +15409,12 @@ Valid when:
   - parent binary is still valid (not disposed)
   - iterator is not at end (`is_at_end() == False`)
 
-<sub>C API: LLVMGetSymbolSize</sub>)")
+WARNING: LLVMGetSymbolSize may abort for ordinary non-common symbols. The
+binding avoids that call and computes a best-effort section-local size using
+LLVM-C iterators. Duplicate symbols at the same address may be ambiguous.
+TODO: needs safe LLVM-C API equivalent.
+
+<sub>C API workaround; avoids LLVMGetSymbolSize</sub>)")
       // Python iteration support
       .def("__iter__", &LLVMSymbolIteratorWrapper::iter,
            nb::rv_policy::reference_internal)
@@ -14863,42 +15529,20 @@ Valid when:
 Valid when:
   - manager is not already disposed
   - manager has not been entered yet
-)");
+)")
+      .def_static("from_bytes", &create_binary_from_bytes, "data"_a,
+                  nb::rv_policy::take_ownership,
+                  R"(Create a binary manager from bytes.
 
-  // Factory functions for creating binaries
-  m.def("create_binary_from_bytes", &create_binary_from_bytes, "data"_a,
-        nb::rv_policy::take_ownership,
-        R"(Create a binary manager from bytes for use with 'with' statement.
-        
-        Args:
-            data: The bytes containing the object file data
-            
-        Returns:
-            BinaryManager for use in a 'with' statement
-            
-        Example:
-            with llvm.create_binary_from_bytes(data) as binary:
-                for section in binary.sections:
-                    print(section.name)
+<sub>C API: LLVMCreateBinary</sub>)")
+      .def_static("from_file", &create_binary_from_file, "path"_a,
+                  nb::rv_policy::take_ownership,
+                  R"(Create a binary manager from a file.
 
 <sub>C API: LLVMCreateBinary</sub>)");
 
-  m.def("create_binary_from_file", &create_binary_from_file, "path"_a,
-        nb::rv_policy::take_ownership,
-        R"(Create a binary manager from a file for use with 'with' statement.
-        
-        Args:
-            path: Path to the object file
-            
-        Returns:
-            BinaryManager for use in a 'with' statement
-            
-        Example:
-            with llvm.create_binary_from_file("test.o") as binary:
-                for section in binary.sections:
-                    print(section.name)
-
-<sub>C API: LLVMCreateBinary</sub>)");
+  // NOTE: binary manager factories moved to BinaryManager.from_bytes() and
+  // BinaryManager.from_file().
 
   // BitReader functions
 
@@ -14908,13 +15552,8 @@ Valid when:
   m.attr("AttributeFunctionIndex") =
       nb::int_(static_cast<int>(LLVMAttributeFunctionIndex));
 
-  // Static attribute function
-  m.def(
-      "get_last_enum_attribute_kind",
-      []() { return LLVMGetLastEnumAttributeKind(); },
-      R"(Get last enum attribute kind.
-
-<sub>C API: LLVMGetLastEnumAttributeKind</sub>)");
+  // Static attribute registry value
+  m.attr("last_enum_attribute_kind") = nb::int_(LLVMGetLastEnumAttributeKind());
 
   // Static metadata function
   m.def(
@@ -14939,7 +15578,8 @@ Valid when:
       .value("Remark", LLVMDSRemark)
       .value("Note", LLVMDSNote);
 
-  // Bitcode parsing API that uses LLVMGetBitcodeModule2 (global context)
+  // Bitcode parsing API that uses LLVMGetBitcodeModule2 (global context).
+  // Context.parse_bitcode_from_* is preferred for user-facing parsing.
   m.def(
       "get_bitcode_module_2",
       [](LLVMMemoryBufferWrapper &membuf) -> LLVMModuleWrapper * {
@@ -15425,7 +16065,12 @@ Valid when:
            R"(Replace all uses of this temporary metadata.
 
 <sub>C API: LLVMMetadataReplaceAllUsesWith</sub>)")
-      // DI accessors as methods (also available as module-level functions)
+      .def("replace_di_subprogram_type",
+           &LLVMMetadataWrapper::replace_di_subprogram_type, "type"_a,
+           R"(Replace this DISubprogram's subroutine type metadata.
+
+<sub>C API: LLVMDISubprogramReplaceType</sub>)")
+      // DI accessors as properties
       .def_prop_ro("di_node_tag", [](const LLVMMetadataWrapper &self) -> unsigned {
         self.check_valid();
         return LLVMGetDINodeTag(self.m_ref);
@@ -15552,228 +16197,8 @@ Valid when:
 
 <sub>C API: LLVMDIGlobalVariableExpressionGetExpression</sub>)");
 
-  m.def(
-      "get_di_node_tag",
-      [](const LLVMMetadataWrapper &md) -> unsigned {
-        md.check_valid();
-        return LLVMGetDINodeTag(md.m_ref);
-      },
-      "md"_a, R"(Get DWARF tag from debug info node.
-
-<sub>C API: LLVMGetDINodeTag</sub>)");
-
-  m.def(
-      "di_type_get_name",
-      [](const LLVMMetadataWrapper &di_type) -> std::string {
-        di_type.check_valid();
-        size_t len;
-        const char *name = LLVMDITypeGetName(di_type.m_ref, &len);
-        return std::string(name, len);
-      },
-      "di_type"_a, R"(Get name from debug info type.
-
-<sub>C API: LLVMDITypeGetName</sub>)");
-
-  // DILocation accessors
-  m.def(
-      "di_location_get_line",
-      [](const LLVMMetadataWrapper &location) -> unsigned {
-        location.check_valid();
-        return LLVMDILocationGetLine(location.m_ref);
-      },
-      "location"_a, R"(Get line number from debug location.
-
-<sub>C API: LLVMDILocationGetLine</sub>)");
-
-  m.def(
-      "di_location_get_column",
-      [](const LLVMMetadataWrapper &location) -> unsigned {
-        location.check_valid();
-        return LLVMDILocationGetColumn(location.m_ref);
-      },
-      "location"_a, R"(Get column number from debug location.
-
-<sub>C API: LLVMDILocationGetColumn</sub>)");
-
-  m.def(
-      "di_location_get_scope",
-      [](const LLVMMetadataWrapper &location) -> LLVMMetadataWrapper {
-        location.check_valid();
-        return LLVMMetadataWrapper(LLVMDILocationGetScope(location.m_ref),
-                                   location.m_context_token);
-      },
-      "location"_a, R"(Get scope from debug location.
-
-<sub>C API: LLVMDILocationGetScope</sub>)");
-
-  m.def(
-      "di_location_get_inlined_at",
-      [](const LLVMMetadataWrapper &location)
-          -> std::optional<LLVMMetadataWrapper> {
-        location.check_valid();
-        LLVMMetadataRef ref = LLVMDILocationGetInlinedAt(location.m_ref);
-        if (ref)
-          return LLVMMetadataWrapper(ref, location.m_context_token);
-        return std::nullopt;
-      },
-      "location"_a, R"(Get inlined-at location from debug location, or None.
-
-<sub>C API: LLVMDILocationGetInlinedAt</sub>)");
-
-  // Debug metadata version functions
-  m.def(
-      "debug_metadata_version",
-      []() -> unsigned { return LLVMDebugMetadataVersion(); },
-      R"(Get the version of debug metadata supported by this LLVM version.
-
-<sub>C API: LLVMDebugMetadataVersion</sub>)");
-
-  m.def(
-      "get_module_debug_metadata_version",
-      [](const LLVMModuleWrapper &mod) -> unsigned {
-        mod.check_valid();
-        return LLVMGetModuleDebugMetadataVersion(mod.m_ref);
-      },
-      "mod"_a, R"(Get the debug metadata version from a module.
-
-<sub>C API: LLVMGetModuleDebugMetadataVersion</sub>)");
-
-  m.def(
-      "strip_module_debug_info",
-      [](LLVMModuleWrapper &mod) -> bool {
-        mod.check_valid();
-        return LLVMStripModuleDebugInfo(mod.m_ref);
-      },
-      "mod"_a, R"(Strip debug info from a module. Returns true if changed.
-
-<sub>C API: LLVMStripModuleDebugInfo</sub>)");
-
-  // DI file/scope query functions
-  m.def(
-      "di_scope_get_file",
-      [](const LLVMMetadataWrapper &scope)
-          -> std::optional<LLVMMetadataWrapper> {
-        scope.check_valid();
-        LLVMMetadataRef ref = LLVMDIScopeGetFile(scope.m_ref);
-        if (ref)
-          return LLVMMetadataWrapper(ref, scope.m_context_token);
-        return std::nullopt;
-      },
-      "scope"_a, R"(Get file from debug scope, or None.
-
-<sub>C API: LLVMDIScopeGetFile</sub>)");
-
-  m.def(
-      "di_file_get_directory",
-      [](const LLVMMetadataWrapper &file) -> std::string {
-        file.check_valid();
-        unsigned len;
-        const char *dir = LLVMDIFileGetDirectory(file.m_ref, &len);
-        return std::string(dir, len);
-      },
-      "file"_a, R"(Get directory from debug file.
-
-<sub>C API: LLVMDIFileGetDirectory</sub>)");
-
-  m.def(
-      "di_file_get_filename",
-      [](const LLVMMetadataWrapper &file) -> std::string {
-        file.check_valid();
-        unsigned len;
-        const char *name = LLVMDIFileGetFilename(file.m_ref, &len);
-        return std::string(name, len);
-      },
-      "file"_a, R"(Get filename from debug file.
-
-<sub>C API: LLVMDIFileGetFilename</sub>)");
-
-  m.def(
-      "di_file_get_source",
-      [](const LLVMMetadataWrapper &file) -> std::string {
-        file.check_valid();
-        unsigned len;
-        const char *src = LLVMDIFileGetSource(file.m_ref, &len);
-        return std::string(src, len);
-      },
-      "file"_a, R"(Get embedded source from debug file.
-
-<sub>C API: LLVMDIFileGetSource</sub>)");
-
-  // DI subprogram/variable query functions
-  m.def(
-      "di_subprogram_get_line",
-      [](const LLVMMetadataWrapper &subprogram) -> unsigned {
-        subprogram.check_valid();
-        return LLVMDISubprogramGetLine(subprogram.m_ref);
-      },
-      "subprogram"_a, R"(Get line number from debug subprogram.
-
-<sub>C API: LLVMDISubprogramGetLine</sub>)");
-
-  m.def(
-      "di_variable_get_file",
-      [](const LLVMMetadataWrapper &variable)
-          -> std::optional<LLVMMetadataWrapper> {
-        variable.check_valid();
-        LLVMMetadataRef ref = LLVMDIVariableGetFile(variable.m_ref);
-        if (ref)
-          return LLVMMetadataWrapper(ref, variable.m_context_token);
-        return std::nullopt;
-      },
-      "variable"_a, R"(Get file from debug variable, or None.
-
-<sub>C API: LLVMDIVariableGetFile</sub>)");
-
-  m.def(
-      "di_variable_get_scope",
-      [](const LLVMMetadataWrapper &variable)
-          -> std::optional<LLVMMetadataWrapper> {
-        variable.check_valid();
-        LLVMMetadataRef ref = LLVMDIVariableGetScope(variable.m_ref);
-        if (ref)
-          return LLVMMetadataWrapper(ref, variable.m_context_token);
-        return std::nullopt;
-      },
-      "variable"_a, R"(Get scope from debug variable, or None.
-
-<sub>C API: LLVMDIVariableGetScope</sub>)");
-
-  m.def(
-      "di_variable_get_line",
-      [](const LLVMMetadataWrapper &variable) -> unsigned {
-        variable.check_valid();
-        return LLVMDIVariableGetLine(variable.m_ref);
-      },
-      "variable"_a, R"(Get line number from debug variable.
-
-<sub>C API: LLVMDIVariableGetLine</sub>)");
-
-  // DIGlobalVariableExpression accessors
-  m.def(
-      "di_global_variable_expression_get_variable",
-      [](const LLVMMetadataWrapper &gve) -> LLVMMetadataWrapper {
-        gve.check_valid();
-        LLVMMetadataRef ref =
-            LLVMDIGlobalVariableExpressionGetVariable(gve.m_ref);
-        return LLVMMetadataWrapper(ref, gve.m_context_token);
-      },
-      "gve"_a,
-      R"(Get the DIGlobalVariable from a DIGlobalVariableExpression.
-
-<sub>C API: LLVMDIGlobalVariableExpressionGetVariable</sub>)");
-
-  m.def(
-      "di_global_variable_expression_get_expression",
-      [](const LLVMMetadataWrapper &gve) -> LLVMMetadataWrapper {
-        gve.check_valid();
-        LLVMMetadataRef ref =
-            LLVMDIGlobalVariableExpressionGetExpression(gve.m_ref);
-        return LLVMMetadataWrapper(ref, gve.m_context_token);
-      },
-      "gve"_a,
-      R"(Get the DIExpression from a DIGlobalVariableExpression.
-
-<sub>C API: LLVMDIGlobalVariableExpressionGetExpression</sub>)");
+  m.attr("debug_metadata_version") = nb::int_(LLVMDebugMetadataVersion());
+  // NOTE: debug metadata accessors moved to Metadata and Module properties.
 
   // ==========================================================================
   // Intrinsic lookup
@@ -15816,117 +16241,12 @@ Valid when:
 
 <sub>C API: LLVMIntrinsicGetName</sub>)");
 
-  m.def("intrinsic_get_type", &intrinsic_get_type, "ctx"_a, "id"_a,
-        "param_types"_a,
-        R"(Get the type of an intrinsic function.
-        
-        Args:
-            ctx: The LLVM context.
-            id: The intrinsic ID.
-            param_types: List of parameter types for overloaded intrinsics.
-            
-        Returns:
-            The function type of the intrinsic.
-
-<sub>C API: LLVMIntrinsicGetType</sub>)");
-
-  m.def("get_cast_opcode", &get_cast_opcode, "src"_a, "src_is_signed"_a,
-        "dest_ty"_a, "dest_is_signed"_a,
-        R"(Get the appropriate cast opcode for converting between types.
-        
-        Args:
-            src: The source value.
-            src_is_signed: Whether the source is signed.
-            dest_ty: The destination type.
-            dest_is_signed: Whether the destination is signed.
-            
-        Returns:
-            The LLVMOpcode for the appropriate cast instruction.
-
-<sub>C API: LLVMGetCastOpcode</sub>)");
-
-  m.def("replace_md_node_operand_with", &replace_md_node_operand_with, "val"_a,
-        "index"_a, "replacement"_a,
-        R"(Replace a metadata operand in a value's metadata node.
-        
-        Args:
-            val: The value containing the metadata node.
-            index: The operand index to replace.
-            replacement: The new metadata to use.
-
-<sub>C API: LLVMReplaceMDNodeOperandWith</sub>)");
-
-  m.def(
-      "dibuilder_create_debug_location",
-      [](LLVMContextWrapper &ctx, unsigned line, unsigned column,
-         const LLVMMetadataWrapper &scope,
-         const LLVMMetadataWrapper *inlined_at) -> LLVMMetadataWrapper {
-        ctx.check_valid();
-        scope.check_valid();
-        LLVMMetadataRef inlined = inlined_at ? inlined_at->m_ref : nullptr;
-        return LLVMMetadataWrapper(
-            LLVMDIBuilderCreateDebugLocation(ctx.m_ref, line, column,
-                                             scope.m_ref, inlined),
-            ctx.m_token);
-      },
-      "ctx"_a, "line"_a, "column"_a, "scope"_a, "inlined_at"_a.none(),
-      R"(Create debug location.)");
-
-  // NOTE: set_subprogram has been moved to Function.set_subprogram() method
-
-  m.def(
-      "di_subprogram_replace_type",
-      [](const LLVMMetadataWrapper &subprogram,
-         const LLVMMetadataWrapper &type) {
-        subprogram.check_valid();
-        type.check_valid();
-        LLVMDISubprogramReplaceType(subprogram.m_ref, type.m_ref);
-      },
-      "subprogram"_a, "type"_a, R"(Replace subprogram type.)");
-
-  // ==========================================================================
-  // Builder Positioning and Debug Records
-  // ==========================================================================
-
-  // NOTE: set_is_new_dbg_info_format and is_new_dbg_info_format have been
-  // moved to Module.is_new_dbg_info_format property
-
-  // Debug record iteration (opaque DbgRecord type - kept as global functions)
-  m.def(
-      "get_first_dbg_record",
-      [](const LLVMValueWrapper &instr) -> void * {
-        instr.check_valid();
-        if (!instr.is_a_instruction())
-          throw LLVMAssertionError(
-              "get_first_dbg_record requires an instruction value");
-        return LLVMGetFirstDbgRecord(instr.m_ref);
-      },
-      "instr"_a, R"(Get first debug record attached to instruction.)");
-
-  m.def(
-      "get_last_dbg_record",
-      [](const LLVMValueWrapper &instr) -> void * {
-        instr.check_valid();
-        if (!instr.is_a_instruction())
-          throw LLVMAssertionError(
-              "get_last_dbg_record requires an instruction value");
-        return LLVMGetLastDbgRecord(instr.m_ref);
-      },
-      "instr"_a, R"(Get last debug record attached to instruction.)");
-
-  m.def(
-      "get_next_dbg_record",
-      [](void *dbg_record) -> void * {
-        return LLVMGetNextDbgRecord((LLVMDbgRecordRef)dbg_record);
-      },
-      "dbg_record"_a, R"(Get next debug record.)");
-
-  m.def(
-      "get_previous_dbg_record",
-      [](void *dbg_record) -> void * {
-        return LLVMGetPreviousDbgRecord((LLVMDbgRecordRef)dbg_record);
-      },
-      "dbg_record"_a, R"(Get previous debug record.)");
+  // NOTE: intrinsic type lookup moved to Context.get_intrinsic_type().
+  // NOTE: cast-opcode and metadata-node mutation helpers moved to Value methods.
+  // NOTE: debug-location creation moved to Context.create_debug_location().
+  // NOTE: DISubprogram type replacement moved to Metadata.replace_di_subprogram_type().
+  // NOTE: debug record traversal moved to Value.first_dbg_record,
+  // Value.last_dbg_record, and DbgRecord.next/prev.
 
   // Constants for DIFlags
   m.attr("DIFlagZero") = nb::int_((unsigned)LLVMDIFlagZero);
