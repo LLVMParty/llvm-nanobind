@@ -918,6 +918,7 @@ def test_value_accessor_guard_matrix_positive():
                 "ifunc_remove", refs["resolver_ty"], 0, resolver0
             )
             ifunc_remove.remove_from_parent_ifunc()
+            ifunc_remove.erase_from_parent_ifunc()
             ifunc_erase = mod.add_global_ifunc("ifunc_erase", refs["resolver_ty"], 0, resolver0)
             ifunc_erase.erase_from_parent_ifunc()
             try:
@@ -1090,6 +1091,7 @@ def test_value_accessor_guard_matrix_positive():
             # Instruction lifecycle APIs.
             cloned = add_inst.instruction_clone()
             assert cloned.is_instruction
+            cloned.delete_instruction()
 
             remove_fn_ty = ctx.types.function(ctx.types.void, [], False)
             remove_fn = mod.add_function("remove_fn", remove_fn_ty)
@@ -1101,6 +1103,8 @@ def test_value_accessor_guard_matrix_positive():
                 removable = b.add(remove_lhs, i32.constant(2, False), "rm")
                 b.ret_void()
             removable.remove_from_parent()
+            assert removable.name == "rm"
+            removable.delete_instruction()
 
             erase_fn_ty = ctx.types.function(ctx.types.void, [], False)
             erase_fn = mod.add_function("erase_fn", erase_fn_ty)

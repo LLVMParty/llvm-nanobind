@@ -31,6 +31,7 @@
 
 #include <llvm/IR/Instruction.h>
 #include <llvm/IR/InstrTypes.h>
+#include <llvm/IR/GlobalIFunc.h>
 #include <llvm/IR/Metadata.h>
 #include <llvm/IR/Value.h>
 #include <llvm/Object/ObjectFile.h>
@@ -1731,7 +1732,13 @@ struct LLVMValueWrapper {
   void erase_from_parent_ifunc() {
     check_valid();
     require_global_ifunc("erase_from_parent_ifunc");
-    LLVMEraseGlobalIFunc(m_ref);
+    auto *value = reinterpret_cast<llvm::Value *>(m_ref);
+    auto *ifunc = llvm::cast<llvm::GlobalIFunc>(value);
+    if (ifunc->getParent()) {
+      LLVMEraseGlobalIFunc(m_ref);
+    } else {
+      delete ifunc;
+    }
     m_ref = nullptr; // IFunc is now deleted
   }
 

@@ -246,6 +246,11 @@ def replace_all_uses_with_if(
         user.replace_uses_of_with(old_value, new_value)
 
 
+def poison_uses_before_erasing(inst: llvm.Value) -> None:
+    if inst.type.kind != llvm.TypeKind.Void and inst.has_uses:
+        inst.replace_all_uses_with(inst.type.poison())
+
+
 def position_after_instruction(builder: llvm.Builder, inst: llvm.Value) -> None:
     next_inst = inst.next_instruction
     if next_inst is not None:
@@ -2501,6 +2506,13 @@ def loop_to_recursion_module(mod: llvm.Module, seed: int, cfg: FilterConfig) -> 
         for ep in exit_phis:
             ep.phi.erase_from_parent()
 
+        loop_instructions = [
+            inst
+            for bb in loop_blocks
+            for inst in bb.instructions
+        ]
+        for inst in loop_instructions:
+            poison_uses_before_erasing(inst)
         for bb in loop_blocks:
             for inst in reversed(list(bb.instructions)):
                 inst.erase_from_parent()
