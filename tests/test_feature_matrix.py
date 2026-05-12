@@ -1,7 +1,7 @@
 """
 Test all feature matrix items implemented in Session 6.
-This test verifies that all remaining TODO items from the feature matrix
-are properly implemented and accessible.
+This test verifies that the remaining feature-matrix items are properly
+implemented and accessible.
 """
 
 import llvm
