@@ -200,7 +200,7 @@ def test_member_factories_and_builder_navigation() -> None:
                 assert builder.module == mod
                 assert builder.context is not None
                 ret = builder.ret(i32.constant(0))
-                assert ret.first_dbg_record is None
+                expect_raises(lambda: ret.has_dbg_records, "LLVM-C has no safe")
 
             with mod.create_builder(ret) as before_ret:
                 assert before_ret.insert_block == bb

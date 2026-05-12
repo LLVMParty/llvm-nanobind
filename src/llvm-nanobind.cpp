@@ -29,15 +29,6 @@
 #include <llvm-c/TargetMachine.h>
 #include <llvm-c/Transforms/PassBuilder.h>
 
-#include <llvm/IR/Instruction.h>
-#include <llvm/IR/InstrTypes.h>
-#include <llvm/IR/GlobalIFunc.h>
-#include <llvm/IR/Metadata.h>
-#include <llvm/IR/Value.h>
-#include <llvm/Object/ObjectFile.h>
-#include <llvm/Object/SymbolSize.h>
-#include <llvm/Support/Casting.h>
-
 // Vector that produces collections.abc.Iterable[T] type hint
 template <typename T> struct Iterable : std::vector<T> {
   using std::vector<T>::vector;
@@ -1778,26 +1769,39 @@ struct LLVMValueWrapper {
     LLVMSetGlobalIFuncResolver(m_ref, resolver.m_ref);
   }
 
-  // Erase global IFunc from parent module and delete it
+  void clear_global_ifunc_resolver_for_detach() {
+    LLVMValueRef resolver = LLVMGetGlobalIFuncResolver(m_ref);
+    if (resolver) {
+      LLVMValueRef null_resolver = LLVMConstNull(LLVMTypeOf(resolver));
+      LLVMSetGlobalIFuncResolver(m_ref, null_resolver);
+    }
+  }
+
+  // Erase global IFunc from parent module and delete it when parented.
   void erase_from_parent_ifunc() {
     check_valid();
     require_global_ifunc("erase_from_parent_ifunc");
-    auto *value = reinterpret_cast<llvm::Value *>(m_ref);
-    auto *ifunc = llvm::cast<llvm::GlobalIFunc>(value);
-    if (ifunc->getParent()) {
+    if (LLVMGetGlobalParent(m_ref)) {
       LLVMEraseGlobalIFunc(m_ref);
     } else {
-      delete ifunc;
+      // WARNING: LLVM-C has no API to delete a detached GlobalIFunc.
+      // TODO: needs safe LLVM-C API equivalent. Drop resolver uses and
+      // invalidate the wrapper to avoid teardown crashes; the detached ifunc
+      // itself is intentionally leaked rather than deleted through LLVM C++.
+      clear_global_ifunc_resolver_for_detach();
     }
-    m_ref = nullptr; // IFunc is now deleted
+    m_ref = nullptr; // IFunc is now deleted or intentionally detached/leaked.
   }
 
-  // Remove global IFunc from parent module but keep it alive
+  // Remove global IFunc from parent module.
   void remove_from_parent_ifunc() {
     check_valid();
     require_global_ifunc("remove_from_parent_ifunc");
+    // WARNING: LLVM-C has no API to delete or reinsert a detached GlobalIFunc.
+    // TODO: needs safe LLVM-C API equivalent. Clear resolver uses before
+    // detaching so the parent module can be destroyed safely.
+    clear_global_ifunc_resolver_for_detach();
     LLVMRemoveGlobalIFunc(m_ref);
-    // IFunc is still alive, just unlinked from module
   }
 
   // Global properties for echo command
@@ -2375,16 +2379,6 @@ struct LLVMValueWrapper {
   unsigned get_num_arg_operands() const {
     check_valid();
     require_arg_operands_instruction("num_arg_operands");
-    LLVMOpcode op = LLVMGetInstructionOpcode(m_ref);
-    if (op == LLVMCall || op == LLVMInvoke || op == LLVMCallBr) {
-      auto *value = reinterpret_cast<llvm::Value *>(m_ref);
-      auto *call_base = llvm::dyn_cast<llvm::CallBase>(value);
-      if (!call_base) {
-        throw LLVMAssertionError(
-            "num_arg_operands requires a call-like instruction");
-      }
-      return static_cast<unsigned>(call_base->arg_size());
-    }
     return LLVMGetNumArgOperands(m_ref);
   }
 
@@ -2899,20 +2893,7 @@ struct LLVMValueWrapper {
                                std::to_string(count) + ")");
     }
 
-    LLVMValueRef arg = nullptr;
-    LLVMOpcode op = LLVMGetInstructionOpcode(m_ref);
-    if (op == LLVMCall || op == LLVMInvoke || op == LLVMCallBr) {
-      auto *value = reinterpret_cast<llvm::Value *>(m_ref);
-      auto *call_base = llvm::dyn_cast<llvm::CallBase>(value);
-      if (!call_base) {
-        throw LLVMAssertionError(
-            "get_arg_operand requires a call-like instruction");
-      }
-      arg = reinterpret_cast<LLVMValueRef>(call_base->getArgOperand(index));
-    } else {
-      arg = LLVMGetArgOperand(m_ref, index);
-    }
-
+    LLVMValueRef arg = LLVMGetOperand(m_ref, index);
     if (!arg) {
       throw LLVMAssertionError("get_arg_operand: arg operand at index " +
                                std::to_string(index) + " is null");
@@ -3230,7 +3211,7 @@ struct LLVMValueWrapper {
   }
 
   // Replace occurrences of one operand with another within this instruction.
-  // Mirrors llvm::User::replaceUsesOfWith for instruction users.
+  // Mirrors User::replaceUsesOfWith semantics for instruction users.
   void replace_uses_of_with(const LLVMValueWrapper &from_value,
                             const LLVMValueWrapper &to_value) {
     check_valid();
@@ -3326,16 +3307,20 @@ struct LLVMValueWrapper {
   bool has_dbg_records() const {
     check_valid();
     require_instruction_value("has_dbg_records");
-    auto *value = reinterpret_cast<llvm::Value *>(m_ref);
-    auto *inst = llvm::dyn_cast<llvm::Instruction>(value);
-    return inst && inst->hasDbgRecords();
+    // WARNING: LLVM-C exposes LLVMGetFirstDbgRecord/LLVMGetLastDbgRecord but
+    // no safe has-dbg-records predicate. Calling those getters on instructions
+    // without debug-record storage can abort in LLVM. TODO: needs safe LLVM-C
+    // API equivalent.
+    throw LLVMAssertionError(
+        "has_dbg_records is unavailable: LLVM-C has no safe debug-record "
+        "presence query (TODO: needs safe LLVM-C API equivalent)");
   }
 
   std::optional<LLVMDbgRecordWrapper> first_dbg_record() const {
     check_valid();
     require_instruction_value("first_dbg_record");
-    if (!has_dbg_records())
-      return std::nullopt;
+    // WARNING: LLVM-C may abort if this instruction has no debug-record
+    // storage. TODO: needs safe LLVM-C API equivalent.
     LLVMDbgRecordRef ref = LLVMGetFirstDbgRecord(m_ref);
     if (!ref)
       return std::nullopt;
@@ -3345,8 +3330,8 @@ struct LLVMValueWrapper {
   std::optional<LLVMDbgRecordWrapper> last_dbg_record() const {
     check_valid();
     require_instruction_value("last_dbg_record");
-    if (!has_dbg_records())
-      return std::nullopt;
+    // WARNING: LLVM-C may abort if this instruction has no debug-record
+    // storage. TODO: needs safe LLVM-C API equivalent.
     LLVMDbgRecordRef ref = LLVMGetLastDbgRecord(m_ref);
     if (!ref)
       return std::nullopt;
@@ -8706,14 +8691,90 @@ struct LLVMSymbolIteratorWrapper : NoMoveCopy {
     check_valid();
     check_not_at_end("SymbolIterator.size");
 
-    auto *it = reinterpret_cast<llvm::object::symbol_iterator *>(m_ref);
-    const llvm::object::SymbolRef &current = **it;
-    const llvm::object::ObjectFile *object = current.getObject();
-    for (const auto &entry : llvm::object::computeSymbolSizes(*object)) {
-      if (entry.first == current)
-        return entry.second;
+    // WARNING: LLVMGetSymbolSize calls LLVM's common-symbol-size path and can
+    // abort for ordinary function/data symbols. TODO: needs safe LLVM-C API
+    // equivalent. Approximate llvm-symbolizer-style sizes using only LLVM-C by
+    // computing distance to the next symbol in the same containing section.
+    struct SymbolInfo {
+      std::string name;
+      std::string section_name;
+      uint64_t address = 0;
+      uint64_t section_address = 0;
+      uint64_t section_size = 0;
+      bool has_section = false;
+    };
+
+    auto read_info = [&](LLVMSymbolIteratorRef sym,
+                         LLVMSectionIteratorRef sect) -> SymbolInfo {
+      SymbolInfo info;
+      const char *name = LLVMGetSymbolName(sym);
+      info.name = name ? std::string(name) : std::string();
+      info.address = LLVMGetSymbolAddress(sym);
+      if (sect) {
+        LLVMMoveToContainingSection(sect, sym);
+        if (!LLVMObjectFileIsSectionIteratorAtEnd(m_binary_ref, sect)) {
+          const char *section_name = LLVMGetSectionName(sect);
+          info.section_name = section_name ? std::string(section_name)
+                                           : std::string();
+          info.section_address = LLVMGetSectionAddress(sect);
+          info.section_size = LLVMGetSectionSize(sect);
+          info.has_section = true;
+        }
+      }
+      return info;
+    };
+
+    auto same_section = [](const SymbolInfo &a, const SymbolInfo &b) -> bool {
+      return a.has_section && b.has_section &&
+             a.section_address == b.section_address &&
+             a.section_size == b.section_size &&
+             a.section_name == b.section_name;
+    };
+
+    LLVMSectionIteratorRef current_sect =
+        LLVMObjectFileCopySectionIterator(m_binary_ref);
+    SymbolInfo current = read_info(m_ref, current_sect);
+    if (current_sect)
+      LLVMDisposeSectionIterator(current_sect);
+
+    LLVMSymbolIteratorRef sym = LLVMObjectFileCopySymbolIterator(m_binary_ref);
+    LLVMSectionIteratorRef sect = LLVMObjectFileCopySectionIterator(m_binary_ref);
+    if (!sym || !sect) {
+      if (sym)
+        LLVMDisposeSymbolIterator(sym);
+      if (sect)
+        LLVMDisposeSectionIterator(sect);
+      return 0;
     }
-    return 0;
+
+    std::vector<SymbolInfo> symbols;
+    std::optional<size_t> current_index;
+    while (!LLVMObjectFileIsSymbolIteratorAtEnd(m_binary_ref, sym)) {
+      SymbolInfo info = read_info(sym, sect);
+      if (!current_index && info.name == current.name &&
+          info.address == current.address && same_section(info, current)) {
+        current_index = symbols.size();
+      }
+      symbols.push_back(std::move(info));
+      LLVMMoveToNextSymbol(sym);
+    }
+
+    LLVMDisposeSymbolIterator(sym);
+    LLVMDisposeSectionIterator(sect);
+
+    if (!current_index || !current.has_section ||
+        current.name == current.section_name) {
+      return 0;
+    }
+
+    uint64_t next_address = current.section_address + current.section_size;
+    for (size_t i = 0; i < symbols.size(); ++i) {
+      if (i == *current_index || !same_section(current, symbols[i]))
+        continue;
+      if (symbols[i].address > current.address && symbols[i].address < next_address)
+        next_address = symbols[i].address;
+    }
+    return next_address >= current.address ? next_address - current.address : 0;
   }
 
   // For Python iteration
@@ -9448,11 +9509,12 @@ inline void LLVMValueWrapper::set_metadata(unsigned kind,
   ctx.check_valid();
 
   LLVMMetadataRef metadata_ref = md.m_ref;
-  auto *metadata = reinterpret_cast<llvm::Metadata *>(metadata_ref);
-  if (!llvm::isa<llvm::MDNode>(metadata) &&
-      !llvm::isa<llvm::ConstantAsMetadata>(metadata)) {
+  LLVMValueRef md_value = LLVMMetadataAsValue(ctx.m_ref, metadata_ref);
+  bool is_md_node = LLVMIsAMDNode(md_value) && !LLVMIsAValueAsMetadata(md_value);
+  if (!is_md_node) {
     LLVMMetadataRef refs[] = {metadata_ref};
     metadata_ref = LLVMMDNodeInContext2(ctx.m_ref, refs, 1);
+    md_value = LLVMMetadataAsValue(ctx.m_ref, metadata_ref);
   }
 
   // Check if this is a global value or an instruction
@@ -9460,8 +9522,7 @@ inline void LLVMValueWrapper::set_metadata(unsigned kind,
     LLVMGlobalSetMetadata(m_ref, kind, metadata_ref);
   } else {
     // For instructions, convert metadata to value using provided context
-    LLVMValueRef md_val = LLVMMetadataAsValue(ctx.m_ref, metadata_ref);
-    LLVMSetMetadata(m_ref, kind, md_val);
+    LLVMSetMetadata(m_ref, kind, md_value);
   }
 }
 
@@ -11646,10 +11707,10 @@ Valid when:
            })
       .def_prop_ro("user", &LLVMUseWrapper::get_user,
                    "Obtain the user value for a user.\n\n@api "
-                   "llvm::Use::getUser(), LLVMGetUser")
+                   "LLVMGetUser")
       .def_prop_ro("used_value", &LLVMUseWrapper::get_used_value,
                    "Obtain the value this use corresponds to.\n\n@api "
-                   "llvm::Use::get(), LLVMGetUsedValue")
+                   "LLVMGetUsedValue")
       .def_prop_ro("operand_index", &LLVMUseWrapper::get_operand_index,
                    R"(Get the operand index of this use within the user instruction.
 
@@ -12177,19 +12238,26 @@ Warning:
 <sub>C API: LLVMSetGlobalIFuncResolver</sub>)")
       .def("erase_from_parent_ifunc",
            &LLVMValueWrapper::erase_from_parent_ifunc,
-           R"(Erase this global IFunc from its parent module and delete it.
+           R"(Erase this global IFunc from its parent module and delete it when parented.
 
 After calling this, the IFunc value is no longer valid and should not be used.
+
+WARNING: LLVM-C has no API to delete a detached GlobalIFunc. If the ifunc was
+already removed from its parent, this method clears resolver uses and
+invalidates the wrapper, intentionally leaking the detached ifunc rather than
+calling LLVM C++ directly.
+TODO: needs safe LLVM-C API equivalent.
 
 <sub>C API: LLVMEraseGlobalIFunc</sub>)")
       .def("remove_from_parent_ifunc",
            &LLVMValueWrapper::remove_from_parent_ifunc,
-           R"(Remove this global IFunc from its parent module but keep it alive.
+           R"(Remove this global IFunc from its parent module.
 
-WARNING: This is a low-level API for advanced use cases like moving an IFunc
-between modules. The removed IFunc will still hold references to values in the
-original module. If those values are deleted before the IFunc, LLVM will crash.
-Prefer using erase_from_parent_ifunc() for most use cases.
+WARNING: LLVM-C has no API to delete or reinsert a detached GlobalIFunc. This
+method clears resolver uses before detaching so the parent module can be
+destroyed safely. The detached ifunc should be considered unusable except for
+invalidating it with erase_from_parent_ifunc().
+TODO: needs safe LLVM-C API equivalent.
 
 <sub>C API: LLVMRemoveGlobalIFunc</sub>)")
       // Global properties
@@ -12688,7 +12756,7 @@ Combines remove_from_parent() + delete_instruction() atomically.
            "from_value"_a, "to_value"_a,
            R"(Replace matching operand uses within this instruction.
 
-This mirrors llvm::User::replaceUsesOfWith for instruction users.
+This mirrors User::replaceUsesOfWith semantics for instruction users.
 
 <sub>Custom helper built on LLVMGetOperand/LLVMSetOperand</sub>)")
       .def("replace_md_node_operand_with",
@@ -12698,15 +12766,27 @@ This mirrors llvm::User::replaceUsesOfWith for instruction users.
 
 <sub>C API: LLVMReplaceMDNodeOperandWith</sub>)")
       .def_prop_ro("has_dbg_records", &LLVMValueWrapper::has_dbg_records,
-                   R"(Check whether this instruction has attached debug records.
+                   R"(Debug-record presence query.
 
-<sub>C++ API: llvm::Instruction::hasDbgRecords</sub>)")
+WARNING: LLVM-C currently has no safe presence predicate. This property raises
+LLVMAssertionError instead of attempting an unsafe query.
+TODO: needs safe LLVM-C API equivalent.
+
+<sub>C API limitation</sub>)")
       .def_prop_ro("first_dbg_record", &LLVMValueWrapper::first_dbg_record,
                    R"(First debug record attached to this instruction, or None.
+
+WARNING: LLVM-C may abort if this instruction has no debug-record storage.
+Only call this when the instruction is known to carry debug records.
+TODO: needs safe LLVM-C API equivalent.
 
 <sub>C API: LLVMGetFirstDbgRecord</sub>)")
       .def_prop_ro("last_dbg_record", &LLVMValueWrapper::last_dbg_record,
                    R"(Last debug record attached to this instruction, or None.
+
+WARNING: LLVM-C may abort if this instruction has no debug-record storage.
+Only call this when the instruction is known to carry debug records.
+TODO: needs safe LLVM-C API equivalent.
 
 <sub>C API: LLVMGetLastDbgRecord</sub>)")
       // Callsite attribute methods (for call/invoke instructions)
@@ -15306,7 +15386,12 @@ Valid when:
   - parent binary is still valid (not disposed)
   - iterator is not at end (`is_at_end() == False`)
 
-<sub>C API: LLVMGetSymbolSize</sub>)")
+WARNING: LLVMGetSymbolSize may abort for ordinary non-common symbols. The
+binding avoids that call and computes a best-effort section-local size using
+LLVM-C iterators. Duplicate symbols at the same address may be ambiguous.
+TODO: needs safe LLVM-C API equivalent.
+
+<sub>C API workaround; avoids LLVMGetSymbolSize</sub>)")
       // Python iteration support
       .def("__iter__", &LLVMSymbolIteratorWrapper::iter,
            nb::rv_policy::reference_internal)
