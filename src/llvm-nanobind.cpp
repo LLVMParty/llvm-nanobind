@@ -9883,7 +9883,8 @@ LLVMDIBuilderWrapper::create_global_variable_expression(
 inline LLVMMetadataWrapper
 LLVMDIBuilderWrapper::create_expression(const Iterable<uint64_t> &addr) {
   check_valid();
-  // TODO: is this lifetime correct?
+  // DIExpression::get copies the ArrayRef contents, so this buffer only needs
+  // to live through LLVMDIBuilderCreateExpression().
   std::vector<uint64_t> addr_copy = addr;
   return LLVMMetadataWrapper(
       LLVMDIBuilderCreateExpression(m_ref, addr_copy.data(), addr_copy.size()),
