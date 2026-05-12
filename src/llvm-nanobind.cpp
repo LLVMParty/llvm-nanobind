@@ -22,8 +22,10 @@
 #include <llvm-c/DebugInfo.h>
 #include <llvm-c/Disassembler.h>
 #include <llvm-c/IRReader.h>
+#include <llvm-c/LLJIT.h>
 #include <llvm-c/Linker.h>
 #include <llvm-c/Object.h>
+#include <llvm-c/Orc.h>
 #include <llvm-c/Support.h>
 #include <llvm-c/Target.h>
 #include <llvm-c/TargetMachine.h>
@@ -126,6 +128,15 @@ struct LLVMMemoryError : std::runtime_error {
 struct LLVMAssertionError : std::runtime_error {
   using std::runtime_error::runtime_error;
 };
+
+static std::string consume_llvm_error(LLVMErrorRef err) {
+  if (!err)
+    return "";
+  char *msg = LLVMGetErrorMessage(err);
+  std::string result = msg ? msg : "Unknown error";
+  LLVMDisposeErrorMessage(msg);
+  return result;
+}
 
 static unsigned lookup_enum_attribute_kind(const std::string &name) {
   return LLVMGetEnumAttributeKindForName(name.c_str(), name.size());
@@ -251,6 +262,8 @@ struct LLVMBuilderManager;
 struct LLVMDIBuilderManager;
 struct LLVMTargetMachineWrapper;
 struct LLVMPassBuilderOptionsWrapper;
+struct LLVMJITWrapper;
+struct LLVMCtypesFunctionWrapper;
 struct LLVMNamedMDNodeWrapper;
 struct LLVMOperandBundleWrapper;
 struct LLVMUseWrapper;
@@ -5572,6 +5585,70 @@ struct LLVMBuilderWrapper : NoMoveCopy {
         m_context_token);
   }
 
+  LLVMValueWrapper intrinsic(const std::string &intrinsic_name,
+                             const Iterable<LLVMValueWrapper> &args,
+                             const Iterable<LLVMTypeWrapper> &overloaded_types,
+                             const std::string &name_hint = "") {
+    check_valid();
+    if (intrinsic_name.empty())
+      throw LLVMAssertionError("intrinsic name cannot be empty");
+
+    unsigned id =
+        LLVMLookupIntrinsicID(intrinsic_name.c_str(), intrinsic_name.size());
+    if (id == 0) {
+      throw LLVMAssertionError("Unknown LLVM intrinsic: " + intrinsic_name);
+    }
+    if (LLVMIntrinsicIsOverloaded(id) && overloaded_types.empty()) {
+      throw LLVMAssertionError("Intrinsic '" + intrinsic_name +
+                               "' is overloaded; pass overloaded_types=[...]");
+    }
+
+    LLVMBasicBlockRef bb = LLVMGetInsertBlock(m_ref);
+    if (!bb)
+      throw LLVMAssertionError("intrinsic requires a builder insertion block");
+    LLVMValueRef parent_fn = LLVMGetBasicBlockParent(bb);
+    if (!parent_fn)
+      throw LLVMAssertionError(
+          "intrinsic requires an insertion block in a function");
+    LLVMModuleRef mod_ref = LLVMGetGlobalParent(parent_fn);
+    if (!mod_ref)
+      throw LLVMAssertionError(
+          "intrinsic requires an insertion function in a module");
+
+    std::vector<LLVMTypeRef> type_refs;
+    type_refs.reserve(overloaded_types.size());
+    for (const auto &ty : overloaded_types) {
+      ty.check_valid();
+      type_refs.push_back(ty.m_ref);
+    }
+
+    LLVMValueRef decl = LLVMGetIntrinsicDeclaration(
+        mod_ref, id, type_refs.data(), type_refs.size());
+    if (!decl) {
+      throw LLVMError("Failed to get declaration for intrinsic '" +
+                      intrinsic_name + "'");
+    }
+
+    std::vector<LLVMValueRef> arg_refs;
+    arg_refs.reserve(args.size());
+    for (const auto &arg : args) {
+      arg.check_valid();
+      arg_refs.push_back(arg.m_ref);
+    }
+
+    LLVMTypeRef func_ty = LLVMGlobalGetValueType(decl);
+    LLVMTypeRef ret_ty = LLVMGetReturnType(func_ty);
+    if (LLVMGetTypeKind(ret_ty) == LLVMVoidTypeKind && !name_hint.empty()) {
+      throw LLVMAssertionError("Cannot name call to intrinsic returning void");
+    }
+
+    return LLVMValueWrapper(
+        LLVMBuildCall2(m_ref, func_ty, decl, arg_refs.data(),
+                       static_cast<unsigned>(arg_refs.size()),
+                       name_hint.c_str()),
+        m_context_token);
+  }
+
   LLVMValueWrapper unreachable() {
     check_valid();
     return LLVMValueWrapper(LLVMBuildUnreachable(m_ref), m_context_token);
@@ -6665,6 +6742,12 @@ struct LLVMModuleWrapper : NoMoveCopy {
 
   void run_passes(const std::string &passes, LLVMTargetMachineWrapper *tm,
                   LLVMPassBuilderOptionsWrapper *opts);
+
+  void optimize(const std::string &pipeline, LLVMTargetMachineWrapper *tm,
+                LLVMPassBuilderOptionsWrapper *opts);
+
+  nb::bytes emit_object(LLVMTargetMachineWrapper *tm = nullptr);
+  nb::bytes emit_assembly(LLVMTargetMachineWrapper *tm = nullptr);
 
   // Clone - returns a ModuleManager that must be used with 'with' or .dispose()
   LLVMModuleManager *clone() const;
@@ -8362,6 +8445,46 @@ LLVMTargetMachineWrapper *create_target_machine(const LLVMTargetWrapper &target,
   return new LLVMTargetMachineWrapper(ref);
 }
 
+LLVMTargetMachineWrapper *create_host_target_machine(
+    const std::string &cpu = "", const std::string &features = "",
+    LLVMCodeGenOptLevel opt_level = LLVMCodeGenLevelDefault,
+    LLVMRelocMode reloc_mode = LLVMRelocDefault,
+    LLVMCodeModel code_model = LLVMCodeModelDefault) {
+  if (LLVMInitializeNativeTarget() != 0)
+    throw LLVMError("Failed to initialize native target");
+  if (LLVMInitializeNativeAsmPrinter() != 0)
+    throw LLVMError("Failed to initialize native ASM printer");
+
+  char *triple_msg = LLVMGetDefaultTargetTriple();
+  std::string triple = triple_msg ? triple_msg : "";
+  if (triple_msg)
+    LLVMDisposeMessage(triple_msg);
+  if (triple.empty())
+    throw LLVMError("Failed to determine default target triple");
+
+  LLVMTargetRef target_ref = nullptr;
+  char *error = nullptr;
+  if (LLVMGetTargetFromTriple(triple.c_str(), &target_ref, &error)) {
+    std::string msg = error ? error : "Unknown error";
+    if (error)
+      LLVMDisposeMessage(error);
+    throw LLVMError("Failed to get host target from triple '" + triple +
+                    "': " + msg);
+  }
+  if (error)
+    LLVMDisposeMessage(error);
+  if (!target_ref)
+    throw LLVMError("Failed to get host target from triple '" + triple + "'");
+
+  LLVMTargetMachineRef ref = LLVMCreateTargetMachine(
+      target_ref, triple.c_str(), cpu.c_str(), features.c_str(), opt_level,
+      reloc_mode, code_model);
+  if (!ref)
+    throw LLVMError("Failed to create host target machine for triple '" +
+                    triple + "'");
+  return new LLVMTargetMachineWrapper(ref);
+}
+
 // =============================================================================
 // Pass Builder Options Wrapper
 // =============================================================================
@@ -8455,12 +8578,21 @@ void run_passes(LLVMModuleWrapper &mod, const std::string &passes,
     tm_ref = tm->m_ref;
   }
   LLVMPassBuilderOptionsRef opts_ref = nullptr;
+  LLVMPassBuilderOptionsRef owned_opts = nullptr;
   if (opts) {
     opts->check_valid();
     opts_ref = opts->m_ref;
+  } else {
+    // LLVMRunPasses expects a valid options object on some LLVM builds.
+    owned_opts = LLVMCreatePassBuilderOptions();
+    if (!owned_opts)
+      throw LLVMError("Failed to create pass builder options");
+    opts_ref = owned_opts;
   }
 
   LLVMErrorRef err = LLVMRunPasses(mod.m_ref, passes.c_str(), tm_ref, opts_ref);
+  if (owned_opts)
+    LLVMDisposePassBuilderOptions(owned_opts);
   if (err) {
     char *msg = LLVMGetErrorMessage(err);
     std::string error_msg = msg ? msg : "Unknown error";
@@ -8474,6 +8606,343 @@ inline void LLVMModuleWrapper::run_passes(const std::string &passes,
                                           LLVMPassBuilderOptionsWrapper *opts) {
   ::run_passes(*this, passes, tm, opts);
 }
+
+inline void LLVMModuleWrapper::optimize(const std::string &pipeline,
+                                        LLVMTargetMachineWrapper *tm,
+                                        LLVMPassBuilderOptionsWrapper *opts) {
+  try {
+    ::run_passes(*this, pipeline, tm, opts);
+  } catch (const LLVMError &e) {
+    throw LLVMError("Failed to optimize with pipeline '" + pipeline +
+                    "': " + e.what());
+  }
+}
+
+inline nb::bytes LLVMModuleWrapper::emit_object(LLVMTargetMachineWrapper *tm) {
+  check_valid();
+  if (tm) {
+    tm->check_valid();
+    return tm->emit_to_memory_buffer(*this, LLVMObjectFile);
+  }
+  std::unique_ptr<LLVMTargetMachineWrapper> host_tm(create_host_target_machine());
+  return host_tm->emit_to_memory_buffer(*this, LLVMObjectFile);
+}
+
+inline nb::bytes LLVMModuleWrapper::emit_assembly(LLVMTargetMachineWrapper *tm) {
+  check_valid();
+  if (tm) {
+    tm->check_valid();
+    return tm->emit_to_memory_buffer(*this, LLVMAssemblyFile);
+  }
+  std::unique_ptr<LLVMTargetMachineWrapper> host_tm(create_host_target_machine());
+  return host_tm->emit_to_memory_buffer(*this, LLVMAssemblyFile);
+}
+
+// =============================================================================
+// ORC LLJIT Wrapper
+// =============================================================================
+
+struct LLVMCtypesFunctionWrapper : NoMoveCopy {
+  nb::object m_func;
+  std::shared_ptr<ValidityToken> m_jit_token;
+
+  LLVMCtypesFunctionWrapper(nb::object func,
+                            std::shared_ptr<ValidityToken> jit_token)
+      : m_func(std::move(func)), m_jit_token(std::move(jit_token)) {}
+
+  nb::object call(const nb::args &args) const {
+    if (!m_jit_token || !m_jit_token->is_valid()) {
+      throw LLVMMemoryError("JIT function called after JIT was disposed");
+    }
+    PyObject *result = PyObject_CallObject(m_func.ptr(), args.ptr());
+    if (!result)
+      throw nb::python_error();
+    return nb::steal<nb::object>(result);
+  }
+
+  nb::object ctypes_callable() const { return m_func; }
+};
+
+static uint64_t python_address_from_object(const nb::object &value) {
+  if (PyLong_Check(value.ptr())) {
+    unsigned long long address = PyLong_AsUnsignedLongLong(value.ptr());
+    if (PyErr_Occurred()) {
+      PyErr_Clear();
+      throw LLVMAssertionError(
+          "symbol address must be a non-negative integer or ctypes object");
+    }
+    return static_cast<uint64_t>(address);
+  }
+
+  nb::object ctypes = nb::module_::import_("ctypes");
+  nb::object c_void_p = ctypes.attr("c_void_p");
+  nb::object cast = ctypes.attr("cast");
+  nb::object address_obj = cast(value, c_void_p).attr("value");
+  if (address_obj.is_none()) {
+    throw LLVMAssertionError(
+        "ctypes object could not be converted to a non-null address");
+  }
+  unsigned long long address = PyLong_AsUnsignedLongLong(address_obj.ptr());
+  if (PyErr_Occurred()) {
+    PyErr_Clear();
+    throw LLVMAssertionError(
+        "ctypes object address did not fit in an unsigned 64-bit integer");
+  }
+  return static_cast<uint64_t>(address);
+}
+
+struct LLVMJITWrapper : NoMoveCopy {
+  LLVMOrcLLJITRef m_ref = nullptr;
+  std::shared_ptr<ValidityToken> m_token = std::make_shared<ValidityToken>();
+  std::vector<nb::object> m_pinned_symbols;
+
+  LLVMJITWrapper() = default;
+  explicit LLVMJITWrapper(LLVMOrcLLJITRef ref) : m_ref(ref) {}
+
+  ~LLVMJITWrapper() {
+    m_pinned_symbols.clear();
+    if (m_ref) {
+      LLVMErrorRef err = LLVMOrcDisposeLLJIT(m_ref);
+      if (err) {
+        // Destructors must not throw. Consume and drop the error.
+        consume_llvm_error(err);
+      }
+      m_ref = nullptr;
+    }
+    if (m_token)
+      m_token->invalidate();
+  }
+
+  void check_valid() const {
+    if (!m_ref)
+      throw LLVMMemoryError("JIT has been disposed");
+    if (!m_token || !m_token->is_valid())
+      throw LLVMMemoryError("JIT has been disposed");
+  }
+
+  static LLVMJITWrapper *host() {
+    if (LLVMInitializeNativeTarget() != 0)
+      throw LLVMError("Failed to initialize native target for JIT");
+    if (LLVMInitializeNativeAsmPrinter() != 0)
+      throw LLVMError("Failed to initialize native ASM printer for JIT");
+
+    LLVMOrcLLJITRef jit = nullptr;
+    LLVMErrorRef err = LLVMOrcCreateLLJIT(&jit, nullptr);
+    if (err) {
+      throw LLVMError("Failed to create host JIT: " + consume_llvm_error(err));
+    }
+    if (!jit)
+      throw LLVMError("Failed to create host JIT");
+    return new LLVMJITWrapper(jit);
+  }
+
+  LLVMJITWrapper &enter() {
+    check_valid();
+    return *this;
+  }
+
+  void exit(const nb::object &, const nb::object &, const nb::object &) {
+    dispose();
+  }
+
+  void dispose() {
+    check_valid();
+    m_pinned_symbols.clear();
+    LLVMErrorRef err = LLVMOrcDisposeLLJIT(m_ref);
+    m_ref = nullptr;
+    if (m_token)
+      m_token->invalidate();
+    if (err) {
+      throw LLVMError("Failed to dispose JIT: " + consume_llvm_error(err));
+    }
+  }
+
+  std::string triple() const {
+    check_valid();
+    const char *triple = LLVMOrcLLJITGetTripleString(m_ref);
+    return triple ? std::string(triple) : std::string();
+  }
+
+  std::string data_layout() const {
+    check_valid();
+    const char *dl = LLVMOrcLLJITGetDataLayoutStr(m_ref);
+    return dl ? std::string(dl) : std::string();
+  }
+
+  void add_module(LLVMModuleWrapper &mod) {
+    check_valid();
+    mod.check_valid();
+    if (mod.m_borrowed) {
+      throw LLVMAssertionError("JIT.add_module requires an owning Module");
+    }
+
+    std::string module_name = mod.get_name();
+    LLVMMemoryBufferRef bitcode = LLVMWriteBitcodeToMemoryBuffer(mod.m_ref);
+    if (!bitcode)
+      throw LLVMError("Failed to serialize module for JIT");
+
+    LLVMContextRef jit_ctx = LLVMContextCreate();
+    LLVMModuleRef jit_mod = nullptr;
+    LLVMBool failed = LLVMParseBitcodeInContext2(jit_ctx, bitcode, &jit_mod);
+    LLVMDisposeMemoryBuffer(bitcode);
+    if (failed) {
+      LLVMContextDispose(jit_ctx);
+      throw LLVMError("Failed to parse serialized module for JIT: " +
+                      module_name);
+    }
+
+    const char *jit_triple = LLVMOrcLLJITGetTripleString(m_ref);
+    if (jit_triple && std::string(LLVMGetTarget(jit_mod)).empty())
+      LLVMSetTarget(jit_mod, jit_triple);
+    const char *jit_dl = LLVMOrcLLJITGetDataLayoutStr(m_ref);
+    if (jit_dl && std::string(LLVMGetDataLayoutStr(jit_mod)).empty())
+      LLVMSetDataLayout(jit_mod, jit_dl);
+
+    LLVMOrcThreadSafeContextRef tsc =
+        LLVMOrcCreateNewThreadSafeContextFromLLVMContext(jit_ctx);
+    if (!tsc) {
+      LLVMDisposeModule(jit_mod);
+      // jit_ctx ownership was not transferred if creation failed.
+      LLVMContextDispose(jit_ctx);
+      throw LLVMError("Failed to create ORC thread-safe context for JIT");
+    }
+
+    LLVMOrcThreadSafeModuleRef tsm =
+        LLVMOrcCreateNewThreadSafeModule(jit_mod, tsc);
+    if (!tsm) {
+      LLVMDisposeModule(jit_mod);
+      LLVMOrcDisposeThreadSafeContext(tsc);
+      throw LLVMError("Failed to create ORC thread-safe module for JIT");
+    }
+
+    LLVMErrorRef err = LLVMOrcLLJITAddLLVMIRModule(
+        m_ref, LLVMOrcLLJITGetMainJITDylib(m_ref), tsm);
+    LLVMOrcDisposeThreadSafeContext(tsc);
+    if (err) {
+      throw LLVMError("Failed to add module to JIT: " +
+                      consume_llvm_error(err));
+    }
+
+    mod.dispose();
+  }
+
+  uint64_t lookup(const std::string &name) const {
+    check_valid();
+    if (name.empty())
+      throw LLVMAssertionError("JIT.lookup requires a non-empty symbol name");
+    LLVMOrcExecutorAddress address = 0;
+    LLVMErrorRef err = LLVMOrcLLJITLookup(m_ref, &address, name.c_str());
+    if (err) {
+      throw LLVMError("Failed to look up JIT symbol '" + name + "': " +
+                      consume_llvm_error(err));
+    }
+    return static_cast<uint64_t>(address);
+  }
+
+  LLVMCtypesFunctionWrapper *ctypes_function(const std::string &name,
+                                             nb::object restype,
+                                             nb::object argtypes) const {
+    uint64_t address = lookup(name);
+
+    nb::object ctypes = nb::module_::import_("ctypes");
+    nb::object cfunctype = ctypes.attr("CFUNCTYPE");
+
+    PyObject *argtypes_tuple = PySequence_Tuple(argtypes.ptr());
+    if (!argtypes_tuple)
+      throw nb::python_error();
+
+    Py_ssize_t arg_count = PyTuple_Size(argtypes_tuple);
+    if (arg_count < 0) {
+      Py_DECREF(argtypes_tuple);
+      throw nb::python_error();
+    }
+    PyObject *signature_args = PyTuple_New(arg_count + 1);
+    if (!signature_args) {
+      Py_DECREF(argtypes_tuple);
+      throw nb::python_error();
+    }
+
+    Py_INCREF(restype.ptr());
+    PyTuple_SetItem(signature_args, 0, restype.ptr());
+    for (Py_ssize_t i = 0; i < arg_count; ++i) {
+      PyObject *item = PyTuple_GetItem(argtypes_tuple, i);
+      if (!item) {
+        Py_DECREF(argtypes_tuple);
+        Py_DECREF(signature_args);
+        throw nb::python_error();
+      }
+      Py_INCREF(item);
+      PyTuple_SetItem(signature_args, i + 1, item);
+    }
+    Py_DECREF(argtypes_tuple);
+
+    PyObject *callable_type = PyObject_CallObject(cfunctype.ptr(), signature_args);
+    Py_DECREF(signature_args);
+    if (!callable_type)
+      throw nb::python_error();
+
+    PyObject *address_obj = PyLong_FromUnsignedLongLong(address);
+    if (!address_obj) {
+      Py_DECREF(callable_type);
+      throw nb::python_error();
+    }
+    PyObject *call_args = PyTuple_Pack(1, address_obj);
+    Py_DECREF(address_obj);
+    if (!call_args) {
+      Py_DECREF(callable_type);
+      throw nb::python_error();
+    }
+
+    PyObject *callable = PyObject_CallObject(callable_type, call_args);
+    Py_DECREF(callable_type);
+    Py_DECREF(call_args);
+    if (!callable)
+      throw nb::python_error();
+
+    return new LLVMCtypesFunctionWrapper(nb::steal<nb::object>(callable),
+                                         m_token);
+  }
+
+  void add_symbol(const std::string &name, nb::object target) {
+    check_valid();
+    if (name.empty())
+      throw LLVMAssertionError("JIT.add_symbol requires a non-empty symbol name");
+
+    bool should_pin = !PyLong_Check(target.ptr());
+    uint64_t address = python_address_from_object(target);
+    if (address == 0)
+      throw LLVMAssertionError("JIT.add_symbol requires a non-null address");
+
+    LLVMOrcSymbolStringPoolEntryRef symbol =
+        LLVMOrcLLJITMangleAndIntern(m_ref, name.c_str());
+    if (!symbol)
+      throw LLVMError("Failed to intern JIT symbol '" + name + "'");
+    LLVMOrcCSymbolMapPair pair;
+    pair.Name = symbol;
+    pair.Sym.Address = static_cast<LLVMOrcExecutorAddress>(address);
+    pair.Sym.Flags.GenericFlags = LLVMJITSymbolGenericFlagsExported |
+                                  LLVMJITSymbolGenericFlagsCallable;
+    pair.Sym.Flags.TargetFlags = 0;
+
+    LLVMOrcMaterializationUnitRef mu = LLVMOrcAbsoluteSymbols(&pair, 1);
+    if (!mu) {
+      LLVMOrcReleaseSymbolStringPoolEntry(symbol);
+      throw LLVMError("Failed to create absolute symbol for JIT symbol '" +
+                      name + "'");
+    }
+
+    LLVMErrorRef err = LLVMOrcJITDylibDefine(LLVMOrcLLJITGetMainJITDylib(m_ref),
+                                             mu);
+    if (err) {
+      LLVMOrcDisposeMaterializationUnit(mu);
+      throw LLVMError("Failed to add JIT symbol '" + name + "': " +
+                      consume_llvm_error(err));
+    }
+
+    if (should_pin)
+      m_pinned_symbols.push_back(target);
+  }
+};
 
 // =============================================================================
 // Memory Buffer Wrapper
@@ -13644,6 +14113,33 @@ For indirect calls through raw pointers, use the explicit-type overload.
 Prefer the 2-arg form call(func, args) for direct calls.
 
 <sub>C API: LLVMBuildCall2</sub>)")
+      .def("intrinsic",
+           [](LLVMBuilderWrapper &self, const std::string &name,
+              const Iterable<LLVMValueWrapper> &args,
+              const std::string &name_hint) {
+             return self.intrinsic(name, args, Iterable<LLVMTypeWrapper>(),
+                                   name_hint);
+           },
+           "name"_a, "args"_a, nb::kw_only(), "name_hint"_a = "",
+           R"(Build a call to a non-overloaded LLVM intrinsic by intrinsic name.
+
+Args:
+    name: Intrinsic name, such as "llvm.trap".
+    args: Call operands.
+    name_hint: Optional result name for non-void intrinsics.
+
+<sub>C API: LLVMLookupIntrinsicID, LLVMGetIntrinsicDeclaration, LLVMBuildCall2</sub>)")
+      .def("intrinsic", &LLVMBuilderWrapper::intrinsic, "name"_a, "args"_a,
+           nb::kw_only(), "overloaded_types"_a, "name_hint"_a = "",
+           R"(Build a call to an overloaded LLVM intrinsic by intrinsic name.
+
+Args:
+    name: Intrinsic name, such as "llvm.sqrt" or "llvm.memcpy".
+    args: Call operands.
+    overloaded_types: LLVM overload-disambiguation types for overloaded intrinsics.
+    name_hint: Optional result name for non-void intrinsics.
+
+<sub>C API: LLVMLookupIntrinsicID, LLVMGetIntrinsicDeclaration, LLVMBuildCall2</sub>)")
       .def("unreachable", &LLVMBuilderWrapper::unreachable,
            R"(Build unreachable.
 
@@ -14362,6 +14858,43 @@ Args:
     options: Optional PassBuilderOptions
 
 <sub>C API: LLVMRunPasses</sub>)doc")
+      .def("optimize", &LLVMModuleWrapper::optimize, "pipeline"_a,
+           "target_machine"_a.none() = nullptr,
+           "options"_a.none() = nullptr,
+           R"doc(Optimize this module with an LLVM PassBuilder pipeline string.
+
+Args:
+    pipeline: Pass pipeline string (e.g., 'default<O2>').
+    target_machine: Optional target machine for target-specific passes.
+    options: Optional PassBuilderOptions.
+
+This mutates the module in place.
+
+<sub>C API: LLVMRunPasses</sub>)doc")
+      .def("emit_object", &LLVMModuleWrapper::emit_object,
+           "target_machine"_a.none() = nullptr,
+           R"doc(Emit this module to an object file.
+
+Args:
+    target_machine: Optional target machine. If omitted, a host target machine
+        is created internally.
+
+Returns:
+    bytes: The generated object file.
+
+<sub>C API: LLVMTargetMachineEmitToMemoryBuffer</sub>)doc")
+      .def("emit_assembly", &LLVMModuleWrapper::emit_assembly,
+           "target_machine"_a.none() = nullptr,
+           R"doc(Emit this module to assembly.
+
+Args:
+    target_machine: Optional target machine. If omitted, a host target machine
+        is created internally.
+
+Returns:
+    bytes: The generated assembly.
+
+<sub>C API: LLVMTargetMachineEmitToMemoryBuffer</sub>)doc")
       .def("create_dibuilder", &LLVMModuleWrapper::create_dibuilder,
            nb::rv_policy::take_ownership,
            R"(Create a debug info builder for this module.
@@ -15120,7 +15653,18 @@ Returns:
                   nb::rv_policy::take_ownership,
                   R"(Create a target machine for code generation.
 
-<sub>C API: LLVMCreateTargetMachine</sub>)");
+<sub>C API: LLVMCreateTargetMachine</sub>)")
+      .def_static("host", &create_host_target_machine, "cpu"_a = "",
+                  "features"_a = "",
+                  "opt_level"_a = LLVMCodeGenLevelDefault,
+                  "reloc_mode"_a = LLVMRelocDefault,
+                  "code_model"_a = LLVMCodeModelDefault,
+                  nb::rv_policy::take_ownership,
+                  R"(Create a target machine for the host target.
+
+This initializes the native target and native ASM printer internally.
+
+<sub>C API: LLVMInitializeNativeTarget, LLVMCreateTargetMachine</sub>)");
 
   // NOTE: target machine creation moved to TargetMachine.create().
 
@@ -15199,6 +15743,78 @@ Returns:
 <sub>C API: LLVMPassBuilderOptionsSetInlinerThreshold</sub>)");
 
   // NOTE: pass execution moved to Module.run_passes().
+
+  // ==========================================================================
+  // JIT Wrapper
+  // ==========================================================================
+
+  nb::class_<LLVMCtypesFunctionWrapper>(m, "JITCtypesFunction",
+                                        R"(Callable ctypes wrapper for a JIT symbol.)")
+      .def("__call__", &LLVMCtypesFunctionWrapper::call,
+           R"(Call the underlying ctypes function.
+
+Valid while the owning JIT has not been disposed.)")
+      .def_prop_ro("ctypes_callable", &LLVMCtypesFunctionWrapper::ctypes_callable,
+                   R"(The underlying ctypes callable.)");
+
+  nb::class_<LLVMJITWrapper>(m, "JIT", R"(In-process LLVM JIT using LLVM-C ORC LLJIT.)")
+      .def_static("host", &LLVMJITWrapper::host, nb::rv_policy::take_ownership,
+                  R"(Create a host JIT.
+
+Use with a context manager:
+    with llvm.JIT.host() as jit:
+        ...
+
+<sub>C API: LLVMOrcCreateLLJIT</sub>)")
+      .def("__enter__", &LLVMJITWrapper::enter, nb::rv_policy::reference_internal,
+           R"(Enter the JIT context manager.)")
+      .def("__exit__", &LLVMJITWrapper::exit, "exc_type"_a.none(),
+           "exc_value"_a.none(), "traceback"_a.none(),
+           R"(Dispose the JIT when leaving the context manager.)")
+      .def("dispose", &LLVMJITWrapper::dispose, R"(Dispose the JIT.)")
+      .def_prop_ro("triple", &LLVMJITWrapper::triple,
+                   R"(Get this JIT's target triple.
+
+<sub>C API: LLVMOrcLLJITGetTripleString</sub>)")
+      .def_prop_ro("data_layout", &LLVMJITWrapper::data_layout,
+                   R"(Get this JIT's data layout string.
+
+<sub>C API: LLVMOrcLLJITGetDataLayoutStr</sub>)")
+      .def("add_module", &LLVMJITWrapper::add_module, "mod"_a,
+           R"(Add a module to the JIT.
+
+This transfers ownership from the user's perspective: the Python Module wrapper
+is invalid after the call succeeds.
+
+<sub>C API: LLVMOrcLLJITAddLLVMIRModule</sub>)")
+      .def("lookup", &LLVMJITWrapper::lookup, "name"_a,
+           R"(Look up a JIT symbol address by name.
+
+Returns:
+    int: The symbol address.
+
+<sub>C API: LLVMOrcLLJITLookup</sub>)")
+      .def("ctypes_function", &LLVMJITWrapper::ctypes_function, "name"_a,
+           "restype"_a, "argtypes"_a, nb::rv_policy::take_ownership,
+           nb::keep_alive<0, 1>(),
+           R"(Return a callable ctypes wrapper for a JIT symbol.
+
+Args:
+    name: Symbol name to look up.
+    restype: ctypes return type.
+    argtypes: Iterable of ctypes argument types.
+
+The returned wrapper keeps the JIT object alive and checks that the JIT has
+not been disposed before calling.
+
+<sub>C API: LLVMOrcLLJITLookup</sub>)")
+      .def("add_symbol", &LLVMJITWrapper::add_symbol, "name"_a, "target"_a,
+           R"(Add an absolute symbol to the JIT.
+
+`target` may be a non-negative integer address or a ctypes object. ctypes
+objects are pinned by the JIT to keep callbacks alive.
+
+<sub>C API: LLVMOrcAbsoluteSymbols, LLVMOrcJITDylibDefine</sub>)");
 
   // Memory buffer is internal only - not exposed to Python
 

@@ -57,6 +57,10 @@ uv run python examples/transform_replace_add.py
 
 More examples worth browsing:
 
+- [`examples/intrinsic_memcpy.py`](examples/intrinsic_memcpy.py) - call an LLVM intrinsic by name with `Builder.intrinsic(...)`
+- [`examples/optimize_module.py`](examples/optimize_module.py) - optimize a module with a PassBuilder pipeline string
+- [`examples/emit_object_assembly.py`](examples/emit_object_assembly.py) - emit host object code and assembly from a module
+- [`examples/jit_add.py`](examples/jit_add.py) - JIT-compile IR, call it through ctypes, and register a Python callback
 - [`examples/transform_replace_add.py`](examples/transform_replace_add.py) - simple IR transformation using operands, RAUW, and instruction deletion
 - [`examples/bc-stats.py`](examples/bc-stats.py) - print per-function instruction histograms from LLVM IR
 - [`examples/bc-graphviz.py`](examples/bc-graphviz.py) - emit a GraphViz-style control-flow graph from LLVM IR
@@ -67,7 +71,8 @@ More examples worth browsing:
 - Pythonic wrappers for contexts, modules, types, values, functions, basic blocks, builders, metadata, debug info, object files, targets, target machines, and pass builder options
 - IR construction, traversal, and transformation helpers: constants, globals, PHI/control flow/memory/cast/cmp instructions, operands, predecessors, RAUW, split blocks, move/clone/erase instructions
 - IR and bitcode parsing/writing, lazy bitcode modules, module cloning/linking, module flags, diagnostics, attributes, COMDATs, calling conventions, linkage/visibility/storage controls
-- Target initialization/lookup, data layouts, object/assembly emission through target machines, and PassBuilder pipeline execution
+- Target initialization/lookup, data layouts, `Module.emit_object()`, `Module.emit_assembly()`, target-machine emission, and PassBuilder pipeline execution via `Module.optimize()` / `Module.run_passes()`
+- Generic intrinsic calls with `Builder.intrinsic(...)` and in-process JIT execution through the LLVM-C ORC LLJIT API
 - Lifetime/validity guards that turn many use-after-free, disposed-object, null-reference, and wrong-kind mistakes into Python exceptions instead of hard crashes
 - Auto-generated typed `.pyi` stubs for IDEs/type checkers
 - Golden-master tests, Python regression scripts, examples, and vendored `llvm-c-test` lit tests, including CI coverage against installed wheels
@@ -84,7 +89,7 @@ For development documentation, see `devdocs/README.md`.
 ## Known limitations
 
 - The API is not stable yet; method names and ownership rules may still change.
-- Scope follows the LLVM-C API, not the full LLVM C++ API. A high-level JIT/ExecutionEngine API is not currently exposed.
+- Scope follows the LLVM-C API, not the full LLVM C++ API. JIT support is intentionally limited to what is exposed cleanly through LLVM-C ORC LLJIT.
 - Docs are currently the README, examples, `devdocs/`, and the generated `.pyi` stub; there is no hosted API reference yet.
 - Prebuilt wheels currently target CPython 3.12+ stable ABI on Linux x86_64/aarch64, macOS arm64, and Windows x86_64. Other platforms require a source build.
 

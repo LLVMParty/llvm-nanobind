@@ -38,6 +38,34 @@ rg "replace_all_uses_with|erase_from_parent|split_basic_block|const_string" .ven
   - `devdocs/lit-tests.md`
   - `devdocs/DEBUGGING.md`
 
+## High-Level UX Helpers
+
+These APIs wrap common workflows that previously required LLVM-C-style boilerplate:
+
+```python
+# Intrinsics by name.
+builder.intrinsic("llvm.sqrt", [x], overloaded_types=[x.type])
+
+# Explicit PassBuilder pipeline optimization.
+mod.optimize("default<O2>", target_machine=tm)
+
+# Direct object/assembly emission. Optimize explicitly first when desired.
+obj = mod.emit_object(target_machine=tm)
+asm = mod.emit_assembly(target_machine=tm)
+
+# Host target machine convenience.
+tm = llvm.TargetMachine.host()
+
+# LLVM-C ORC LLJIT.
+with llvm.JIT.host() as jit:
+    jit.add_module(mod)  # invalidates mod on success
+    addr = jit.lookup("compiled_function")
+```
+
+`builder.intrinsic(..., overloaded_types=[...])` uses LLVM's intrinsic
+overload-disambiguation type list. This list selects the intrinsic declaration;
+it is not the same as the call operand list.
+
 ## Value API Validity Matrix
 
 This section documents when `llvm.Value` accessors are valid to call. Invalid

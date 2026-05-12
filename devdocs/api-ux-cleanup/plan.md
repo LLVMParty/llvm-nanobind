@@ -2,7 +2,7 @@
 
 ## Goal
 
-Make the remaining high-value workflows clean from a Python user's perspective while keeping useful LLVM controls available. This plan covers three areas only:
+Make the remaining high-value workflows clean from a Python user's perspective while keeping useful LLVM controls available. This plan covers four areas only:
 
 1. generic intrinsic calls,
 2. explicit module optimization by pass pipeline,
