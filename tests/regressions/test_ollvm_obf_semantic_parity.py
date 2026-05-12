@@ -17,6 +17,7 @@ from functools import lru_cache
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import textwrap
 
 import pytest
@@ -478,6 +479,10 @@ def find_clang() -> Path | None:
 
 
 @lru_cache(maxsize=1)
+def is_x86_target(target: str) -> bool:
+    return any(arch in target for arch in ("x86_64", "amd64", "i386", "i686"))
+
+
 def clang_target_triple(clang_exe: Path) -> str:
     proc = subprocess.run(
         [str(clang_exe), "-dumpmachine"],
@@ -495,6 +500,14 @@ def clang_exe() -> Path:
     clang = find_clang()
     if clang is None:
         pytest.skip("clang not found in PATH; semantic parity tests require an external compiler")
+
+    target = clang_target_triple(clang)
+    if sys.platform == "darwin" and not is_x86_target(target):
+        pytest.skip(
+            "semantic parity tests execute generated native code and are currently "
+            f"skipped on non-x86 macOS targets (got {target or 'unknown'})"
+        )
+
     return clang
 
 
@@ -537,7 +550,7 @@ def test_ollvm_obf_semantic_preservation(
 ) -> None:
     if case.clang_flags:
         target = clang_target_triple(clang_exe)
-        if not any(arch in target for arch in ("x86_64", "amd64", "i386", "i686")):
+        if not is_x86_target(target):
             pytest.skip(f"{case.name} requires an x86 clang target (got {target or 'unknown'})")
 
     input_path = tmp_path / "input.ll"

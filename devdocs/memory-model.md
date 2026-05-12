@@ -81,7 +81,7 @@ All lifetime-related errors:
 
 ```python
 with llvm.create_context() as ctx:
-    val = llvm.const_int(ctx.int32_type(), 42)
+    val = ctx.types.i32.constant(42)
 
 # Context is destroyed
 val.is_constant  # raises LLVMMemoryError - PROGRAM TERMINATES
@@ -213,8 +213,7 @@ with llvm.create_context() as ctx:
         func = mod.add_function("foo", func_type)
         entry = func.append_basic_block("entry")
         
-        with ctx.create_builder() as builder:
-            builder.position_at_end(entry)
+        with entry.create_builder() as builder:
             inst = builder.add(a, b, name="sum")
         
         # Save references
@@ -261,17 +260,16 @@ with llvm.create_context() as ctx:
         entry = func.append_basic_block("entry")
         
         # Builder can outlive or be shorter-lived than blocks
-        with ctx.create_builder() as builder:
-            builder.position_at_end(entry)
+        with entry.create_builder() as builder:
             inst = builder.add(a, b)
         # Builder disposed, but entry and inst still valid
         
         inst.name  # Works fine
         
-        # Can create new builder later
-        with ctx.create_builder() as builder2:
-            builder2.position_before(inst)
-            # Insert more instructions
+        # Can create new builder later, positioned before an instruction
+        with inst.create_builder() as builder2:
+            # Insert more instructions before inst
+            ...
 ```
 
 ### Type Mismatches Raise AssertionError
@@ -280,8 +278,8 @@ with llvm.create_context() as ctx:
 import llvm
 
 with llvm.create_context() as ctx:
-    int_ty = ctx.int32_type()
-    float_ty = ctx.float_type()
+    int_ty = ctx.types.i32
+    float_ty = ctx.types.f32
     
     # Correct usage
     width = int_ty.int_width  # Works: 32
@@ -357,8 +355,7 @@ with llvm.create_context() as ctx:
         bb1 = func.append_basic_block("bb1")
         bb2 = func.append_basic_block("bb2")
         
-        with ctx.create_builder() as builder:
-            builder.position_at_end(bb1)
+        with bb1.create_builder() as builder:
             inst1 = builder.add(a, b, name="sum")
             inst2 = builder.mul(inst1, c, name="prod")
         
@@ -383,8 +380,7 @@ with llvm.create_context() as ctx:
         entry = func.append_basic_block("entry")
         other = func.append_basic_block("other")
         
-        with ctx.create_builder() as builder:
-            builder.position_at_end(entry)
+        with entry.create_builder() as builder:
             add = builder.add(a, b, name="sum")
             mul = builder.mul(add, c, name="prod")
             builder.ret(mul)
@@ -551,7 +547,7 @@ with ctx.parse_bitcode_from_bytes(bitcode) as src:
     with ctx.create_module(src.name) as dst:
         # TypeCloner needs the destination module's context
         dst_ctx = llvm.get_module_context(dst)
-        int_ty = dst_ctx.int32_type()  # Create type in correct context
+        int_ty = dst_ctx.types.i32  # Create type in correct context
 ```
 
 Previously, `get_module_context()` was broken - it always returned the global context instead of the module's actual context. This caused problems with context-specific features like custom syncscopes (e.g., `syncscope("agent")`).

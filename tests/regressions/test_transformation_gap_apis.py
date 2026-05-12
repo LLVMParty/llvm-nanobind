@@ -113,3 +113,9 @@ def test_builder_vector_splat() -> None:
             text = mod.to_string()
             assert "shufflevector" in text
             assert str(vec4) in text
+
+
+if __name__ == "__main__":
+    import pytest
+
+    raise SystemExit(pytest.main([__file__]))

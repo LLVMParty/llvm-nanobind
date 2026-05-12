@@ -1,6 +1,6 @@
 # Porting C++ LLVM Code to Python Bindings
 
-This guide documents the experience of porting the LLVM Obfuscator passes from C++ to Python. It covers API differences, missing functionality, confusing patterns, and workarounds discovered during the port.
+This guide documents the experience of porting the LLVM Obfuscator passes from C++ to Python. It covers current API differences, transformation patterns, and remaining gaps discovered during the port.
 
 ## Table of Contents
 
@@ -14,7 +14,7 @@ This guide documents the experience of porting the LLVM Obfuscator passes from C
 8. [Global Variables](#global-variables)
 9. [Constants](#constants)
 10. [Memory Management](#memory-management)
-11. [Missing APIs](#missing-apis)
+11. [Remaining API Differences](#remaining-api-differences)
 12. [API Naming Differences](#api-naming-differences)
 13. [Common Pitfalls](#common-pitfalls)
 
@@ -79,21 +79,16 @@ Type* ptr = builder.getPtrTy();
 
 **Python:**
 ```python
-i32 = ctx.types.i32      # Property, not method
-i64 = ctx.types.i64      # Property, not method  
-ptr = ctx.types.ptr()    # METHOD - must call!
+i32 = ctx.types.i32
+i64 = ctx.types.i64
+ptr = ctx.types.ptr
 ```
 
-**Critical Difference:** Most types are properties (`i32`, `i64`, `i8`, `f32`, etc.) but `ptr()` is a METHOD that must be called:
+Most common scalar types are properties on `ctx.types`. Composite types are factory methods:
 
 ```python
-# WRONG
-ptr_ty = ctx.types.ptr   # This is a bound method object!
-array_ty = ctx.types.array(ptr_ty, 2)  # TypeError!
-
-# CORRECT
-ptr_ty = ctx.types.ptr()  # Call the method
-array_ty = ctx.types.array(ptr_ty, 2)  # Works
+array_ty = ctx.types.array(ptr, 2)
+fn_ty = ctx.types.function(i32, [ptr])
 ```
 
 ### Creating Array Types
@@ -170,21 +165,16 @@ unsigned numOps = inst->getNumOperands();
 
 **Python:**
 ```python
-op0 = inst.get_operand(0)  # Method, not property
+op0 = inst.get_operand(0)
 op1 = inst.get_operand(1)
-num_ops = inst.num_operands  # Property
+num_ops = inst.num_operands
+
+# Or iterate over a snapshot of operands:
+for op in inst.operands:
+    ...
 ```
 
-**Note:** There is NO `.operands` iterator property. You must use index-based access:
-
-```python
-# WRONG
-for op in inst.operands:  # AttributeError!
-
-# CORRECT
-for i in range(inst.num_operands):
-    op = inst.get_operand(i)
-```
+Use `get_operand()`/`set_operand()` when you need indexed mutation. Use `inst.operands` for simple iteration.
 
 ### Setting Operands
 
@@ -207,7 +197,8 @@ if (inst->isTerminator()) { ... }
 
 **Python:**
 ```python
-if inst.is_terminator_inst:  # Note the suffix
+if inst.is_terminator:
+    ...
 ```
 
 Other properties:
@@ -223,7 +214,8 @@ BasicBlock* bb = inst->getParent();
 
 **Python:**
 ```python
-bb = inst.block  # NOT .parent!
+bb = inst.block   # explicit instruction/basic-block relationship
+bb = inst.parent  # alias
 ```
 
 ---
@@ -294,9 +286,17 @@ bb.move_before(other_bb)
 
 ### Splitting Blocks
 
-**MISSING API:** There is no `splitBasicBlock()` or `splitBefore()` method in the Python bindings. You cannot split a basic block at an instruction.
+**C++:**
+```cpp
+BasicBlock* tail = bb->splitBasicBlock(inst, "tail");
+```
 
-**Workaround:** Create a new block and manually move instructions (complex, not fully supported).
+**Python:**
+```python
+tail = bb.split_basic_block(inst, "tail")
+# or split before the instruction instead of after it
+tail = bb.split_basic_block_before(inst, "tail")
+```
 
 ---
 
@@ -616,18 +616,11 @@ Constant* str = ConstantDataArray::getString(ctx, "hello", true);
 **Python:**
 ```python
 str_const = llvm.const_string(ctx, "hello", dont_null_terminate=False)
+raw_const = llvm.const_string(ctx, b"\xff\x80B", dont_null_terminate=True)
+assert raw_const.type.array_length == 3
 ```
 
-**CRITICAL BUG:** String constants are encoded as UTF-8 internally. If your string contains bytes > 127, the resulting array will be larger than expected:
-
-```python
-# String with high bytes
-data = "Hello\xff\x80"  # 7 characters
-const = llvm.const_string(ctx, data, dont_null_terminate=True)
-# const.type might be [10 x i8] instead of [7 x i8]!
-```
-
-This makes string encryption impossible when encrypted bytes exceed ASCII range.
+Use `bytes` when you need byte-preserving constants. The `str` overload intentionally uses UTF-8 text encoding.
 
 ### Array Constants
 
@@ -640,10 +633,10 @@ Constant* dataArr = ConstantDataArray::get(ctx, arrayRef);
 **Python:**
 ```python
 arr = llvm.const_array(elem_ty, [elem1, elem2])
-data_arr = llvm.const_data_array(elem_ty, string_data)
+data_arr = llvm.const_data_array(ctx.types.i8, b"\xff\x80B")
+# Equivalent type helper overload:
+data_arr = ctx.types.i8.const_data_array(b"\xff\x80B")
 ```
-
-**Same UTF-8 bug applies to `const_data_array`.**
 
 ### Struct Constants
 
@@ -668,20 +661,12 @@ s = llvm.const_named_struct(struct_ty, [field1, field2])
 oldValue->replaceAllUsesWith(newValue);
 ```
 
-**Python:** There is NO `replace_all_uses_with()` method on `Value`. You must implement it manually:
-
+**Python:**
 ```python
-def replace_all_uses_with(old_value, new_value):
-    """Replace all uses of old_value with new_value."""
-    uses_to_replace = []
-    for use in old_value.uses:
-        uses_to_replace.append(use.user)
-    
-    for user in uses_to_replace:
-        for i in range(user.num_operands):
-            if user.get_operand(i) == old_value:
-                user.set_operand(i, new_value)
+old_value.replace_all_uses_with(new_value)
 ```
+
+The replacement must be from the same context and have the exact same LLVM type.
 
 ### Deleting Instructions
 
@@ -690,17 +675,12 @@ def replace_all_uses_with(old_value, new_value):
 inst->eraseFromParent();
 ```
 
-**Python:** Two-step process required:
-
+**Python:**
 ```python
-inst.remove_from_parent()  # Unlink from block
-inst.delete_instruction()  # Actually delete
+inst.erase_from_parent()
 ```
 
-If you call `delete_instruction()` without `remove_from_parent()` first, LLVM will assert:
-```
-Assertion failed: (!getParent() && "Instruction still linked in the program!")
-```
+Low-level `remove_from_parent()` and `delete_instruction()` still exist, but most code should use `erase_from_parent()`.
 
 ### Instruction Uses
 
@@ -720,33 +700,29 @@ for use in inst.uses:
 
 ---
 
-## Missing APIs
+## Remaining API Differences
 
-The following LLVM C++ APIs have no Python equivalent:
+The following are current differences from the LLVM C++ API:
 
 ### Basic Block Operations
-- `BasicBlock::splitBasicBlock()` - Split block at instruction
-- `BasicBlock::splitBasicBlockBefore()` - Split before instruction
+- Split helpers are available as `bb.split_basic_block(...)` and `bb.split_basic_block_before(...)`.
 
 ### Instruction Operations
-- `Instruction::insertBefore()` - Insert instruction before another
-- `Instruction::insertAfter()` - Insert instruction after another
-- `Instruction::moveBefore()` - Move instruction
-- `Instruction::moveAfter()` - Move instruction
-- `Instruction::clone()` - Clone instruction
+- Instruction movement is available as `inst.move_before(...)` and `inst.move_after(...)`.
+- Instruction cloning is available as `inst.instruction_clone()`.
+- Direct `insertBefore()` / `insertAfter()`-style detached insertion APIs are still limited.
 
 ### Value Operations
-- `Value::replaceAllUsesWith()` - Replace all uses (must implement manually)
+- `Value::replaceAllUsesWith()` is available as `value.replace_all_uses_with(...)`.
 
 ### Module Operations
-- `Module::materializeAll()` - Materialize lazy module
+- `Module::materializeAll()` is not currently exposed.
 
 ### Type Checking
-- `isa<T>()`, `dyn_cast<T>()` - No type casting, use `.opcode` or `.is_*` properties
+- `isa<T>()` / `dyn_cast<T>()` are not exposed; use `.opcode` or `.is_*` properties.
 
 ### Function Operations
-- `Function::viewCFG()` - View control flow graph
-- `Function::viewCFGOnly()` - View CFG without instructions
+- `Function::viewCFG()` and `Function::viewCFGOnly()` are not exposed.
 
 ---
 
@@ -771,9 +747,9 @@ The following LLVM C++ APIs have no Python equivalent:
 | `getTerminator()` | `.terminator` |
 | `getNumOperands()` | `.num_operands` |
 | `getOperand(i)` | `.get_operand(i)` |
-| `isTerminator()` | `.is_terminator_inst` |
+| `isTerminator()` | `.is_terminator` |
 | `getIntegerBitWidth()` | `.int_width` |
-| `eraseFromParent()` | `.remove_from_parent()` + `.delete_instruction()` |
+| `eraseFromParent()` | `.erase_from_parent()` |
 
 ---
 
@@ -791,47 +767,39 @@ with ctx.parse_ir(ir_text) as mod:
     mod.functions  # Works
 ```
 
-### 2. Forgetting to Call `ptr()`
+### 2. Pointer Types Are Properties
 
 ```python
-# WRONG
-ptr_ty = ctx.types.ptr  # Bound method!
-
-# CORRECT  
-ptr_ty = ctx.types.ptr()  # Type object
+ptr_ty = ctx.types.ptr  # default opaque pointer type
+ptr_as1 = ctx.types.addrspace_ptr(1)
 ```
 
-### 3. Using Wrong Property for Parent Block
+### 3. Parent Block Alias
 
 ```python
-# WRONG
-bb = inst.parent  # AttributeError
-
-# CORRECT
-bb = inst.block
+bb = inst.block   # explicit instruction/basic-block relationship
+bb = inst.parent  # alias, if you prefer C++ terminology
 ```
 
-### 4. Trying to Iterate Operands
+### 4. Operand Iteration vs Indexed Mutation
 
 ```python
-# WRONG
-for op in inst.operands:  # No such property
+for op in inst.operands:
+    ...
 
-# CORRECT
+# Use indexes when replacing operands.
 for i in range(inst.num_operands):
-    op = inst.get_operand(i)
+    if inst.get_operand(i) == old:
+        inst.set_operand(i, new)
 ```
 
-### 5. Forgetting Two-Step Deletion
+### 5. Prefer Single-Step Deletion
 
 ```python
-# WRONG - will crash
-inst.delete_instruction()
-
-# CORRECT
-inst.remove_from_parent()
-inst.delete_instruction()
+inst.erase_from_parent()
 ```
+
+Only use `remove_from_parent()` / `delete_instruction()` when you intentionally need the lower-level operations.
 
 ### 6. Integer Overflow in Constants
 
@@ -843,13 +811,13 @@ val = i64_ty.constant(0xFFFFFFFFFFFFFFFF)  # Too large!
 val = i64_ty.constant(-1)  # Same bit pattern, works
 ```
 
-### 7. String Constants with High Bytes
+### 7. Raw Byte Constants
 
 ```python
-# Encrypted string with bytes > 127
-encrypted = bytes([0xFF, 0x80, 0x42]).decode('latin-1')
-const = llvm.const_string(ctx, encrypted, True)
-# Type will be wrong due to UTF-8 encoding!
+# Encrypted bytes or other binary payloads: pass bytes, not str.
+encrypted = bytes([0xFF, 0x80, 0x42])
+const = llvm.const_string(ctx, encrypted, dont_null_terminate=True)
+assert const.type.array_length == len(encrypted)
 ```
 
 ### 8. Exception Types
@@ -873,16 +841,8 @@ Available exceptions: `LLVMError`, `LLVMParseError`, `LLVMAssertionError`, `LLVM
 ```python
 def replace_instruction(old_inst, new_value):
     """Safely replace an instruction with a new value."""
-    # Replace all uses
-    for use in list(old_inst.uses):
-        user = use.user
-        for i in range(user.num_operands):
-            if user.get_operand(i) == old_inst:
-                user.set_operand(i, new_value)
-    
-    # Delete old instruction
-    old_inst.remove_from_parent()
-    old_inst.delete_instruction()
+    old_inst.replace_all_uses_with(new_value)
+    old_inst.erase_from_parent()
 ```
 
 ### Safe Iteration with Modification
@@ -1015,87 +975,35 @@ result = builder.select(condition, true_val, false_val, "name")
 
 5. **Iteration**: Iterating over functions, blocks, and instructions with `for` loops works seamlessly.
 
-### What Needs Improvement
+### Current Status and Remaining Gaps
 
-#### Critical Issues
+The original porting effort exposed several blockers. The current bindings have since added the core transformation conveniences:
 
-1. **UTF-8 String Encoding Bug**: `const_string` and `const_data_array` encode strings as UTF-8, making it impossible to work with raw byte arrays. This is a **blocking issue** for any binary manipulation use case. 
-   
-   **Recommendation**: Add `const_bytes(ctx, bytes_object)` or accept `bytes` type in addition to `str`.
+- raw `bytes` support for `const_string()` / `const_data_array()`
+- `value.replace_all_uses_with(new_value)`
+- `bb.split_basic_block(...)` and `bb.split_basic_block_before(...)`
+- `inst.erase_from_parent()`
+- `ctx.types.ptr` as a property
+- `inst.parent` and `inst.is_terminator` aliases
+- `inst.operands`
+- `inst.move_before(...)` / `inst.move_after(...)`
+- `inst.instruction_clone()`
 
-2. **Missing `replaceAllUsesWith`**: This is a fundamental LLVM operation used constantly in transforms. Its absence forces users to implement it manually (error-prone).
-   
-   **Recommendation**: Add `value.replace_all_uses_with(new_value)`.
+Remaining limitations are more specialized:
 
-3. **Missing `splitBasicBlock`**: Cannot split blocks, which is essential for many transformations.
-   
-   **Recommendation**: Add `bb.split_before(inst)` returning the new block.
+- Direct detached-instruction insertion APIs are still limited.
+- The API is intentionally flat: use `.opcode` / `.is_*` predicates instead of C++ `isa<T>()` / `dyn_cast<T>()`.
+- Context managers remain important: `ctx.parse_ir(...)` and `ctx.create_module(...)` return managers that must be entered with `with`.
 
-4. **Two-Step Instruction Deletion**: Having to call `remove_from_parent()` then `delete_instruction()` is error-prone and non-obvious.
-   
-   **Recommendation**: Add `inst.erase_from_parent()` that does both, matching C++ API.
+### Documentation References
 
-#### API Inconsistencies
-
-1. **`ptr()` vs `i32`**: Why is `ctx.types.ptr()` a method but `ctx.types.i32` a property? This inconsistency causes confusion.
-   
-   **Recommendation**: Make all types properties, or all methods. Consistency matters more than either choice.
-
-2. **`set_constant()` vs `linkage =`**: Global variable `is_constant` uses a setter method, but `linkage` uses property assignment. Pick one pattern.
-   
-   **Recommendation**: Prefer property setters: `gv.is_constant = False`.
-
-3. **`.block` vs `.parent`**: Instructions use `.block` to get parent, but the C++ API and intuition suggest `.parent`.
-   
-   **Recommendation**: Add `.parent` as an alias for `.block`.
-
-4. **`.is_terminator_inst` suffix**: The `_inst` suffix is inconsistent with other boolean properties.
-   
-   **Recommendation**: Use `.is_terminator` instead.
-
-#### Missing Conveniences
-
-1. **No `.operands` iterator**: Having to use index-based access is verbose:
-   ```python
-   # Current (verbose)
-   for i in range(inst.num_operands):
-       op = inst.get_operand(i)
-   
-   # Desired
-   for op in inst.operands:
-   ```
-   
-   **Recommendation**: Add `operands` property returning an iterator.
-
-2. **No instruction movement**: Can't move instructions between blocks or reorder them.
-   
-   **Recommendation**: Add `inst.move_before(other)`, `inst.move_after(other)`.
-
-3. **No instruction cloning**: Can't clone an instruction.
-   
-   **Recommendation**: Add `inst.clone()`.
-
-### Documentation Gaps
-
-1. **No comprehensive API reference**: Had to discover APIs through `dir()` and trial-and-error.
-
-2. **Exception types not documented**: Had to guess that `LLVMError` exists, not `LLVMException`.
-
-3. **Context manager behavior not obvious**: The `ModuleManager` pattern needs explicit documentation.
+- The generated stub `.venv/Lib/site-packages/llvm/__init__.pyi` is the exact API reference for the currently built bindings.
+- `devdocs/api-reference.md` documents validity/precondition rules.
+- `README.md` and `examples/` contain runnable examples.
 
 ### Overall Assessment
 
-**Rating: 7/10 for basic use, 5/10 for advanced transforms**
-
-The bindings are **good for code generation** (creating new IR from scratch) where the Builder API shines. They're **challenging for transforms** (modifying existing IR) due to missing fundamental operations like RAUW, block splitting, and instruction movement.
-
-The API is **Pythonic in places** (properties, context managers, iteration) but **inconsistent in others** (method vs property for similar operations). The UTF-8 string bug is a **critical issue** that blocks an entire category of use cases.
-
-For someone porting C++ LLVM code, expect to:
-- Spend significant time discovering API names through trial-and-error
-- Implement workarounds for missing functionality
-- Hit crashes that require debugging LLVM assertions
-- Accept that some transformations simply aren't possible
+The bindings are suitable for code generation and many transformation tasks. When porting C++ LLVM code, expect to translate C++ class-specific APIs into the binding's flat wrapper model, but fundamental SSA and basic-block operations are now available.
 
 ---
 

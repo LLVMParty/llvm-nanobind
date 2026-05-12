@@ -132,7 +132,7 @@ BINDING_API = [
     {
         "question": "How do you get the opaque pointer type for address space 0 in the bindings?",
         "options": [
-            "ctx.types.ptr()",
+            "ctx.types.pointer",
             "ctx.types.ptr",
             "ctx.types.pointer(0)",
             "ctx.types.addrspace_ptr(0)",
@@ -150,11 +150,10 @@ BINDING_API = [
             "Call inst.remove_from_parent() then inst.delete_instruction()",
             "Set inst to None",
         ],
-        "correct": 3,
-        "explanation": "The two-step process is error-prone! If you call delete_instruction() "
-        "while the instruction is still in a block, LLVM will assert/crash. "
-        "The plan proposes adding erase_from_parent() that does both atomically, "
-        "matching the C++ API.",
+        "correct": 2,
+        "explanation": "Use inst.erase_from_parent(), which matches the common C++ eraseFromParent() pattern. "
+        "Lower-level remove_from_parent() and delete_instruction() still exist, "
+        "but most code should not need the two-step sequence.",
     },
     {
         "question": "What does replace_all_uses_with() do?",
@@ -166,9 +165,8 @@ BINDING_API = [
         ],
         "correct": 2,
         "explanation": "RAUW is fundamental to SSA-based transformations. When you create a new "
-        "value that should replace an old one, you use RAUW to update every "
-        "instruction that uses the old value. This is NOT currently bound - "
-        "the passes implement it manually, which is error-prone and slow.",
+        "value that should replace an old one, you use replace_all_uses_with() "
+        "to update every instruction that uses the old value.",
     },
     {
         "question": "What happens if you access a Module after exiting its 'with' block?",
@@ -192,10 +190,9 @@ BINDING_API = [
             "for i in range(inst.num_operands): op = inst.get_operand(i)",
             "for op in inst:",
         ],
-        "correct": 3,
-        "explanation": "There's no .operands iterator! This is listed as a missing convenience. "
-        "You must use index-based access. The plan proposes adding an operands "
-        "property that returns an iterator for Pythonic access.",
+        "correct": 1,
+        "explanation": "inst.operands provides Pythonic iteration over an operand snapshot. "
+        "Use index-based get_operand()/set_operand() when you need to replace operands.",
     },
 ]
 
@@ -243,18 +240,16 @@ OBFUSCATION = [
         "we preserve the semantics without relying on control flow.",
     },
     {
-        "question": "The string encryption pass was abandoned because:",
+        "question": "When creating encrypted string data, which input type preserves raw bytes?",
         "options": [
-            "Strings can't be encrypted",
-            "The bindings encode strings as UTF-8, corrupting bytes > 127",
-            "LLVM doesn't support string constants",
-            "It was too slow",
+            "str decoded with latin-1",
+            "bytes passed to const_string() or const_data_array()",
+            "A Python list of characters",
+            "LLVM does not support byte constants",
         ],
         "correct": 2,
-        "explanation": "const_string() and const_data_array() pass strings through UTF-8 encoding. "
-        "Encrypted bytes often exceed 127, which expand to multi-byte UTF-8 "
-        "sequences. The resulting array is larger than expected, breaking the "
-        "decryption logic. This is listed as a critical blocker in the plan.",
+        "explanation": "Use bytes for binary payloads: llvm.const_string(ctx, data, ...) or "
+        "llvm.const_data_array(i8, data). The str overload is for text and follows UTF-8 encoding.",
     },
 ]
 
@@ -263,14 +258,14 @@ CRITIQUE = [
         "question": "Which improvement has the HIGHEST priority according to the plan?",
         "options": [
             "Adding documentation for exceptions",
-            "Making ptr a property instead of method",
+            "Documenting that ptr is a property",
             "Binding LLVMReplaceAllUsesWith",
             "Adding an .operands iterator",
         ],
         "correct": 3,
         "explanation": "The plan categorizes issues by priority. Priority 1 (Critical Blockers) "
         "includes RAUW, erase_from_parent, split_basic_block, and raw bytes support. "
-        "These block real use cases. API consistency issues (like ptr()) are P2, "
+        "These block real use cases. API consistency issues were P2, "
         "conveniences are P3, documentation is P4.",
     },
     {

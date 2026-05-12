@@ -32,8 +32,8 @@ i8 = ctx.types.i8      # byte
 i32 = ctx.types.i32    # int
 i64 = ctx.types.i64    # long
 
-# Pointer - NOTE: must call!
-ptr = ctx.types.ptr()  # NOT ctx.types.ptr
+# Pointer
+ptr = ctx.types.ptr
 
 # Composite types
 arr = ctx.types.array(elem_ty, count)
@@ -81,24 +81,24 @@ bb.move_after(other_bb)
 ```python
 # Properties
 inst.opcode == llvm.Opcode.Add
-inst.is_terminator_inst
+inst.is_terminator
 inst.name
 inst.type
-bb = inst.block  # NOT .parent
+bb = inst.block   # explicit parent block
+bb = inst.parent  # alias
 
-# Operands (NO .operands iterator!)
-for i in range(inst.num_operands):
-    op = inst.get_operand(i)
-inst.set_operand(i, new_val)
+# Operands
+for op in inst.operands:
+    ...
+inst.set_operand(i, new_val)  # indexed mutation
 
 # Uses
 for use in inst.uses:
     user = use.user
     # user is an instruction that uses inst
 
-# Deletion (TWO steps!)
-inst.remove_from_parent()
-inst.delete_instruction()
+# Deletion
+inst.erase_from_parent()
 ```
 
 ## Builder
@@ -150,8 +150,9 @@ phi.add_incoming(val, from_bb)
 c = i32.constant(42)
 c = i32.constant(-1)  # signed OK
 
-# Strings (CAUTION: UTF-8 encoding!)
+# Strings and raw bytes
 c = llvm.const_string(ctx, "text", dont_null_terminate=False)
+raw = llvm.const_string(ctx, b"\xff\x80B", dont_null_terminate=True)
 
 # Null pointer
 null = llvm.ConstantPointerNull.get(ptr_ty)
@@ -181,7 +182,7 @@ for i in range(phi.num_incoming):
 gv = mod.add_global(ty, "name")
 gv.initializer = const_val
 gv.linkage = llvm.Linkage.Private
-gv.set_constant(True)  # method, not property!
+gv.is_global_constant = True
 
 # Iterate
 for gv in mod.globals:
@@ -193,17 +194,10 @@ for gv in mod.globals:
 
 ## Common Patterns
 
-### Replace All Uses With (MANUAL!)
+### Replace All Uses With
 
 ```python
-def replace_all_uses_with(old_val, new_val):
-    """Replace all uses of old_val with new_val."""
-    uses = list(old_val.uses)  # snapshot
-    for use in uses:
-        user = use.user
-        for i in range(user.num_operands):
-            if user.get_operand(i) == old_val:
-                user.set_operand(i, new_val)
+old_val.replace_all_uses_with(new_val)
 ```
 
 ### Safe Instruction Replacement
@@ -211,9 +205,8 @@ def replace_all_uses_with(old_val, new_val):
 ```python
 def replace_instruction(old_inst, new_val):
     """Replace instruction with new value and delete."""
-    replace_all_uses_with(old_inst, new_val)
-    old_inst.remove_from_parent()
-    old_inst.delete_instruction()
+    old_inst.replace_all_uses_with(new_val)
+    old_inst.erase_from_parent()
 ```
 
 ### Collect Then Modify
@@ -250,13 +243,10 @@ subs = find_by_opcode(func, llvm.Opcode.Sub)
 
 | What you try | What happens | Fix |
 |-------------|--------------|-----|
-| `ctx.types.ptr` | Gets bound method, not type | `ctx.types.ptr()` |
-| `inst.parent` | AttributeError | `inst.block` |
-| `for op in inst.operands:` | AttributeError | Manual iteration |
-| `inst.delete_instruction()` | LLVM assertion | Remove first |
 | `mod = ctx.parse_ir(...)` | Gets manager, not module | Use `with ... as mod` |
-| Bytes > 127 in strings | UTF-8 expansion | **Blocked** - no fix |
-| `inst.is_terminator` | AttributeError | `inst.is_terminator_inst` |
+| `bb.terminator` on unterminated block | Raises `LLVMAssertionError` | Check `bb.has_terminator` first |
+| `inst.set_operand(i, value_of_wrong_type)` | Raises `LLVMAssertionError` | Use a value with the exact expected type |
+| `llvm.const_string(ctx, "\xff")` for raw bytes | Uses text/UTF-8 path | Pass `bytes`: `b"\xff"` |
 
 ---
 

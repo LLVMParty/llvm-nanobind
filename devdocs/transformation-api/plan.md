@@ -1,10 +1,12 @@
 # Transformation API Improvements
 
+## Status
+
+Complete. This file is kept as the original improvement plan, updated with the API names that shipped. See `progress.md` for completion status and `devdocs/porting-guide.md` for current usage examples.
+
 ## Overview
 
-This task tracks improvements to the Python bindings to better support IR transformation use cases (as opposed to just code generation). These issues were discovered while porting LLVM obfuscator passes to Python.
-
-See `devdocs/porting-guide.md` for the full context and detailed examples.
+This task tracked improvements to the Python bindings to better support IR transformation use cases (as opposed to just code generation). These issues were discovered while porting LLVM obfuscator passes to Python.
 
 ## Priority 1: Critical Blockers
 
@@ -12,21 +14,17 @@ These issues completely block certain use cases.
 
 ### 1.1 Raw Bytes Support for Constants
 
-**Problem**: `const_string` and `const_data_array` encode strings as UTF-8, causing byte sequences with values > 127 to expand. This makes binary manipulation impossible.
+**Problem**: raw binary payloads must not go through text/UTF-8 encoding.
+
+**Shipped solution**: `const_string` and `const_data_array` accept `bytes` and pass raw bytes to LLVM without encoding.
 
 ```python
-# This creates [22 x i8] instead of [14 x i8]!
-encrypted = bytes([0xFF, 0x80, 0x42, ...]).decode('latin-1')
-const = llvm.const_string(ctx, encrypted, dont_null_terminate=True)
-```
+raw = bytes([0xFF, 0x80, 0x42])
+const = llvm.const_string(ctx, raw, dont_null_terminate=True)
+assert const.type.array_length == len(raw)
 
-**Solution**: Accept `bytes` type in addition to `str`, passing raw bytes to LLVM without encoding.
-
-```python
-# Proposed API
-const = llvm.const_bytes(ctx, b'\xff\x80\x42...')
-# or
-const = llvm.const_data_array(i8, b'\xff\x80\x42...')  # Accept bytes
+arr = llvm.const_data_array(i8, raw)
+assert arr.type.array_length == len(raw)
 ```
 
 **Files to modify**: Bindings for `LLVMConstStringInContext2`, `LLVMConstArray`
@@ -37,22 +35,11 @@ const = llvm.const_data_array(i8, b'\xff\x80\x42...')  # Accept bytes
 
 ### 1.2 Add `Value.replace_all_uses_with()`
 
-**Problem**: No way to replace all uses of a value. Users must implement manually:
+**Problem**: replacing all uses of a value is fundamental to SSA transforms.
+
+**Shipped solution**: bind `LLVMReplaceAllUsesWith`.
 
 ```python
-# Current workaround (error-prone)
-def replace_all_uses_with(old_value, new_value):
-    for use in list(old_value.uses):
-        user = use.user
-        for i in range(user.num_operands):
-            if user.get_operand(i) == old_value:
-                user.set_operand(i, new_value)
-```
-
-**Solution**: Bind `LLVMReplaceAllUsesWith`.
-
-```python
-# Proposed API
 old_inst.replace_all_uses_with(new_value)
 ```
 
@@ -62,15 +49,15 @@ old_inst.replace_all_uses_with(new_value)
 
 ---
 
-### 1.3 Add `BasicBlock.split_before()`
+### 1.3 Add Basic Block Splitting
 
-**Problem**: Cannot split a basic block at an instruction point.
+**Problem**: transformations often need to split a basic block at an instruction point.
 
-**Solution**: Bind `LLVMSplitBasicBlock` or implement via C++ API.
+**Shipped solution**:
 
 ```python
-# Proposed API
-new_bb = bb.split_before(inst)  # Returns new block containing inst onwards
+new_bb = bb.split_basic_block(inst, "tail")
+new_bb = bb.split_basic_block_before(inst, "tail")
 ```
 
 **C API**: Not directly available - may need custom C wrapper or use `LLVMInsertBasicBlock` + instruction movement.
@@ -81,22 +68,12 @@ new_bb = bb.split_before(inst)  # Returns new block containing inst onwards
 
 ### 1.4 Single-Step Instruction Deletion
 
-**Problem**: Deleting an instruction requires two calls, and doing it wrong crashes:
+**Problem**: deleting an instruction should be a single safe operation.
+
+**Shipped solution**:
 
 ```python
-# Current (crashes if order wrong)
-inst.remove_from_parent()
-inst.delete_instruction()
-
-# If you forget remove_from_parent():
-# Assertion failed: (!getParent() && "Instruction still linked in the program!")
-```
-
-**Solution**: Add `erase_from_parent()` that does both atomically.
-
-```python
-# Proposed API
-inst.erase_from_parent()  # Unlinks and deletes in one call
+inst.erase_from_parent()
 ```
 
 **C API**: `LLVMInstructionEraseFromParent` (already exists!)
@@ -111,20 +88,14 @@ These issues cause confusion and bugs but have workarounds.
 
 ### 2.1 Make `ptr` a Property Like Other Types
 
-**Problem**: `ctx.types.ptr()` is a method, but `ctx.types.i32` is a property.
+**Problem**: the default opaque pointer type should be as simple as integer types.
+
+**Shipped solution**:
 
 ```python
-ptr_ty = ctx.types.ptr   # WRONG - returns bound method!
-ptr_ty = ctx.types.ptr() # Correct
-
-i32_ty = ctx.types.i32   # Correct - returns type directly
-```
-
-**Solution**: Make `ptr` a property that returns the opaque pointer type.
-
-```python
-# Proposed API
-ptr_ty = ctx.types.ptr  # Property, like i32
+ptr_ty = ctx.types.ptr
+ptr_as1 = ctx.types.addrspace_ptr(1)
+i32_ty = ctx.types.i32
 ```
 
 **Note**: If `ptr(addrspace)` is needed for address spaces, keep method but add property for default.
@@ -136,16 +107,15 @@ ptr_ty = ctx.types.ptr  # Property, like i32
 **Problem**: Mixed patterns for setting properties on globals:
 
 ```python
-gv.set_constant(False)      # Method
-gv.linkage = llvm.Linkage.X # Property setter
+gv.is_global_constant = False
+gv.linkage = llvm.Linkage.Internal
 ```
 
 **Solution**: Use property setters consistently.
 
 ```python
-# Proposed API
-gv.is_constant = False
-gv.linkage = llvm.Linkage.X
+gv.is_global_constant = False
+gv.linkage = llvm.Linkage.Internal
 ```
 
 ---
@@ -155,8 +125,8 @@ gv.linkage = llvm.Linkage.X
 **Problem**: Instructions use `.block` to get parent, but `.parent` is more intuitive and matches C++.
 
 ```python
-bb = inst.block   # Current
-bb = inst.parent  # Expected (doesn't exist)
+bb = inst.block
+bb = inst.parent  # alias
 ```
 
 **Solution**: Add `.parent` as an alias for `.block`.
@@ -168,8 +138,7 @@ bb = inst.parent  # Expected (doesn't exist)
 **Problem**: The `_inst` suffix is inconsistent with other boolean properties.
 
 ```python
-inst.is_terminator_inst  # Current
-inst.is_terminator       # Expected
+inst.is_terminator
 ```
 
 **Solution**: Add `.is_terminator` (keep old name for compatibility or deprecate).
@@ -185,11 +154,6 @@ These would make the API more Pythonic and reduce boilerplate.
 **Problem**: Must use index-based access to iterate operands.
 
 ```python
-# Current (verbose)
-for i in range(inst.num_operands):
-    op = inst.get_operand(i)
-
-# Desired
 for op in inst.operands:
 ```
 
@@ -229,8 +193,7 @@ inst.move_after(other_inst)
 **Solution**: Bind instruction cloning.
 
 ```python
-# Proposed API
-new_inst = inst.clone()
+new_inst = inst.instruction_clone()
 ```
 
 **C API**: `LLVMInstructionClone`
@@ -242,10 +205,6 @@ new_inst = inst.clone()
 **Problem**: Must convert to list to count successors.
 
 ```python
-# Current
-num = len(list(term.successors))
-
-# Desired
 num = term.num_successors
 ```
 

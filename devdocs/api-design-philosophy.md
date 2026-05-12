@@ -6,18 +6,10 @@ This document explains the principles behind the llvm-nanobind API refactor.
 
 ## Why This Refactor Matters
 
-The current API mirrors the LLVM C API directly. While this made initial implementation easier, it creates a **non-Pythonic** experience:
+The earliest API mirrored the LLVM C API directly. While this made initial implementation easier, it created a **non-Pythonic** experience. The current API is object-oriented and discoverable:
 
 ```python
-# Current: C-style global functions
-i32 = ctx.int32_type()
-const = llvm.const_int(i32, 42)
-llvm.add_attribute_at_index(func, 0, attr)
-llvm.set_metadata(inst, kind, md)
-```
-
-```python
-# Target: Pythonic object-oriented API
+# Current: Pythonic object-oriented API
 i32 = ctx.types.i32
 const = i32.constant(42)
 func.add_attribute(0, attr)
@@ -72,15 +64,11 @@ In Python, these naturally group:
 **Why**: Reduces boilerplate and reveals structure:
 
 ```python
-# Verbose: each type requires a method call
-i8 = ctx.int8_type()
-i16 = ctx.int16_type()
-i32 = ctx.int32_type()
-
-# Concise: types are organized under a namespace
+# Types are organized under a namespace
 i8 = ctx.types.i8
 i16 = ctx.types.i16
 i32 = ctx.types.i32
+ptr = ctx.types.ptr
 ```
 
 The `ctx.types` namespace makes it clear these are all type-related, and IDE autocomplete shows all available types.
@@ -150,46 +138,24 @@ With global functions, chaining is impossible.
 
 ### Visual Comparison
 
-**Current (C-style)**:
-```python
-import llvm
-
-with llvm.create_context() as ctx:
-    i32 = ctx.int32_type()
-    i64 = ctx.int64_type()
-    fn_ty = ctx.function_type(i32, [i32, i32])
-
-    const_42 = llvm.const_int(i32, 42)
-    const_0 = llvm.const_null(i32)
-
-    with ctx.create_module("test") as mod:
-        fn = mod.add_function("add", fn_ty)
-        llvm.add_attribute_at_index(fn, 0, attr)
-
-        with ctx.create_builder() as builder:
-            phi = builder.phi(i32)
-            llvm.phi_add_incoming(phi, val, bb)  # Easy to misuse
-```
-
-**Target (Pythonic)**:
+**Current (Pythonic)**:
 ```python
 import llvm
 
 with llvm.create_context() as ctx:
     i32 = ctx.types.i32
-    i64 = ctx.types.i64
     fn_ty = ctx.types.function(i32, [i32, i32])
-
-    const_42 = i32.constant(42)
-    const_0 = i32.null()
 
     with ctx.create_module("test") as mod:
         fn = mod.add_function("add", fn_ty)
-        fn.add_attribute(0, attr)
+        lhs, rhs = fn.params
+        entry = fn.append_basic_block("entry")
 
-        with ctx.create_builder() as builder:
-            phi = builder.phi(i32)
-            phi.add_incoming(val, bb)  # Clear: operating on the phi
+        with entry.create_builder() as builder:
+            result = builder.add(lhs, rhs, "sum")
+            builder.ret(result)
+
+        assert mod.verify(), mod.get_verification_error()
 ```
 
 ---

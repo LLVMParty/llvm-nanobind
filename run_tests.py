@@ -106,9 +106,15 @@ def run_python_test(script: Path) -> tuple[str, str, int]:
     # Build command with optional coverage wrapper
     cmd = coverage_wrap(script.stem, [str(script)])
 
-    # Prefer the freshly built extension while keeping the repository root
-    # importable for dev-only helper packages such as tools.obfuscation.
-    pythonpath_entries = [str(BUILD_DIR.resolve()), str(Path(__file__).parent.resolve())]
+    # Prefer the freshly built extension for normal development runs while
+    # keeping the repository root importable for dev-only helper packages such
+    # as tools.obfuscation. Wheel tests set LLVM_NANOBIND_TEST_INSTALLED=1 so
+    # the installed wheel is tested instead of build/llvm.*.
+    project_root = Path(__file__).parent.resolve()
+    if os.environ.get("LLVM_NANOBIND_TEST_INSTALLED"):
+        pythonpath_entries = [str(project_root)]
+    else:
+        pythonpath_entries = [str(BUILD_DIR.resolve()), str(project_root)]
     if existing_pythonpath := os.environ.get("PYTHONPATH"):
         pythonpath_entries.append(existing_pythonpath)
 
@@ -175,9 +181,11 @@ def run_regression_tests():
         # Print progress
         print(f"[{status}] {test_name}")
 
-        # Show error output if failed
-        if status == "FAIL" and stderr:
-            for line in stderr.splitlines()[:10]:  # First 10 lines of error
+        # Show captured output if failed. Pytest usually writes assertion
+        # details to stdout, while crashes/import errors often use stderr.
+        if status == "FAIL":
+            failure_output = stderr or stdout
+            for line in failure_output.splitlines()[:20]:
                 print(f"       {line}")
 
     # Summary

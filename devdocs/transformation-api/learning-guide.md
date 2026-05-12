@@ -187,9 +187,8 @@ for bb in func.basic_blocks:
                 result = builder.add(xor_val, mul_val)
 
             # 4. REPLACE: Swap old for new
-            replace_all_uses_with(inst, result)
-            inst.remove_from_parent()
-            inst.delete_instruction()
+            inst.replace_all_uses_with(result)
+            inst.erase_from_parent()
 
 # 5. CLEAN UP: Verify
 assert mod.verify()
@@ -296,7 +295,7 @@ func.name          # not get_name()
 
 # Methods for operations with side effects:
 builder.add(a, b)  # creates instruction
-inst.remove_from_parent()  # modifies IR
+inst.erase_from_parent()  # modifies IR
 ```
 
 **Context Managers:**
@@ -319,34 +318,38 @@ for func in mod.functions:
             ...
 ```
 
-**The Inconsistencies (and why they matter):**
+**Consistency improvements:**
 
-The porting guide documents several inconsistencies:
+Several early inconsistencies have been cleaned up. Current code can use:
 
-| Inconsistent | Expected |
-|-------------|----------|
-| `ctx.types.ptr()` (method) | `ctx.types.ptr` (property like `i32`) |
-| `gv.set_constant(False)` | `gv.is_constant = False` |
-| `inst.block` | `inst.parent` (matches C++) |
-| `inst.is_terminator_inst` | `inst.is_terminator` |
+```python
+ptr_ty = ctx.types.ptr
+for op in inst.operands:
+    ...
+inst.is_terminator
+inst.parent  # alias for inst.block
+gv.is_global_constant = True
+```
 
-These aren't just aesthetic. Inconsistencies create cognitive load. Every time you use the API, you have to remember which pattern applies.
+The porting guide still documents remaining differences from the C++ API, but the common transformation path now uses Pythonic properties and single-step helpers.
 
 **Exercise 2.3:**
-You want to iterate over all operands of an instruction. Based on the consistency issues, predict: is there an `.operands` iterator?
+You want to replace one operand of an instruction. Should you use `inst.operands` or indexed access?
 
 <details>
 <summary>Answer</summary>
 
-No! You must use:
+Use `inst.operands` for read-only iteration:
 ```python
-for i in range(inst.num_operands):
-    op = inst.get_operand(i)
+for op in inst.operands:
+    print(op)
 ```
 
-This is listed as a missing convenience. It should be:
+Use indexed access for mutation:
 ```python
-for op in inst.operands:  # Proposed improvement
+for i in range(inst.num_operands):
+    if inst.get_operand(i) == old:
+        inst.set_operand(i, new)
 ```
 </details>
 
@@ -516,32 +519,22 @@ This is defense in depth: the state values are already random, but their *check 
 
 The porting process revealed API gaps:
 
-| Gap | Why It Matters |
+| Previously Missing API | Current Python API |
 |-----|----------------|
-| No `replace_all_uses_with` | Core SSA operation—must implement manually |
-| No `erase_from_parent` | Error-prone two-step deletion |
-| No `split_basic_block` | Can't implement some transforms (blocked) |
-| UTF-8 encoding bug | Can't handle encrypted bytes > 127 (blocked) |
+| Replace all uses | `value.replace_all_uses_with(new_value)` |
+| Delete instruction | `inst.erase_from_parent()` |
+| Split block | `bb.split_basic_block(...)` / `bb.split_basic_block_before(...)` |
+| Raw byte constants | `llvm.const_string(ctx, b"...", ...)` and `llvm.const_data_array(i8, b"...")` |
 
-**The UTF-8 Bug in Detail:**
+**Raw bytes example:**
 
 ```python
-# You want to create a constant with bytes [0xFF, 0x80, 0x42]
-encrypted = bytes([0xFF, 0x80, 0x42]).decode('latin-1')  # "\xff\x80B"
+encrypted = bytes([0xFF, 0x80, 0x42])
 const = llvm.const_string(ctx, encrypted, dont_null_terminate=True)
-
-# Expected: [3 x i8] c"\xff\x80B"
-# Actual:   [5 x i8] c"\xc3\xbf\xc2\x80B"  (UTF-8 encoded!)
+assert const.type.array_length == len(encrypted)
 ```
 
-The bindings encode strings as UTF-8 before passing to LLVM. Bytes > 127 expand to multi-byte sequences.
-
-This blocks string encryption passes because:
-1. Encrypt a string → get arbitrary bytes
-2. Store in LLVM → UTF-8 encodes, changes length
-3. Decryption code reads wrong length → crash
-
-**Fix needed:** Accept `bytes` type directly, pass raw bytes to LLVM.
+Use the `bytes` overload for binary payloads. The `str` overload is for text and follows UTF-8 encoding.
 
 ---
 
@@ -555,12 +548,12 @@ Now you understand the work. Let's develop your ability to *critique* it.
 
 An API should have predictable patterns. Test: Can you predict the name of something you haven't used?
 
-| Test | Prediction | Actual | Consistent? |
-|------|------------|--------|-------------|
-| Get parent block of instruction | `.parent` | `.block` | No |
-| Get all operands | `.operands` | (doesn't exist) | No |
-| Is it a terminator? | `.is_terminator` | `.is_terminator_inst` | No |
-| Get pointer type | `.ptr` | `.ptr()` | No |
+| Test | Current API |
+|------|-------------|
+| Get parent block of instruction | `.block` or `.parent` |
+| Get all operands | `.operands` |
+| Is it a terminator? | `.is_terminator` |
+| Get pointer type | `ctx.types.ptr` |
 
 **Your Task:**
 Add rows to this table. What else would you try to predict? Check the porting guide—does it exist, and does it match your expectation?
@@ -571,9 +564,9 @@ A good API makes it hard to do the wrong thing. The "pit of success" means the e
 
 | Operation | Current API | Pit of Success? |
 |-----------|-------------|-----------------|
-| Delete instruction | `inst.remove_from_parent(); inst.delete_instruction()` | No—forgetting step 1 crashes |
-| Parse module | `ctx.parse_ir()` returns context manager, not module | Partial—must use `with`, but error is confusing |
-| Create pointer type | `ctx.types.ptr()` | No—forgetting `()` silently fails later |
+| Delete instruction | `inst.erase_from_parent()` | Yes |
+| Parse module | `ctx.parse_ir()` returns context manager, not module | Partial—must use `with` |
+| Create pointer type | `ctx.types.ptr` | Yes |
 
 **Your Task:**
 For each failure, design a better API. What would make the easy path correct?

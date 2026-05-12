@@ -22,7 +22,7 @@ Visual reference materials for understanding llvm-nanobind.
 │  │  Python Classes          │  Lifetime Management  │  Type Helpers    │   │
 │  │  ─────────────────       │  ────────────────────  │  ────────────    │   │
 │  │  Module                  │  Validity tokens      │  ctx.types.i32   │   │
-│  │  Function                │  Context managers     │  ctx.types.ptr() │   │
+│  │  Function                │  Context managers     │  ctx.types.ptr   │   │
 │  │  BasicBlock              │  Ref counting         │  ctx.types.array │   │
 │  │  Value/Instruction       │                       │                  │   │
 │  │  Builder                 │                       │                  │   │
@@ -40,9 +40,6 @@ Visual reference materials for understanding llvm-nanobind.
 │  LLVMContextCreate()     LLVMBuildAdd()        LLVMGetBasicBlocks()         │
 │  LLVMParseIRInContext()  LLVMBuildBr()         LLVMGetInstructions()        │
 │  LLVMCreateBuilder()     LLVMBuildRet()        LLVMReplaceAllUsesWith()     │
-│                                                 ▲                           │
-│                                                 │                           │
-│                                         NOT YET BOUND!                      │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                            LLVM C++ Core                                    │
 │                                                                             │
@@ -124,21 +121,14 @@ KEY INVARIANTS:
                     ┌────────────────────────────────┐
                     │         4. REPLACE             │
                     │                                │
-                    │  for use in old.uses:          │
-                    │    user.set_operand(i, new)    │
-                    │                                │
-                    │  [This is manual RAUW!]        │
+                    │  old.replace_all_uses_with(new)│
                     └───────────────┬────────────────┘
                                     │
                                     ▼
                     ┌────────────────────────────────┐
                     │         5. CLEAN UP            │
                     │                                │
-                    │  old.remove_from_parent()      │
-                    │  old.delete_instruction()      │
-                    │                                │
-                    │  [Two-step dance!]             │
-                    │                                │
+                    │  old.erase_from_parent()       │
                     │  assert mod.verify()           │
                     └───────────────┬────────────────┘
                                     │
@@ -335,14 +325,14 @@ PRIORITY 2: API CONSISTENCY
 │  ptr() vs ptr ───────────── Inconsistent access pattern  │
 │  set_constant() vs = ────── Mixed setter styles          │
 │  .block vs .parent ──────── Confusing naming             │
-│  .is_terminator_inst ────── Unnecessary suffix           │
+│  .is_terminator ─────────── Terminator predicate         │
 │                                                          │
 ────────────────────────────────────────────────────────────
 
 PRIORITY 3: CONVENIENCES
 ────────────────────────────────────────────────────────────
 │                                                          │
-│  .operands iterator ─────── Pythonic iteration           │
+│  .operands ──────────────── Pythonic operand iteration   │
 │  move_before/after ──────── Instruction movement         │
 │  .clone() ───────────────── Instruction copying          │
 │  .num_successors ────────── Direct count access          │
