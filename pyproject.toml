@@ -45,6 +45,7 @@ wheel.packages = []
 [tool.uv]
 cache-keys = [
     { file = "CMakeLists.txt" },
+    { file = "cmake/*.cmake" },
     { file = "src/**/*.cpp" },
     { file = "src/**/*.h" },
 ]
@@ -71,6 +72,8 @@ exclude = [
     "build/**",
     ".venv/**",
     "**/__pycache__",
+    "**/node_modules",
+    "**/.*",
 ]
 extraPaths = []
 venvPath = "."
