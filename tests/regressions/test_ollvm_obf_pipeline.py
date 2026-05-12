@@ -3,7 +3,12 @@
 from pathlib import Path
 import llvm
 
-from tools.obfuscation.ollvm_obf import PipelineOptions, apply_pipeline, main
+from tools.obfuscation.ollvm_obf import (
+    PipelineOptions,
+    apply_pipeline,
+    main,
+    poison_internal_uses_before_erasing,
+)
 
 
 def test_ollvm_if_convert_eliminates_phi_and_introduces_select() -> None:
@@ -216,6 +221,37 @@ def test_ollvm_loop_to_recursion_smoke() -> None:
             assert "musttail call" in text
             assert "@sum_loop.recur" in text
 
+
+
+def test_loop_to_recursion_rejects_unresolved_escaping_values() -> None:
+    ir = r'''
+    define i32 @f(i32 %x) {
+    entry:
+      br label %body
+    body:
+      %v = add i32 %x, 1
+      br label %exit
+    exit:
+      %use = add i32 %v, 2
+      ret i32 %use
+    }
+    '''
+
+    with llvm.create_context() as ctx:
+        with ctx.parse_ir(ir) as mod:
+            fn = mod.get_function("f")
+            assert fn is not None
+            body = next(bb for bb in fn.basic_blocks if bb.name == "body")
+            inst = body.first_instruction
+            assert inst is not None
+            try:
+                poison_internal_uses_before_erasing(inst, {body})
+            except RuntimeError as exc:
+                assert "unresolved external use" in str(exc)
+                assert "poison" in str(exc)
+            else:
+                raise AssertionError("expected unresolved external use to be rejected")
+            assert "poison" not in mod.to_string()
 
 
 def test_ollvm_loop_to_recursion_skips_multi_exit_loop() -> None:

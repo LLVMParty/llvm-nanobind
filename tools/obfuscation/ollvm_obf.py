@@ -246,9 +246,21 @@ def replace_all_uses_with_if(
         user.replace_uses_of_with(old_value, new_value)
 
 
-def poison_uses_before_erasing(inst: llvm.Value) -> None:
-    if inst.type.kind != llvm.TypeKind.Void and inst.has_uses:
-        inst.replace_all_uses_with(inst.type.poison())
+def poison_internal_uses_before_erasing(
+    inst: llvm.Value,
+    doomed_blocks: set[llvm.BasicBlock],
+) -> None:
+    if inst.type.kind == llvm.TypeKind.Void or not inst.has_uses:
+        return
+
+    for user in inst.users:
+        if not user.is_instruction or user.block not in doomed_blocks:
+            raise RuntimeError(
+                "loop-to-recursion left an unresolved external use of "
+                f"{inst.name or '<unnamed>'}; refusing to rewrite it to poison"
+            )
+
+    inst.replace_all_uses_with(inst.type.poison())
 
 
 def position_after_instruction(builder: llvm.Builder, inst: llvm.Value) -> None:
@@ -2512,7 +2524,7 @@ def loop_to_recursion_module(mod: llvm.Module, seed: int, cfg: FilterConfig) -> 
             for inst in bb.instructions
         ]
         for inst in loop_instructions:
-            poison_uses_before_erasing(inst)
+            poison_internal_uses_before_erasing(inst, loop_block_set)
         for bb in loop_blocks:
             for inst in reversed(list(bb.instructions)):
                 inst.erase_from_parent()

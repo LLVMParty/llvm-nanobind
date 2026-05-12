@@ -632,7 +632,7 @@ Constant* dataArr = ConstantDataArray::get(ctx, arrayRef);
 
 **Python:**
 ```python
-arr = llvm.array_const(elem_ty, [elem1, elem2])
+arr = elem_ty.array_const([elem1, elem2])
 data_arr = elem_ty.array_const(string_data)
 ```
 
@@ -645,7 +645,7 @@ Constant* s = ConstantStruct::get(structTy, {field1, field2});
 
 **Python:**
 ```python
-s = llvm.named_struct_const(struct_ty, [field1, field2])
+s = struct_ty.named_struct_const([field1, field2])
 ```
 
 ---
