@@ -257,7 +257,8 @@ This section captures guard preconditions for wrapper classes other than
 ### BasicBlock `block_address()`
 
 - Requires the block to be attached to a function.
-- Legacy `llvm.block_address(fn, bb)` requires `bb` to be owned by `fn`.
+- `Function.block_address(bb)` is also available when explicitly checking a
+  block against a specific function.
 
 ### OperandBundle (`llvm.OperandBundle`)
 

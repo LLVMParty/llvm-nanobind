@@ -158,7 +158,7 @@ raw = ctx.const_string(b"\xff\x80B", dont_null_terminate=True)
 null = llvm.ConstantPointerNull.get(ptr_ty)
 
 # Block address (for indirect branches)
-addr = llvm.block_address(func, bb)
+addr = bb.block_address()
 ```
 
 ## PHI Nodes

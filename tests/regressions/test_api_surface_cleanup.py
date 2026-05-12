@@ -69,6 +69,21 @@ def test_member_factories_and_builder_navigation() -> None:
     llvm.initialize_all_asm_printers()
     llvm.initialize_all_asm_parsers()
 
+    removed_globals = [
+        "const_vector",
+        "const_struct",
+        "const_string",
+        "get_cast_opcode",
+        "intrinsic_get_type",
+        "create_binary_from_bytes",
+        "create_target_machine",
+        "run_passes",
+        "get_default_target_triple",
+        "get_first_dbg_record",
+    ]
+    for name in removed_globals:
+        assert not hasattr(llvm, name), name
+
     assert isinstance(llvm.default_target_triple, str)
     assert isinstance(llvm.host_cpu_name, str)
     assert isinstance(llvm.host_cpu_features, str)

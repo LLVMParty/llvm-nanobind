@@ -14470,68 +14470,8 @@ Valid when:
 
 <sub>C API: LLVMGetGlobalContext</sub>)");
 
-  // Compatibility aliases for older module-level constant factories. Prefer
-  // Context, Type, and Value methods such as ctx.const_string(),
-  // ty.constant(), ty.array_const(), ty.gep_const(), and val.const_ptr_auth().
-  m.def("const_struct", &const_struct, "vals"_a, "packed"_a, "ctx"_a,
-        R"(Create struct constant.
-
-<sub>C API: LLVMConstStructInContext</sub>)");
-  m.def("const_vector", &const_vector, "vals"_a,
-        R"(Create vector constant.
-
-<sub>C API: LLVMConstVector</sub>)");
-  m.def("const_string",
-        static_cast<LLVMValueWrapper (*)(LLVMContextWrapper *,
-                                         const std::string &, bool)>(
-            &const_string),
-        "ctx"_a, "str"_a,
-        "dont_null_terminate"_a = false,
-        R"(Create string constant.
-
-<sub>C API: LLVMConstStringInContext2</sub>)");
-  m.def("const_string",
-        static_cast<LLVMValueWrapper (*)(LLVMContextWrapper *,
-                                         const nb::bytes &, bool)>(
-            &const_string),
-        "ctx"_a, "data"_a, "dont_null_terminate"_a = false,
-        R"(Create raw-bytes constant.
-
-<sub>C API: LLVMConstStringInContext2</sub>)");
-
-  // Advanced constant creation compatibility aliases
-  m.def("const_int_of_arbitrary_precision", &const_int_of_arbitrary_precision,
-        "ty"_a, "words"_a,
-        R"(Arbitrary precision int.
-
-<sub>C API: LLVMConstIntOfArbitraryPrecision</sub>)");
-  m.def("const_data_array",
-        static_cast<LLVMValueWrapper (*)(const LLVMTypeWrapper &,
-                                         const nb::bytes &)>(
-            &const_data_array),
-        "elem_ty"_a, "data"_a,
-        R"(Create raw-bytes data array.
-
-<sub>C API: LLVMConstDataArray</sub>)");
-  m.def("const_gep_with_no_wrap_flags", &const_gep_with_no_wrap_flags, "ty"_a,
-        "ptr"_a, "indices"_a, "no_wrap_flags"_a,
-        R"(Create a constant GEP expression with explicit no-wrap flags.
-
-<sub>C API: LLVMConstGEPWithNoWrapFlags</sub>)");
-  m.def("const_ptr_auth", &const_ptr_auth, "ptr"_a, "key"_a, "discriminator"_a,
-        "addr_discriminator"_a,
-        R"(Create a constant pointer authentication expression for ARM64e.
-
-<sub>C API: LLVMConstantPtrAuth</sub>)");
-  m.def("block_address", &block_address, "fn"_a, "bb"_a,
-        R"(Create a BlockAddress constant that is the address of a basic block.
-
-This is used for computed goto (indirect branch) support.
-
-Valid when:
-  - bb is owned by fn
-
-<sub>C API: LLVMBlockAddress</sub>)");
+  // NOTE: module-level constant helpers were moved to Context, Type, Value,
+  // Function, and BasicBlock methods.
   m.def("intrinsic_is_overloaded", &intrinsic_is_overloaded, "id"_a,
         R"(Check if intrinsic is overloaded.
 
@@ -14563,21 +14503,7 @@ Valid when:
 
 <sub>C API: LLVMGetUndefMaskElem</sub>)");
 
-  // Inline assembly compatibility alias; prefer Type.inline_asm().
-  m.def(
-      "get_inline_asm",
-      [](const LLVMTypeWrapper &fn_ty, const std::string &asm_string,
-         const std::string &constraints, bool has_side_effects,
-         bool needs_aligned_stack, LLVMInlineAsmDialect dialect,
-         bool can_unwind) {
-        return fn_ty.inline_asm(asm_string, constraints, has_side_effects,
-                                needs_aligned_stack, dialect, can_unwind);
-      },
-      "fn_ty"_a, "asm_string"_a, "constraints"_a, "has_side_effects"_a,
-      "needs_aligned_stack"_a, "dialect"_a, "can_unwind"_a,
-      R"(Create inline assembly.
-
-<sub>C API: LLVMGetInlineAsm</sub>)");
+  // NOTE: inline assembly creation moved to Type.inline_asm().
 
   // Target wrapper
   nb::class_<LLVMTargetWrapper>(m, "Target")
@@ -14680,45 +14606,14 @@ initialize_all_asm_printers(), and initialize_all_asm_parsers().)");
 
   // Host target queries
   m.attr("default_target_triple") = get_default_target_triple();
-  m.def("get_default_target_triple", &get_default_target_triple,
-        R"(Get the default target triple for the current host.
-
-Deprecated alias for the default_target_triple module attribute.
-
-<sub>C API: LLVMGetDefaultTargetTriple</sub>)");
   m.def("normalize_target_triple", &normalize_target_triple, "triple"_a,
         R"(Normalize a target triple string.
 
 <sub>C API: LLVMNormalizeTargetTriple</sub>)");
   m.attr("host_cpu_name") = get_host_cpu_name();
-  m.def("get_host_cpu_name", &get_host_cpu_name,
-        R"(Get the host CPU name.
-
-Deprecated alias for the host_cpu_name module attribute.
-
-<sub>C API: LLVMGetHostCPUName</sub>)");
   m.attr("host_cpu_features") = get_host_cpu_features();
-  m.def("get_host_cpu_features", &get_host_cpu_features,
-        R"(Get the host CPU features as a feature string.
 
-Deprecated alias for the host_cpu_features module attribute.
-
-<sub>C API: LLVMGetHostCPUFeatures</sub>)");
-
-  // Target lookup aliases kept for compatibility; prefer Target.from_triple()
-  // and Target.from_name().
-  m.def("get_target_from_triple", &get_target_from_triple, "triple"_a,
-        R"(Get a target from a target triple string.
-        
-        Raises LLVMError if the target is not found.
-
-<sub>C API: LLVMGetTargetFromTriple</sub>)");
-  m.def("get_target_from_name", &get_target_from_name, "name"_a,
-        R"(Get a target from its name.
-        
-        Returns None if the target is not found.
-
-<sub>C API: LLVMGetTargetFromName</sub>)");
+  // NOTE: target lookup moved to Target.from_triple() and Target.from_name().
 
   // ==========================================================================
   // Target Machine Enums
@@ -14843,11 +14738,7 @@ Returns:
 
 <sub>C API: LLVMCreateTargetData</sub>)");
 
-  m.def("create_target_data", &create_target_data, "string_rep"_a,
-        nb::rv_policy::take_ownership,
-        R"(Create a target data layout from a string representation.
-
-<sub>C API: LLVMCreateTargetData</sub>)");
+  // NOTE: target data creation moved to TargetData.create().
 
   // ==========================================================================
   // Target Machine Wrapper
@@ -14934,26 +14825,7 @@ Returns:
 
 <sub>C API: LLVMCreateTargetMachine</sub>)");
 
-  m.def("create_target_machine", &create_target_machine, "target"_a, "triple"_a,
-        "cpu"_a = "", "features"_a = "",
-        "opt_level"_a = LLVMCodeGenLevelDefault,
-        "reloc_mode"_a = LLVMRelocDefault,
-        "code_model"_a = LLVMCodeModelDefault, nb::rv_policy::take_ownership,
-        R"(Create a target machine for code generation.
-        
-        Args:
-            target: Target to create machine for
-            triple: Target triple string
-            cpu: CPU name (default: "")
-            features: Feature string (default: "")
-            opt_level: Optimization level (default: Default)
-            reloc_mode: Relocation mode (default: Default)
-            code_model: Code model (default: Default)
-            
-        Returns:
-            TargetMachine instance
-
-<sub>C API: LLVMCreateTargetMachine</sub>)");
+  // NOTE: target machine creation moved to TargetMachine.create().
 
   // ==========================================================================
   // Pass Builder Options Wrapper
@@ -15029,25 +14901,7 @@ Returns:
 
 <sub>C API: LLVMPassBuilderOptionsSetInlinerThreshold</sub>)");
 
-  m.def("run_passes", &run_passes, "mod"_a, "passes"_a,
-        "target_machine"_a.none() = nullptr, "options"_a.none() = nullptr,
-        R"doc(Run optimization passes on a module.
-        
-        Args:
-            mod: Module to optimize
-            passes: Pass pipeline string (e.g., 'default<O2>', 'function(simplifycfg)')
-            target_machine: Optional target machine for target-specific passes
-            options: Optional PassBuilderOptions
-            
-        Common pass pipelines:
-            - 'default<O0>': No optimization
-            - 'default<O1>': Light optimization
-            - 'default<O2>': Standard optimization  
-            - 'default<O3>': Aggressive optimization
-            - 'default<Os>': Size optimization
-            - 'default<Oz>': Aggressive size optimization
-            
-        <sub>C API: LLVMRunPasses</sub>)doc");
+  // NOTE: pass execution moved to Module.run_passes().
 
   // Memory buffer is internal only - not exposed to Python
 
@@ -15102,19 +14956,7 @@ Returns:
   m.attr("DisasmOption_SetInstrComments") = nb::int_(8);
   m.attr("DisasmOption_PrintLatency") = nb::int_(16);
 
-  m.def("create_disasm_cpu_features", &create_disasm_cpu_features, "triple"_a,
-        "cpu"_a = "", "features"_a = "", nb::rv_policy::take_ownership,
-        R"(Create a disassembler for the given triple, CPU, and features.
-        
-        Args:
-            triple: Target triple string (e.g., "x86_64-linux-unknown")
-            cpu: CPU name (can be empty)
-            features: Feature string (can be empty or "NULL")
-            
-        Returns:
-            DisasmContext, or one with is_valid=False if creation failed.
-
-<sub>C API: LLVMCreateDisasmCPUFeatures</sub>)");
+  // NOTE: disassembler creation moved to Disasm.create().
 
   // =============================================================================
   // Object File Bindings
@@ -15485,40 +15327,8 @@ Valid when:
 
 <sub>C API: LLVMCreateBinary</sub>)");
 
-  // Factory function aliases for creating binaries
-  m.def("create_binary_from_bytes", &create_binary_from_bytes, "data"_a,
-        nb::rv_policy::take_ownership,
-        R"(Create a binary manager from bytes for use with 'with' statement.
-        
-        Args:
-            data: The bytes containing the object file data
-            
-        Returns:
-            BinaryManager for use in a 'with' statement
-            
-        Example:
-            with llvm.BinaryManager.from_bytes(data) as binary:
-                for section in binary.sections:
-                    print(section.name)
-
-<sub>C API: LLVMCreateBinary</sub>)");
-
-  m.def("create_binary_from_file", &create_binary_from_file, "path"_a,
-        nb::rv_policy::take_ownership,
-        R"(Create a binary manager from a file for use with 'with' statement.
-        
-        Args:
-            path: Path to the object file
-            
-        Returns:
-            BinaryManager for use in a 'with' statement
-            
-        Example:
-            with llvm.BinaryManager.from_file("test.o") as binary:
-                for section in binary.sections:
-                    print(section.name)
-
-<sub>C API: LLVMCreateBinary</sub>)");
+  // NOTE: binary manager factories moved to BinaryManager.from_bytes() and
+  // BinaryManager.from_file().
 
   // BitReader functions
 
@@ -15530,14 +15340,6 @@ Valid when:
 
   // Static attribute registry value
   m.attr("last_enum_attribute_kind") = nb::int_(LLVMGetLastEnumAttributeKind());
-  m.def(
-      "get_last_enum_attribute_kind",
-      []() { return LLVMGetLastEnumAttributeKind(); },
-      R"(Get last enum attribute kind.
-
-Deprecated alias for the last_enum_attribute_kind module attribute.
-
-<sub>C API: LLVMGetLastEnumAttributeKind</sub>)");
 
   // Static metadata function
   m.def(
@@ -16181,247 +15983,8 @@ Valid when:
 
 <sub>C API: LLVMDIGlobalVariableExpressionGetExpression</sub>)");
 
-  // Compatibility alias for Metadata.di_node_tag.
-  m.def(
-      "get_di_node_tag",
-      [](const LLVMMetadataWrapper &md) -> unsigned {
-        md.check_valid();
-        return LLVMGetDINodeTag(md.m_ref);
-      },
-      "md"_a, R"(Get DWARF tag from debug info node.
-
-<sub>C API: LLVMGetDINodeTag</sub>)");
-
-  // Compatibility alias for Metadata.di_type_name.
-  m.def(
-      "di_type_get_name",
-      [](const LLVMMetadataWrapper &di_type) -> std::string {
-        di_type.check_valid();
-        size_t len;
-        const char *name = LLVMDITypeGetName(di_type.m_ref, &len);
-        return std::string(name, len);
-      },
-      "di_type"_a, R"(Get name from debug info type.
-
-<sub>C API: LLVMDITypeGetName</sub>)");
-
-  // DILocation accessors
-  // Compatibility alias for Metadata.di_location_line.
-  m.def(
-      "di_location_get_line",
-      [](const LLVMMetadataWrapper &location) -> unsigned {
-        location.check_valid();
-        return LLVMDILocationGetLine(location.m_ref);
-      },
-      "location"_a, R"(Get line number from debug location.
-
-<sub>C API: LLVMDILocationGetLine</sub>)");
-
-  // Compatibility alias for Metadata.di_location_column.
-  m.def(
-      "di_location_get_column",
-      [](const LLVMMetadataWrapper &location) -> unsigned {
-        location.check_valid();
-        return LLVMDILocationGetColumn(location.m_ref);
-      },
-      "location"_a, R"(Get column number from debug location.
-
-<sub>C API: LLVMDILocationGetColumn</sub>)");
-
-  // Compatibility alias for Metadata.di_location_scope.
-  m.def(
-      "di_location_get_scope",
-      [](const LLVMMetadataWrapper &location) -> LLVMMetadataWrapper {
-        location.check_valid();
-        return LLVMMetadataWrapper(LLVMDILocationGetScope(location.m_ref),
-                                   location.m_context_token);
-      },
-      "location"_a, R"(Get scope from debug location.
-
-<sub>C API: LLVMDILocationGetScope</sub>)");
-
-  // Compatibility alias for Metadata.di_location_inlined_at.
-  m.def(
-      "di_location_get_inlined_at",
-      [](const LLVMMetadataWrapper &location)
-          -> std::optional<LLVMMetadataWrapper> {
-        location.check_valid();
-        LLVMMetadataRef ref = LLVMDILocationGetInlinedAt(location.m_ref);
-        if (ref)
-          return LLVMMetadataWrapper(ref, location.m_context_token);
-        return std::nullopt;
-      },
-      "location"_a, R"(Get inlined-at location from debug location, or None.
-
-<sub>C API: LLVMDILocationGetInlinedAt</sub>)");
-
-  // Debug metadata version aliases
   m.attr("debug_metadata_version") = nb::int_(LLVMDebugMetadataVersion());
-  m.def(
-      "get_debug_metadata_version",
-      []() -> unsigned { return LLVMDebugMetadataVersion(); },
-      R"(Get the version of debug metadata supported by this LLVM version.
-
-Deprecated alias for the debug_metadata_version module attribute.
-
-<sub>C API: LLVMDebugMetadataVersion</sub>)");
-
-  m.def(
-      "get_module_debug_metadata_version",
-      [](const LLVMModuleWrapper &mod) -> unsigned {
-        mod.check_valid();
-        return LLVMGetModuleDebugMetadataVersion(mod.m_ref);
-      },
-      "mod"_a, R"(Get the debug metadata version from a module.
-
-<sub>C API: LLVMGetModuleDebugMetadataVersion</sub>)");
-
-  m.def(
-      "strip_module_debug_info",
-      [](LLVMModuleWrapper &mod) -> bool {
-        mod.check_valid();
-        return LLVMStripModuleDebugInfo(mod.m_ref);
-      },
-      "mod"_a, R"(Strip debug info from a module. Returns true if changed.
-
-<sub>C API: LLVMStripModuleDebugInfo</sub>)");
-
-  // DI file/scope query functions
-  // Compatibility alias for Metadata.di_scope_file.
-  m.def(
-      "di_scope_get_file",
-      [](const LLVMMetadataWrapper &scope)
-          -> std::optional<LLVMMetadataWrapper> {
-        scope.check_valid();
-        LLVMMetadataRef ref = LLVMDIScopeGetFile(scope.m_ref);
-        if (ref)
-          return LLVMMetadataWrapper(ref, scope.m_context_token);
-        return std::nullopt;
-      },
-      "scope"_a, R"(Get file from debug scope, or None.
-
-<sub>C API: LLVMDIScopeGetFile</sub>)");
-
-  // Compatibility alias for Metadata.di_file_directory.
-  m.def(
-      "di_file_get_directory",
-      [](const LLVMMetadataWrapper &file) -> std::string {
-        file.check_valid();
-        unsigned len;
-        const char *dir = LLVMDIFileGetDirectory(file.m_ref, &len);
-        return std::string(dir, len);
-      },
-      "file"_a, R"(Get directory from debug file.
-
-<sub>C API: LLVMDIFileGetDirectory</sub>)");
-
-  // Compatibility alias for Metadata.di_file_filename.
-  m.def(
-      "di_file_get_filename",
-      [](const LLVMMetadataWrapper &file) -> std::string {
-        file.check_valid();
-        unsigned len;
-        const char *name = LLVMDIFileGetFilename(file.m_ref, &len);
-        return std::string(name, len);
-      },
-      "file"_a, R"(Get filename from debug file.
-
-<sub>C API: LLVMDIFileGetFilename</sub>)");
-
-  // Compatibility alias for Metadata.di_file_source.
-  m.def(
-      "di_file_get_source",
-      [](const LLVMMetadataWrapper &file) -> std::string {
-        file.check_valid();
-        unsigned len;
-        const char *src = LLVMDIFileGetSource(file.m_ref, &len);
-        return std::string(src, len);
-      },
-      "file"_a, R"(Get embedded source from debug file.
-
-<sub>C API: LLVMDIFileGetSource</sub>)");
-
-  // DI subprogram/variable query functions
-  // Compatibility alias for Metadata.di_subprogram_line.
-  m.def(
-      "di_subprogram_get_line",
-      [](const LLVMMetadataWrapper &subprogram) -> unsigned {
-        subprogram.check_valid();
-        return LLVMDISubprogramGetLine(subprogram.m_ref);
-      },
-      "subprogram"_a, R"(Get line number from debug subprogram.
-
-<sub>C API: LLVMDISubprogramGetLine</sub>)");
-
-  // Compatibility alias for Metadata.di_variable_file.
-  m.def(
-      "di_variable_get_file",
-      [](const LLVMMetadataWrapper &variable)
-          -> std::optional<LLVMMetadataWrapper> {
-        variable.check_valid();
-        LLVMMetadataRef ref = LLVMDIVariableGetFile(variable.m_ref);
-        if (ref)
-          return LLVMMetadataWrapper(ref, variable.m_context_token);
-        return std::nullopt;
-      },
-      "variable"_a, R"(Get file from debug variable, or None.
-
-<sub>C API: LLVMDIVariableGetFile</sub>)");
-
-  // Compatibility alias for Metadata.di_variable_scope.
-  m.def(
-      "di_variable_get_scope",
-      [](const LLVMMetadataWrapper &variable)
-          -> std::optional<LLVMMetadataWrapper> {
-        variable.check_valid();
-        LLVMMetadataRef ref = LLVMDIVariableGetScope(variable.m_ref);
-        if (ref)
-          return LLVMMetadataWrapper(ref, variable.m_context_token);
-        return std::nullopt;
-      },
-      "variable"_a, R"(Get scope from debug variable, or None.
-
-<sub>C API: LLVMDIVariableGetScope</sub>)");
-
-  // Compatibility alias for Metadata.di_variable_line.
-  m.def(
-      "di_variable_get_line",
-      [](const LLVMMetadataWrapper &variable) -> unsigned {
-        variable.check_valid();
-        return LLVMDIVariableGetLine(variable.m_ref);
-      },
-      "variable"_a, R"(Get line number from debug variable.
-
-<sub>C API: LLVMDIVariableGetLine</sub>)");
-
-  // DIGlobalVariableExpression accessors
-  // Compatibility alias for Metadata.di_gve_variable.
-  m.def(
-      "di_global_variable_expression_get_variable",
-      [](const LLVMMetadataWrapper &gve) -> LLVMMetadataWrapper {
-        gve.check_valid();
-        LLVMMetadataRef ref =
-            LLVMDIGlobalVariableExpressionGetVariable(gve.m_ref);
-        return LLVMMetadataWrapper(ref, gve.m_context_token);
-      },
-      "gve"_a,
-      R"(Get the DIGlobalVariable from a DIGlobalVariableExpression.
-
-<sub>C API: LLVMDIGlobalVariableExpressionGetVariable</sub>)");
-
-  // Compatibility alias for Metadata.di_gve_expression.
-  m.def(
-      "di_global_variable_expression_get_expression",
-      [](const LLVMMetadataWrapper &gve) -> LLVMMetadataWrapper {
-        gve.check_valid();
-        LLVMMetadataRef ref =
-            LLVMDIGlobalVariableExpressionGetExpression(gve.m_ref);
-        return LLVMMetadataWrapper(ref, gve.m_context_token);
-      },
-      "gve"_a,
-      R"(Get the DIExpression from a DIGlobalVariableExpression.
-
-<sub>C API: LLVMDIGlobalVariableExpressionGetExpression</sub>)");
+  // NOTE: debug metadata accessors moved to Metadata and Module properties.
 
   // ==========================================================================
   // Intrinsic lookup
@@ -16464,130 +16027,12 @@ Deprecated alias for the debug_metadata_version module attribute.
 
 <sub>C API: LLVMIntrinsicGetName</sub>)");
 
-  // Compatibility alias for Context.get_intrinsic_type().
-  m.def("intrinsic_get_type", &intrinsic_get_type, "ctx"_a, "id"_a,
-        "param_types"_a,
-        R"(Get the type of an intrinsic function.
-        
-        Args:
-            ctx: The LLVM context.
-            id: The intrinsic ID.
-            param_types: List of parameter types for overloaded intrinsics.
-            
-        Returns:
-            The function type of the intrinsic.
-
-<sub>C API: LLVMIntrinsicGetType</sub>)");
-
-  // Compatibility alias for Value.get_cast_opcode().
-  m.def("get_cast_opcode", &get_cast_opcode, "src"_a, "src_is_signed"_a,
-        "dest_ty"_a, "dest_is_signed"_a,
-        R"(Get the appropriate cast opcode for converting between types.
-        
-        Args:
-            src: The source value.
-            src_is_signed: Whether the source is signed.
-            dest_ty: The destination type.
-            dest_is_signed: Whether the destination is signed.
-            
-        Returns:
-            The LLVMOpcode for the appropriate cast instruction.
-
-<sub>C API: LLVMGetCastOpcode</sub>)");
-
-  // Compatibility alias for Value.replace_md_node_operand_with().
-  m.def("replace_md_node_operand_with", &replace_md_node_operand_with, "val"_a,
-        "index"_a, "replacement"_a,
-        R"(Replace a metadata operand in a value's metadata node.
-        
-        Args:
-            val: The value containing the metadata node.
-            index: The operand index to replace.
-            replacement: The new metadata to use.
-
-<sub>C API: LLVMReplaceMDNodeOperandWith</sub>)");
-
-  // Compatibility alias for Context.create_debug_location().
-  m.def(
-      "dibuilder_create_debug_location",
-      [](LLVMContextWrapper &ctx, unsigned line, unsigned column,
-         const LLVMMetadataWrapper &scope,
-         const LLVMMetadataWrapper *inlined_at) -> LLVMMetadataWrapper {
-        ctx.check_valid();
-        scope.check_valid();
-        LLVMMetadataRef inlined = inlined_at ? inlined_at->m_ref : nullptr;
-        return LLVMMetadataWrapper(
-            LLVMDIBuilderCreateDebugLocation(ctx.m_ref, line, column,
-                                             scope.m_ref, inlined),
-            ctx.m_token);
-      },
-      "ctx"_a, "line"_a, "column"_a, "scope"_a, "inlined_at"_a.none(),
-      R"(Create debug location.)");
-
-  // NOTE: set_subprogram has been moved to Function.set_subprogram() method
-
-  // Compatibility alias for Metadata.replace_di_subprogram_type().
-  m.def(
-      "di_subprogram_replace_type",
-      [](const LLVMMetadataWrapper &subprogram,
-         const LLVMMetadataWrapper &type) {
-        subprogram.check_valid();
-        type.check_valid();
-        LLVMDISubprogramReplaceType(subprogram.m_ref, type.m_ref);
-      },
-      "subprogram"_a, "type"_a, R"(Replace subprogram type.)");
-
-  // ==========================================================================
-  // Builder Positioning and Debug Records
-  // ==========================================================================
-
-  // NOTE: set_is_new_dbg_info_format and is_new_dbg_info_format have been
-  // moved to Module.is_new_dbg_info_format property
-
-  // Debug record iteration (opaque DbgRecord type - kept as global functions)
-
-  // Debug record compatibility aliases; prefer Value.first_dbg_record,
+  // NOTE: intrinsic type lookup moved to Context.get_intrinsic_type().
+  // NOTE: cast-opcode and metadata-node mutation helpers moved to Value methods.
+  // NOTE: debug-location creation moved to Context.create_debug_location().
+  // NOTE: DISubprogram type replacement moved to Metadata.replace_di_subprogram_type().
+  // NOTE: debug record traversal moved to Value.first_dbg_record,
   // Value.last_dbg_record, and DbgRecord.next/prev.
-
-  m.def(
-      "get_first_dbg_record",
-      [](const LLVMValueWrapper &instr) -> void * {
-        instr.check_valid();
-        if (!instr.is_a_instruction())
-          throw LLVMAssertionError(
-              "get_first_dbg_record requires an instruction value");
-        if (!instr.has_dbg_records())
-          return nullptr;
-        return LLVMGetFirstDbgRecord(instr.m_ref);
-      },
-      "instr"_a, R"(Get first debug record attached to instruction.)");
-
-  m.def(
-      "get_last_dbg_record",
-      [](const LLVMValueWrapper &instr) -> void * {
-        instr.check_valid();
-        if (!instr.is_a_instruction())
-          throw LLVMAssertionError(
-              "get_last_dbg_record requires an instruction value");
-        if (!instr.has_dbg_records())
-          return nullptr;
-        return LLVMGetLastDbgRecord(instr.m_ref);
-      },
-      "instr"_a, R"(Get last debug record attached to instruction.)");
-
-  m.def(
-      "get_next_dbg_record",
-      [](void *dbg_record) -> void * {
-        return LLVMGetNextDbgRecord((LLVMDbgRecordRef)dbg_record);
-      },
-      "dbg_record"_a, R"(Get next debug record.)");
-
-  m.def(
-      "get_previous_dbg_record",
-      [](void *dbg_record) -> void * {
-        return LLVMGetPreviousDbgRecord((LLVMDbgRecordRef)dbg_record);
-      },
-      "dbg_record"_a, R"(Get previous debug record.)");
 
   // Constants for DIFlags
   m.attr("DIFlagZero") = nb::int_((unsigned)LLVMDIFlagZero);
