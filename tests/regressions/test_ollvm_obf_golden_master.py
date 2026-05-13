@@ -28,12 +28,6 @@ FIXTURES_DIR = Path("tests/golden/ollvm_obf")
 
 @lru_cache(maxsize=1)
 def target_machine() -> llvm.TargetMachine:
-    llvm.initialize_all_target_infos()
-    llvm.initialize_all_targets()
-    llvm.initialize_all_target_mcs()
-    llvm.initialize_all_asm_printers()
-    llvm.initialize_all_asm_parsers()
-
     triple = llvm.default_target_triple
     target = llvm.Target.from_triple(triple)
     assert target is not None

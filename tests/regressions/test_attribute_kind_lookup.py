@@ -74,6 +74,59 @@ def test_attribute_factories_and_function_accessors():
             assert mod.verify(), mod.verification_error
 
 
+def test_memory_attribute_helpers():
+    with llvm.create_context() as ctx:
+        with ctx.create_module("memory_attrs") as mod:
+            void = ctx.types.void
+            fn_ty = ctx.types.function(void, [])
+            fn = mod.add_function("f", fn_ty)
+
+            memory_none = llvm.Attribute.memory(ctx, "none")
+            assert memory_none.value == 0
+            fn.attributes.add(memory_none)
+            memory_attr = fn.attributes.get("memory")
+            assert memory_attr is not None
+            assert memory_attr.value == 0
+            assert "memory(none)" in str(mod)
+
+            fn.attributes.remove("memory")
+            fn.attributes.add_memory("read")
+            memory_attr = fn.attributes.get("memory")
+            assert memory_attr is not None
+            assert memory_attr.value == llvm.Attribute.memory(ctx, "read").value
+            assert "memory(read)" in str(mod)
+
+            fn.attributes.remove("memory")
+            fn.attributes.add_memory("argmem: read")
+            memory_attr = fn.attributes.get("memory")
+            assert memory_attr is not None
+            assert memory_attr.value == 1
+            assert "memory(argmem: read)" in str(mod)
+
+            fn.attributes.remove("memory")
+            complex_effects = (
+                "memory(argmem: read, inaccessiblemem: write, other: readwrite)"
+            )
+            fn.attributes.add_memory(complex_effects)
+            memory_attr = fn.attributes.get("memory")
+            assert memory_attr is not None
+            assert (
+                memory_attr.value == llvm.Attribute.memory(ctx, complex_effects).value
+            )
+            ir = str(mod)
+            assert "argmem: read" in ir
+            assert "inaccessiblemem: write" in ir
+
+            try:
+                fn.attributes.add_memory("argmem: frobnicate")
+            except llvm.LLVMAssertionError as exc:
+                assert "Unknown memory access effect" in str(exc)
+            else:
+                raise AssertionError("expected invalid memory access error")
+
+            assert mod.verify(), mod.verification_error
+
+
 def test_callsite_attribute_accessors():
     with llvm.create_context() as ctx:
         with ctx.create_module("callsite_attr_accessors") as mod:
@@ -122,6 +175,9 @@ if __name__ == "__main__":
 
     test_attribute_factories_and_function_accessors()
     print("test_attribute_factories_and_function_accessors: PASSED")
+
+    test_memory_attribute_helpers()
+    print("test_memory_attribute_helpers: PASSED")
 
     test_callsite_attribute_accessors()
     print("test_callsite_attribute_accessors: PASSED")

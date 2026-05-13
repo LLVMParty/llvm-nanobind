@@ -4,8 +4,8 @@ Full-tree regression matrix for remaining wrapper guard paths.
 This complements value/type/non-value matrices with:
 - helper API assertions (phi/switch/indirectbr, call builders, vector_const)
 - manager state-machine guards (Context/Module/Builder/DIBuilder/Binary)
-- wrapper lifetime guards (TypeFactory/Attribute/Comdat/NamedMDNode/Use/
-  ValueMetadataEntries)
+- wrapper lifetime guards (TypeFactory/Attribute/Comdat/NamedMetadataList/Use/
+  MetadataMap)
 - attribute/operand-bundle/indexed metadata guards
 - disassembler invalid-context guards
 """
@@ -166,15 +166,16 @@ def test_attribute_operand_bundle_and_entries_guards():
                 add_inst = b.add(fn.get_param(0), i32.constant(1, False), "sum")
                 b.ret(add_inst)
 
-            md = ctx.md_string("meta")
-            kind = ctx.get_md_kind_id("llvm_nanobind.meta")
-            add_inst.set_metadata(kind, md, ctx)
-            entries = add_inst.instruction_get_all_metadata_other_than_debug_loc()
-            assert len(entries) >= 1
-            _ = entries.get_kind(0)
-            _ = entries.get_metadata(0)
-            assert_out_of_range(lambda: entries.get_kind(len(entries)))
-            assert_out_of_range(lambda: entries.get_metadata(len(entries)))
+            md = ctx.md_node([ctx.md_string("meta")])
+            add_inst.metadata["llvm_nanobind.meta"] = md
+            assert "llvm_nanobind.meta" in add_inst.metadata
+            assert add_inst.metadata["llvm_nanobind.meta"] == md
+            assert add_inst.metadata.get("missing.kind") is None
+            try:
+                _ = add_inst.metadata["missing.kind"]
+                assert False, "Expected KeyError for missing metadata"
+            except KeyError:
+                pass
 
 
 def test_manager_state_machine_guards():
@@ -223,7 +224,7 @@ def test_manager_state_machine_guards():
 
             dm2 = mod.create_dibuilder()
             dib = dm2.__enter__()
-            _ = dib.create_file("x.c", ".")
+            _ = dib.file("x.c", ".")
             assert_memory_error(
                 lambda: dm2.dispose(),
                 "cannot call dispose() after __enter__",
@@ -283,7 +284,7 @@ def test_lifetime_guards_for_remaining_wrappers():
             escaped["types"] = ctx.types
             escaped["attr"] = llvm.Attribute.string(ctx, "k", "v")
             escaped["comdat"] = mod.add_comdat("C")
-            escaped["named_md"] = mod.add_named_metadata("llvm.nanobind.named")
+            escaped["named_md"] = mod.named_metadata["llvm.nanobind.named"]
 
             fn_ty = ctx.types.function(i32, [i32], False)
             fn = mod.add_function("f", fn_ty)
@@ -296,20 +297,19 @@ def test_lifetime_guards_for_remaining_wrappers():
             assert len(uses) >= 1
             escaped["use"] = uses[0]
 
-            md = ctx.md_string("meta")
-            kind = ctx.get_md_kind_id("llvm_nanobind.lifetime")
-            add_inst.set_metadata(kind, md, ctx)
-            escaped["entries"] = add_inst.instruction_get_all_metadata_other_than_debug_loc()
-            assert len(escaped["entries"]) >= 1
+            md = ctx.md_node([ctx.md_string("meta")])
+            add_inst.metadata["llvm_nanobind.lifetime"] = md
+            escaped["metadata"] = add_inst.metadata
+            assert escaped["metadata"].get("llvm_nanobind.lifetime") == md
 
     assert_memory_error(lambda: escaped["types"].i32, "typefactory used after context")
     assert_memory_error(lambda: escaped["attr"].string_kind, "attribute used after context")
     assert_memory_error(lambda: escaped["comdat"].selection_kind, "comdat used after module")
-    assert_memory_error(lambda: escaped["named_md"].name, "namedmdnode used after context")
+    assert_memory_error(lambda: len(escaped["named_md"]), "named metadata view used after context")
     assert_memory_error(lambda: escaped["use"].user, "use used after context")
     assert_memory_error(
-        lambda: escaped["entries"].get_kind(0),
-        "valuemetadataentries used after context",
+        lambda: escaped["metadata"].get("llvm_nanobind.lifetime"),
+        "metadata view used after context",
     )
 
 

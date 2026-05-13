@@ -38,6 +38,55 @@ rg "replace_all_uses_with|erase_from_parent|split_basic_block|const_string" .ven
   - `devdocs/lit-tests.md`
   - `devdocs/DEBUGGING.md`
 
+## High-Level UX Helpers
+
+These APIs wrap common workflows that previously required LLVM-C-style boilerplate:
+
+```python
+# Intrinsics by name.
+builder.intrinsic("llvm.sqrt", [x], overloaded_types=[x.type])
+
+# Explicit PassBuilder pipeline optimization.
+mod.optimize("default<O2>", target_machine=tm)
+func.optimize("mem2reg,instcombine,simplifycfg", target_machine=tm)
+
+# Direct object/assembly emission. Optimize explicitly first when desired.
+obj = mod.emit_object(target_machine=tm)
+asm = mod.emit_assembly(target_machine=tm)
+
+# Host target machine convenience.
+tm = llvm.TargetMachine.host()
+
+# LLVM-C ORC LLJIT.
+with llvm.JIT.host() as jit:
+    jit.add_module(mod)  # invalidates mod on success
+    addr = jit.lookup("compiled_function")
+
+# Metadata by name, without public kind IDs.
+text = ctx.md_string("frontend")
+assert text.is_string
+assert text.string == "frontend"
+node = ctx.md_node([text])
+for operand in node.operands:
+    assert operand.string == "frontend"
+inst.metadata["llvm.loop"] = loop_md
+md = inst.metadata.get("llvm.loop")
+src_inst.metadata.copy_to(dst_inst)
+del inst.metadata["llvm.loop"]
+
+# Named metadata and module flags.
+mod.named_metadata["llvm.dbg.cu"].append(compile_unit)
+mod.module_flags.add("Debug Info Version", llvm.ModuleFlagBehavior.Warning, md)
+
+# Debug-location scopes.
+with builder.debug_location(line=12, column=4, scope=subprogram):
+    inst = builder.add(a, b, "sum")
+```
+
+`builder.intrinsic(..., overloaded_types=[...])` uses LLVM's intrinsic
+overload-disambiguation type list. This list selects the intrinsic declaration;
+it is not the same as the call operand list.
+
 ## Value API Validity Matrix
 
 This section documents when `llvm.Value` accessors are valid to call. Invalid
@@ -68,7 +117,7 @@ calls should raise `llvm.LLVMAssertionError` (not crash).
 - Global value:
   - `global_value_type`, `unnamed_address`
   - `linkage`, `visibility`, `dll_storage_class`
-  - `global_copy_all_metadata`
+  - `metadata` mapping view; use `value.metadata.copy_to(other)` for bulk copies
 - Global object:
   - `comdat`, `set_comdat`
   - `section`
@@ -90,7 +139,7 @@ calls should raise `llvm.LLVMAssertionError` (not crash).
 
 - Any instruction:
   - `opcode`, `opcode_name`
-  - `instruction_get_all_metadata_other_than_debug_loc`
+  - `metadata` mapping view; use `inst.metadata.copy_to(other)` for bulk copies
   - `next_instruction`, `prev_instruction`
   - `remove_from_parent`, `erase_from_parent`, `delete_instruction`,
     `instruction_clone`
@@ -216,6 +265,12 @@ This section captures guard preconditions for wrapper classes other than
   - `set_body` requires identified opaque struct type (not literal, not already
     non-opaque).
 
+### Type factory aliases
+
+- `types` is available on `Context`, `Module`, `Function`, `BasicBlock`, and `Value`.
+- All aliases for objects in the same context compare equal:
+  `ctx.types == mod.types == fn.types == bb.types == value.types`.
+
 ### BasicBlock (`llvm.BasicBlock`)
 
 - `terminator` requires the block to have a terminator.
@@ -245,6 +300,9 @@ This section captures guard preconditions for wrapper classes other than
   - `return_attributes` for return-value attributes.
   - `param_attributes(i)` for parameter attributes, using a 0-based Python index.
   - Use `llvm.Attribute.enum/type/string(...)` or `slot.add("noreturn")`.
+  - Use `llvm.Attribute.memory(ctx, "none")` or `slot.add_memory("read")` for `memory(...)` effects without raw encoded integers.
+- `create_builder()` positions in the function entry block and creates an
+  `entry` block when the function has no blocks yet.
 - `block_address` requires block ownership by that function.
   Prefer `bb.block_address()` when the function can be inferred.
 - Parent navigation:
@@ -258,6 +316,9 @@ This section captures guard preconditions for wrapper classes other than
 - Positioning:
   - `position_before(inst)` requires an instruction attached to a block.
   - `position_at(bb, inst)` requires `inst` to be an instruction in `bb`.
+- Memory allocation:
+  - `alloca(ty, name="")` creates a scalar alloca.
+  - `alloca(ty, count, name="")` creates an array alloca.
 - Instruction-only insertion helpers:
   - `insert_into_builder_with_name(instr)` requires instruction value.
   - `add_metadata_to_inst(instr)` requires instruction value.

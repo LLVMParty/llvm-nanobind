@@ -5,6 +5,7 @@ Accessing properties on end iterators used to hard-abort in LLVM APIs.
 Bindings should raise LLVMAssertionError instead.
 """
 
+import gc
 from pathlib import Path
 
 import llvm
@@ -61,6 +62,23 @@ def test_section_symbol_and_relocation_end_guards() -> None:
             )
 
 
+def test_relocation_iterator_keeps_temporary_section_alive() -> None:
+    if not OBJECT_PATH.exists():
+        print(f"SKIP: object file not found: {OBJECT_PATH.resolve()}")
+        return
+
+    with llvm.BinaryManager.from_file(OBJECT_PATH) as binary:
+        probe = binary.sections
+        if probe.is_at_end():
+            print("SKIP: object file has no sections")
+            return
+
+        reloc = binary.sections.relocations
+        gc.collect()
+
+        assert isinstance(reloc.is_at_end(), bool)
+
+
 def test_contains_symbol_and_move_to_containing_section_require_non_end_symbol() -> None:
     if not OBJECT_PATH.exists():
         print(f"SKIP: object file not found: {OBJECT_PATH.resolve()}")
@@ -85,5 +103,6 @@ def test_contains_symbol_and_move_to_containing_section_require_non_end_symbol()
 
 if __name__ == "__main__":
     test_section_symbol_and_relocation_end_guards()
+    test_relocation_iterator_keeps_temporary_section_alive()
     test_contains_symbol_and_move_to_containing_section_require_non_end_symbol()
     print("test_binary_iterator_end_guards: PASSED")

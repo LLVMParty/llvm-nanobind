@@ -424,11 +424,6 @@ def test_value_accessor_guard_matrix_negative():
                     "global value",
                 ),
                 (
-                    "global_copy_all_metadata",
-                    lambda: bad.global_copy_all_metadata(),
-                    "global value",
-                ),
-                (
                     "has_personality_fn",
                     lambda: bad.has_personality_fn,
                     "function value",
@@ -456,11 +451,6 @@ def test_value_accessor_guard_matrix_negative():
                     "prologue_data",
                     lambda: setattr(bad, "prologue_data", ctx.types.ptr.null()),
                     "function value",
-                ),
-                (
-                    "instruction_get_all_metadata_other_than_debug_loc",
-                    lambda: bad.instruction_get_all_metadata_other_than_debug_loc(),
-                    "instruction value",
                 ),
                 ("opcode", lambda: bad.opcode, "instruction value"),
                 ("opcode_name", lambda: bad.opcode_name, "instruction value"),
@@ -905,7 +895,7 @@ def test_value_accessor_guard_matrix_positive():
             assert g0.global_value_type.kind == llvm.TypeKind.Integer
             ua = g0.unnamed_address
             g0.unnamed_address = ua
-            assert len(g0.global_copy_all_metadata()) >= 0
+            g0.metadata.copy_to(g0)
 
             # Function value.
             assert not f.has_personality_fn
@@ -920,7 +910,7 @@ def test_value_accessor_guard_matrix_positive():
             assert f.prologue_data is not None
 
             # Instruction value.
-            assert len(add_inst.instruction_get_all_metadata_other_than_debug_loc()) >= 0
+            add_inst.metadata.copy_to(add_inst)
             assert add_inst.opcode == llvm.Opcode.Add
             assert add_inst.opcode_name == "add"
             next_inst = add_inst.next_instruction

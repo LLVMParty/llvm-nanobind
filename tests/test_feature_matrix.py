@@ -66,22 +66,19 @@ def test_core_intrinsic_get_type():
         print("[PASS] intrinsic_get_type works correctly")
 
 
-def test_core_replace_md_node_operand():
-    """Test LLVMReplaceMDNodeOperandWith → Value.replace_md_node_operand_with()"""
+def test_core_metadata_node_operands():
+    """Test MDNode operand inspection through Metadata.operands."""
     with llvm.create_context() as ctx:
-        # Create metadata nodes
         md1 = ctx.md_string("original")
         md2 = ctx.md_string("replacement")
-        md_node = ctx.md_node([md1])
+        md_node = ctx.md_node([md1, md2])
 
-        # Convert to value to use with replace function
-        md_val = md_node.as_value(ctx)
-        replacement_val = md2.as_value(ctx)
+        assert [operand.string for operand in md_node.operands] == [
+            "original",
+            "replacement",
+        ]
 
-        # Replace operand
-        md_val.replace_md_node_operand_with(0, replacement_val.as_metadata())
-
-        print("[PASS] replace_md_node_operand_with works correctly")
+        print("[PASS] metadata node operands work correctly")
 
 
 def test_debuginfo_global_variable_expression():
@@ -90,16 +87,16 @@ def test_debuginfo_global_variable_expression():
         with ctx.create_module("test") as mod:
             with mod.create_dibuilder() as dib:
                 # Create necessary debug info
-                file = dib.create_file("test.c", "/path")
-                cu = dib.create_compile_unit(
-                    lang=DWARF_LANG_C,
+                file = dib.file("test.c", "/path")
+                cu = dib.compile_unit(
+                    language=llvm.DwarfLanguage.C,
                     file=file,
                     producer="test",
                     is_optimized=False,
                     flags="",
                     runtime_ver=0,
                     split_name="",
-                    kind=llvm.DWARFEmissionFull,
+                    kind=llvm.DwarfEmissionKind.Full,
                     dwo_id=0,
                     split_debug_inlining=True,
                     debug_info_for_profiling=False,
@@ -110,6 +107,12 @@ def test_debuginfo_global_variable_expression():
                 i32_ty = dib.create_basic_type(
                     "int", 32, DWARF_ATE_SIGNED, DI_FLAGS_ZERO
                 )
+                assert i32_ty.di_type_name == "int"
+                assert i32_ty.di_type_size_in_bits == 32
+                assert i32_ty.di_type_align_in_bits == 0
+                assert i32_ty.di_type_offset_in_bits == 0
+                assert i32_ty.di_type_line == 0
+                assert i32_ty.di_type_flags == DI_FLAGS_ZERO
 
                 # Create a global variable expression
                 gve = dib.create_global_variable_expression(
@@ -144,16 +147,16 @@ def test_debuginfo_class_type():
     with llvm.create_context() as ctx:
         with ctx.create_module("test") as mod:
             with mod.create_dibuilder() as dib:
-                file = dib.create_file("test.cpp", "/path")
-                cu = dib.create_compile_unit(
-                    lang=DWARF_LANG_C_PLUS_PLUS,
+                file = dib.file("test.cpp", "/path")
+                cu = dib.compile_unit(
+                    language=llvm.DwarfLanguage.CPlusPlus,
                     file=file,
                     producer="test",
                     is_optimized=False,
                     flags="",
                     runtime_ver=0,
                     split_name="",
-                    kind=llvm.DWARFEmissionFull,
+                    kind=llvm.DwarfEmissionKind.Full,
                     dwo_id=0,
                     split_debug_inlining=True,
                     debug_info_for_profiling=False,
@@ -189,16 +192,16 @@ def test_debuginfo_static_member_type():
     with llvm.create_context() as ctx:
         with ctx.create_module("test") as mod:
             with mod.create_dibuilder() as dib:
-                file = dib.create_file("test.cpp", "/path")
-                cu = dib.create_compile_unit(
-                    lang=DWARF_LANG_C_PLUS_PLUS,
+                file = dib.file("test.cpp", "/path")
+                cu = dib.compile_unit(
+                    language=llvm.DwarfLanguage.CPlusPlus,
                     file=file,
                     producer="test",
                     is_optimized=False,
                     flags="",
                     runtime_ver=0,
                     split_name="",
-                    kind=llvm.DWARFEmissionFull,
+                    kind=llvm.DwarfEmissionKind.Full,
                     dwo_id=0,
                     split_debug_inlining=True,
                     debug_info_for_profiling=False,
@@ -237,16 +240,16 @@ def test_debuginfo_member_pointer_type():
     with llvm.create_context() as ctx:
         with ctx.create_module("test") as mod:
             with mod.create_dibuilder() as dib:
-                file = dib.create_file("test.cpp", "/path")
-                cu = dib.create_compile_unit(
-                    lang=DWARF_LANG_C_PLUS_PLUS,
+                file = dib.file("test.cpp", "/path")
+                cu = dib.compile_unit(
+                    language=llvm.DwarfLanguage.CPlusPlus,
                     file=file,
                     producer="test",
                     is_optimized=False,
                     flags="",
                     runtime_ver=0,
                     split_name="",
-                    kind=llvm.DWARFEmissionFull,
+                    kind=llvm.DwarfEmissionKind.Full,
                     dwo_id=0,
                     split_debug_inlining=True,
                     debug_info_for_profiling=False,
@@ -292,10 +295,6 @@ def test_debuginfo_member_pointer_type():
 
 def test_object_binary_copy_to_memory_buffer():
     """Test LLVMBinaryCopyMemoryBuffer → binary.copy_to_memory_buffer()"""
-    # Initialize targets first (before creating context)
-    llvm.initialize_native_target()
-    llvm.initialize_native_asm_printer()
-
     with llvm.create_context() as ctx:
         with ctx.create_module("test") as mod:
             # Create a simple function
@@ -335,10 +334,6 @@ def test_object_binary_copy_to_memory_buffer():
 
 def test_object_section_contains_symbol():
     """Test LLVMGetSectionContainsSymbol → section.contains_symbol()"""
-    # Initialize targets first
-    llvm.initialize_native_target()
-    llvm.initialize_native_asm_printer()
-
     with llvm.create_context() as ctx:
         with ctx.create_module("test") as mod:
             # Create a function
@@ -418,7 +413,7 @@ def test_all():
     # Core.h
     test_core_get_cast_opcode()
     test_core_intrinsic_get_type()
-    test_core_replace_md_node_operand()
+    test_core_metadata_node_operands()
 
     # DebugInfo.h
     test_debuginfo_global_variable_expression()

@@ -12,8 +12,8 @@ The earliest API mirrored the LLVM C API directly. While this made initial imple
 # Current: Pythonic object-oriented API
 i32 = ctx.types.i32
 const = i32.constant(42)
-func.attributes.add(attr)
-inst.set_metadata(kind, md)
+func.attributes.add("noreturn")
+inst.metadata["llvm.loop"] = loop_md
 ```
 
 ---
@@ -94,8 +94,10 @@ Python developers expect `object.operation()`, not `module.operation(object)`.
 
 **Acceptable globals**:
 - Ownerless factories: `create_context()`
-- Initialization: `initialize_all_targets()`
-- Registry lookups: `get_md_kind_id()` (no object owns the metadata registry)
+- Target and intrinsic registry lookups that do not mutate IR
+
+LLVM target/disassembler registries are initialized when the module is imported;
+public initialization functions add no user-facing value.
 
 Factories with a natural owner should be static methods instead (for example,
 `BinaryManager.from_file()` rather than a module-level binary factory).
@@ -124,7 +126,17 @@ This catches errors with clear messages while keeping the API simple.
 
 ---
 
-### 8. Method Chaining Potential
+### 8. C API Anchors in Binding Docs
+
+**Principle**: Every public binding method or property should document the LLVM-C API it uses with a `<sub>C API: ...</sub>` line.
+
+**Why**: The C API anchor keeps the binding grounded in LLVM's actual surface, makes generated stubs searchable, and lets future maintainers or agents verify behavior against LLVM headers.
+
+If a method is a pure convenience wrapper, list the primary LLVM-C calls it composes. If LLVM-C lacks a required operation, document that as `<sub>C API limitation</sub>`.
+
+---
+
+### 9. Method Chaining Potential
 
 **Principle**: Methods returning values enable fluent APIs.
 
