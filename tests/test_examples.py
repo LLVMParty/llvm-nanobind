@@ -103,6 +103,19 @@ def test_optimize_module_example() -> None:
     assert "alloca" not in output
 
 
+def test_optimize_function_example() -> None:
+    output = run_example("examples/optimize_function.py")
+    assert "define i32 @optimize_me" in output
+    assert "define i32 @leave_me_alone" in output
+    assert "ret i32 %x" in output
+    assert "%result = add i32 %x, 0" in output
+    optimized = output.split("define i32 @optimize_me", 1)[1].split(
+        "define i32 @leave_me_alone", 1
+    )[0]
+    assert "alloca" not in optimized
+    assert " add i32 " not in optimized
+
+
 def test_emit_object_assembly_example() -> None:
     output = run_example("examples/emit_object_assembly.py")
     if output.startswith("skipped:"):

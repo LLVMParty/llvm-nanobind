@@ -48,6 +48,7 @@ builder.intrinsic("llvm.sqrt", [x], overloaded_types=[x.type])
 
 # Explicit PassBuilder pipeline optimization.
 mod.optimize("default<O2>", target_machine=tm)
+func.optimize("mem2reg,instcombine,simplifycfg", target_machine=tm)
 
 # Direct object/assembly emission. Optimize explicitly first when desired.
 obj = mod.emit_object(target_machine=tm)

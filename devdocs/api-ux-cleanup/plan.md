@@ -82,11 +82,11 @@ builder.intrinsic(
 - Missing overload types error.
 - Generated module verifies.
 
-## Phase 2: Explicit module optimization helper
+## Phase 2: Explicit module/function optimization helpers
 
 ### User problem
 
-Running passes is possible, but the current method name is low-level and does not read like a user task. Users should be able to say “optimize this module with this pipeline” directly.
+Running passes is possible, but the current method name is low-level and does not read like a user task. Users should be able to say “optimize this module” or “optimize this function” with a PassBuilder pipeline directly.
 
 ### Target UX
 
@@ -94,6 +94,9 @@ Running passes is possible, but the current method name is low-level and does no
 mod.optimize("default<O2>")
 mod.optimize("default<Os>", target_machine=tm)
 mod.optimize("function(mem2reg),default<O2>", target_machine=tm, options=opts)
+
+func.optimize("mem2reg,instcombine,simplifycfg")
+func.optimize("instcombine,simplifycfg", target_machine=tm, options=opts)
 ```
 
 ### Public API shape
@@ -105,12 +108,20 @@ mod.optimize(
     target_machine: llvm.TargetMachine | None = None,
     options: llvm.PassBuilderOptions | None = None,
 ) -> None
+
+func.optimize(
+    pipeline: str,
+    *,
+    target_machine: llvm.TargetMachine | None = None,
+    options: llvm.PassBuilderOptions | None = None,
+) -> None
 ```
 
 ### Behavior
 
-- `pipeline` is the LLVM PassBuilder pipeline string.
-- The method mutates the module in place.
+- `Module.optimize` accepts module-level LLVM PassBuilder pipeline strings.
+- `Function.optimize` accepts function-level LLVM PassBuilder pipeline strings.
+- The method mutates the module or function in place.
 - The method wraps the existing pass-running implementation.
 - Existing lower-level pass APIs remain available for advanced users.
 - Error messages should include the failed pipeline string when LLVM rejects it.
@@ -119,8 +130,8 @@ mod.optimize(
 
 - `default<O0>` succeeds on a simple module.
 - `default<O2>` succeeds on a simple module.
-- A custom pipeline succeeds where supported.
-- Invalid pipeline raises a Python exception with the pipeline in the message.
+- A custom function pipeline succeeds on one function without changing sibling functions.
+- Invalid pipelines raise Python exceptions with the pipeline in the message.
 - Passing a target machine works.
 
 ## Phase 3: Object and assembly emission convenience

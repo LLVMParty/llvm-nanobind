@@ -3983,6 +3983,9 @@ struct LLVMFunctionWrapper : LLVMValueWrapper {
     return !LLVMVerifyFunction(m_ref, LLVMReturnStatusAction);
   }
 
+  void optimize(const std::string &pipeline, LLVMTargetMachineWrapper *tm,
+                LLVMPassBuilderOptionsWrapper *opts);
+
   /// Verify this function and print any errors to stderr.
   /// Wraps LLVMVerifyFunction with LLVMPrintMessageAction.
   bool verify_and_print() const {
@@ -8588,6 +8591,59 @@ inline void LLVMModuleWrapper::run_passes(const std::string &passes,
                                           LLVMTargetMachineWrapper *tm,
                                           LLVMPassBuilderOptionsWrapper *opts) {
   ::run_passes(*this, passes, tm, opts);
+}
+
+void run_passes_on_function(LLVMFunctionWrapper &fn, const std::string &passes,
+                            LLVMTargetMachineWrapper *tm,
+                            LLVMPassBuilderOptionsWrapper *opts) {
+  fn.check_valid();
+  if (LLVMIsDeclaration(fn.m_ref)) {
+    throw LLVMAssertionError(
+        "Function.optimize requires a function definition (check "
+        "is_declaration first)");
+  }
+
+  LLVMTargetMachineRef tm_ref = nullptr;
+  if (tm) {
+    tm->check_valid();
+    tm_ref = tm->m_ref;
+  }
+
+  LLVMPassBuilderOptionsRef opts_ref = nullptr;
+  LLVMPassBuilderOptionsRef owned_opts = nullptr;
+  if (opts) {
+    opts->check_valid();
+    opts_ref = opts->m_ref;
+  } else {
+    // LLVMRunPassesOnFunction expects a valid options object on some LLVM
+    // builds.
+    owned_opts = LLVMCreatePassBuilderOptions();
+    if (!owned_opts)
+      throw LLVMError("Failed to create pass builder options");
+    opts_ref = owned_opts;
+  }
+
+  LLVMErrorRef err = LLVMRunPassesOnFunction(fn.m_ref, passes.c_str(), tm_ref,
+                                             opts_ref);
+  if (owned_opts)
+    LLVMDisposePassBuilderOptions(owned_opts);
+  if (err) {
+    char *msg = LLVMGetErrorMessage(err);
+    std::string error_msg = msg ? msg : "Unknown error";
+    LLVMDisposeErrorMessage(msg);
+    throw LLVMError("Failed to run function passes: " + error_msg);
+  }
+}
+
+inline void LLVMFunctionWrapper::optimize(
+    const std::string &pipeline, LLVMTargetMachineWrapper *tm,
+    LLVMPassBuilderOptionsWrapper *opts) {
+  try {
+    ::run_passes_on_function(*this, pipeline, tm, opts);
+  } catch (const LLVMError &e) {
+    throw LLVMError("Failed to optimize function with pipeline '" + pipeline +
+                    "': " + e.what());
+  }
 }
 
 inline void LLVMModuleWrapper::optimize(const std::string &pipeline,
@@ -14470,6 +14526,19 @@ Valid when:
            R"(Verify function and print errors to stderr.
 
 <sub>C API: LLVMVerifyFunction</sub>)")
+      .def("optimize", &LLVMFunctionWrapper::optimize, "pipeline"_a,
+           "target_machine"_a.none() = nullptr,
+           "options"_a.none() = nullptr,
+           R"doc(Optimize this function with an LLVM PassBuilder function pipeline string.
+
+Args:
+    pipeline: Function pass pipeline string (e.g., 'instcombine,simplifycfg').
+    target_machine: Optional target machine for target-specific passes.
+    options: Optional PassBuilderOptions.
+
+This mutates the function in place.
+
+<sub>C API: LLVMRunPassesOnFunction</sub>)doc")
       // =====================================================================
       // Intrinsic functions
       // =====================================================================

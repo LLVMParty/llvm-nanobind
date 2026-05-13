@@ -4,6 +4,7 @@ Regression tests for the API UX cleanup helpers.
 These tests cover the high-level APIs from devdocs/api-ux-cleanup:
 - Builder.intrinsic(...)
 - Module.optimize(...)
+- Function.optimize(...)
 - TargetMachine.host()
 - Module.emit_object()/emit_assembly()
 - JIT through LLVM-C ORC LLJIT
@@ -151,6 +152,58 @@ def test_module_optimize_success_and_failure():
             raise AssertionError("expected invalid pipeline error")
     finally:
         _close_module(ctx_mgr, mod_mgr)
+
+
+def test_function_optimize_success_and_failure():
+    with llvm.create_context() as ctx:
+        with ctx.create_module("function_optimize_helper") as mod:
+            i32 = ctx.types.i32
+            fn = mod.add_function("answer", ctx.types.function(i32, [i32]))
+            x = fn.get_param(0)
+            entry = fn.append_basic_block("entry")
+            with entry.create_builder() as builder:
+                result = builder.add(x, i32.constant(0), "result")
+                builder.ret(result)
+
+            untouched = mod.add_function("untouched", ctx.types.function(i32, [i32]))
+            y = untouched.get_param(0)
+            untouched_entry = untouched.append_basic_block("entry")
+            with untouched_entry.create_builder() as builder:
+                result = builder.add(y, i32.constant(0), "result")
+                builder.ret(result)
+
+            decl = mod.add_function("decl", ctx.types.function(i32, []))
+
+            assert mod.verify(), mod.verification_error
+            fn.optimize("instcombine,simplifycfg")
+            assert mod.verify(), mod.verification_error
+
+            ir = str(mod)
+            optimized_body = ir.split("define i32 @answer", 1)[1].split(
+                "define i32 @untouched", 1
+            )[0]
+            untouched_body = ir.split("define i32 @untouched", 1)[1].split(
+                "declare i32 @decl", 1
+            )[0]
+            assert "ret i32 %0" in optimized_body
+            assert " add i32 " not in optimized_body
+            assert " add i32 " in untouched_body
+
+            try:
+                fn.optimize("not-a-real-function-pass")
+            except llvm.LLVMError as exc:
+                message = str(exc)
+                assert "not-a-real-function-pass" in message
+                assert "Failed to optimize function" in message
+            else:
+                raise AssertionError("expected invalid function pipeline error")
+
+            try:
+                decl.optimize("instcombine")
+            except llvm.LLVMAssertionError as exc:
+                assert "function definition" in str(exc)
+            else:
+                raise AssertionError("expected declaration optimization error")
 
 
 def test_module_optimize_with_target_machine():

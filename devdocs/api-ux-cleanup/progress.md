@@ -23,11 +23,12 @@ Implemented and tested the active UX work:
 - [x] Keeps existing lower-level intrinsic APIs public.
 - [x] Tests cover non-overloaded, overloaded, and memory intrinsics.
 
-### Phase 2: Module optimization helper
+### Phase 2: Module/function optimization helpers
 
 - [x] Added `Module.optimize(pipeline, *, target_machine=None, options=None)`.
+- [x] Added `Function.optimize(pipeline, *, target_machine=None, options=None)` for function-level PassBuilder pipelines.
 - [x] Uses LLVM PassBuilder pipeline strings directly.
-- [x] Mutates the module in place.
+- [x] Mutates the module or function in place.
 - [x] Includes the failed pipeline string in error messages.
 - [x] Keeps existing lower-level pass APIs public.
 - [x] Fixed optional pass options by creating a default `PassBuilderOptions` internally when none is provided.
@@ -102,6 +103,7 @@ Coverage:
 - [x] `devdocs/api-ux-cleanup/plan.md` remains the task design reference.
 - [x] `examples/intrinsic_memcpy.py` shows `Builder.intrinsic(...)`.
 - [x] `examples/optimize_module.py` shows `Module.optimize(...)`.
+- [x] `examples/optimize_function.py` shows `Function.optimize(...)`.
 - [x] `examples/emit_object_assembly.py` shows `TargetMachine.host()`, `emit_object()`, and `emit_assembly()`.
 - [x] `examples/jit_add.py` shows `JIT.host()`, `add_module()`, `lookup` via `ctypes_function()`, and `add_symbol()`.
 
