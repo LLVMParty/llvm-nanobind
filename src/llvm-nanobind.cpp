@@ -405,6 +405,57 @@ struct ModuleTokenRegistry {
   }
 };
 
+static LLVMModuleRef module_for_basic_block_if_parented(LLVMBasicBlockRef bb) {
+  if (!bb)
+    return nullptr;
+  LLVMValueRef fn = LLVMGetBasicBlockParent(bb);
+  if (!fn)
+    return nullptr;
+  return LLVMGetGlobalParent(fn);
+}
+
+static LLVMModuleRef module_for_value_if_parented(LLVMValueRef value) {
+  if (!value)
+    return nullptr;
+
+  if (LLVMIsAInstruction(value)) {
+    LLVMBasicBlockRef bb = LLVMGetInstructionParent(value);
+    return module_for_basic_block_if_parented(bb);
+  }
+
+  if (LLVMIsAArgument(value)) {
+    LLVMValueRef fn = LLVMGetParamParent(value);
+    if (!fn)
+      return nullptr;
+    return LLVMGetGlobalParent(fn);
+  }
+
+  if (LLVMValueIsBasicBlock(value)) {
+    LLVMBasicBlockRef bb = LLVMValueAsBasicBlock(value);
+    return module_for_basic_block_if_parented(bb);
+  }
+
+  if (LLVMIsAGlobalValue(value))
+    return LLVMGetGlobalParent(value);
+
+  return nullptr;
+}
+
+static std::shared_ptr<ValidityToken> module_token_for_module(
+    LLVMModuleRef mod) {
+  return ModuleTokenRegistry::instance().lookup(mod);
+}
+
+static std::shared_ptr<ValidityToken> module_token_for_basic_block(
+    LLVMBasicBlockRef bb) {
+  return module_token_for_module(module_for_basic_block_if_parented(bb));
+}
+
+static std::shared_ptr<ValidityToken> module_token_for_value(
+    LLVMValueRef value) {
+  return module_token_for_module(module_for_value_if_parented(value));
+}
+
 // =============================================================================
 // Base class to prevent copy
 // =============================================================================
@@ -451,11 +502,14 @@ struct LLVMDbgRecordWrapper;
 struct LLVMOperandBundleWrapper {
   LLVMOperandBundleRef m_ref = nullptr;
   std::shared_ptr<ValidityToken> m_context_token;
+  std::vector<std::shared_ptr<ValidityToken>> m_module_tokens;
 
   LLVMOperandBundleWrapper() = default;
-  LLVMOperandBundleWrapper(LLVMOperandBundleRef ref,
-                           std::shared_ptr<ValidityToken> token)
-      : m_ref(ref), m_context_token(std::move(token)) {}
+  LLVMOperandBundleWrapper(
+      LLVMOperandBundleRef ref, std::shared_ptr<ValidityToken> context_token,
+      std::vector<std::shared_ptr<ValidityToken>> module_tokens = {})
+      : m_ref(ref), m_context_token(std::move(context_token)),
+        m_module_tokens(std::move(module_tokens)) {}
 
   ~LLVMOperandBundleWrapper() {
     if (m_ref) {
@@ -469,7 +523,8 @@ struct LLVMOperandBundleWrapper {
   LLVMOperandBundleWrapper &
   operator=(const LLVMOperandBundleWrapper &) = delete;
   LLVMOperandBundleWrapper(LLVMOperandBundleWrapper &&other) noexcept
-      : m_ref(other.m_ref), m_context_token(std::move(other.m_context_token)) {
+      : m_ref(other.m_ref), m_context_token(std::move(other.m_context_token)),
+        m_module_tokens(std::move(other.m_module_tokens)) {
     other.m_ref = nullptr;
   }
   LLVMOperandBundleWrapper &
@@ -479,6 +534,7 @@ struct LLVMOperandBundleWrapper {
         LLVMDisposeOperandBundle(m_ref);
       m_ref = other.m_ref;
       m_context_token = std::move(other.m_context_token);
+      m_module_tokens = std::move(other.m_module_tokens);
       other.m_ref = nullptr;
     }
     return *this;
@@ -489,6 +545,10 @@ struct LLVMOperandBundleWrapper {
       throw LLVMMemoryError("OperandBundle is null");
     if (!m_context_token || !m_context_token->is_valid())
       throw LLVMMemoryError("OperandBundle used after context was destroyed");
+    for (const auto &token : m_module_tokens) {
+      if (token && !token->is_valid())
+        throw LLVMMemoryError("OperandBundle used after module was disposed");
+    }
   }
 
   std::string get_tag() const {
@@ -1359,11 +1419,14 @@ struct LLVMTypeFactoryWrapper {
 struct LLVMNamedMDNodeWrapper {
   LLVMNamedMDNodeRef m_ref = nullptr;
   std::shared_ptr<ValidityToken> m_context_token;
+  std::shared_ptr<ValidityToken> m_module_token;
 
   LLVMNamedMDNodeWrapper() = default;
-  LLVMNamedMDNodeWrapper(LLVMNamedMDNodeRef ref,
-                         std::shared_ptr<ValidityToken> token)
-      : m_ref(ref), m_context_token(std::move(token)) {}
+  LLVMNamedMDNodeWrapper(
+      LLVMNamedMDNodeRef ref, std::shared_ptr<ValidityToken> context_token,
+      std::shared_ptr<ValidityToken> module_token = nullptr)
+      : m_ref(ref), m_context_token(std::move(context_token)),
+        m_module_token(std::move(module_token)) {}
 
   bool operator==(const LLVMNamedMDNodeWrapper &other) const {
     return m_ref == other.m_ref;
@@ -1377,6 +1440,8 @@ struct LLVMNamedMDNodeWrapper {
       throw LLVMMemoryError("NamedMDNode is null");
     if (!m_context_token || !m_context_token->is_valid())
       throw LLVMMemoryError("NamedMDNode used after context was destroyed");
+    if (m_module_token && !m_module_token->is_valid())
+      throw LLVMMemoryError("NamedMDNode used after module was disposed");
   }
 
   std::string get_name() const {
@@ -1391,7 +1456,7 @@ struct LLVMNamedMDNodeWrapper {
     LLVMNamedMDNodeRef next_md = LLVMGetNextNamedMetadata(m_ref);
     if (!next_md)
       return std::nullopt;
-    return LLVMNamedMDNodeWrapper(next_md, m_context_token);
+    return LLVMNamedMDNodeWrapper(next_md, m_context_token, m_module_token);
   }
 
   std::optional<LLVMNamedMDNodeWrapper> prev() {
@@ -1399,7 +1464,7 @@ struct LLVMNamedMDNodeWrapper {
     LLVMNamedMDNodeRef prev_md = LLVMGetPreviousNamedMetadata(m_ref);
     if (!prev_md)
       return std::nullopt;
-    return LLVMNamedMDNodeWrapper(prev_md, m_context_token);
+    return LLVMNamedMDNodeWrapper(prev_md, m_context_token, m_module_token);
   }
 };
 
@@ -1410,16 +1475,23 @@ struct LLVMNamedMDNodeWrapper {
 struct LLVMUseWrapper {
   LLVMUseRef m_ref = nullptr;
   std::shared_ptr<ValidityToken> m_context_token;
+  std::shared_ptr<ValidityToken> m_module_token;
 
   LLVMUseWrapper() = default;
-  LLVMUseWrapper(LLVMUseRef ref, std::shared_ptr<ValidityToken> token)
-      : m_ref(ref), m_context_token(std::move(token)) {}
+  LLVMUseWrapper(LLVMUseRef ref, std::shared_ptr<ValidityToken> context_token,
+                 std::shared_ptr<ValidityToken> module_token = nullptr)
+      : m_ref(ref), m_context_token(std::move(context_token)),
+        m_module_token(module_token ? std::move(module_token)
+                                    : module_token_for_value(
+                                          ref ? LLVMGetUser(ref) : nullptr)) {}
 
   void check_valid() const {
     if (!m_ref)
       throw LLVMMemoryError("Use is null");
     if (!m_context_token || !m_context_token->is_valid())
       throw LLVMMemoryError("Use used after context was destroyed");
+    if (m_module_token && !m_module_token->is_valid())
+      throw LLVMMemoryError("Use used after module was disposed");
   }
 
   // get_user, get_used_value, and get_operand_index are implemented after
@@ -1440,11 +1512,14 @@ struct LLVMUseWrapper {
 struct LLVMDbgRecordWrapper {
   LLVMDbgRecordRef m_ref = nullptr;
   std::shared_ptr<ValidityToken> m_context_token;
+  std::shared_ptr<ValidityToken> m_module_token;
 
   LLVMDbgRecordWrapper() = default;
-  LLVMDbgRecordWrapper(LLVMDbgRecordRef ref,
-                       std::shared_ptr<ValidityToken> token)
-      : m_ref(ref), m_context_token(std::move(token)) {}
+  LLVMDbgRecordWrapper(
+      LLVMDbgRecordRef ref, std::shared_ptr<ValidityToken> context_token,
+      std::shared_ptr<ValidityToken> module_token = nullptr)
+      : m_ref(ref), m_context_token(std::move(context_token)),
+        m_module_token(std::move(module_token)) {}
 
   bool operator==(const LLVMDbgRecordWrapper &other) const {
     return m_ref == other.m_ref;
@@ -1458,6 +1533,8 @@ struct LLVMDbgRecordWrapper {
       throw LLVMMemoryError("DbgRecord is null");
     if (!m_context_token || !m_context_token->is_valid())
       throw LLVMMemoryError("DbgRecord used after context was destroyed");
+    if (m_module_token && !m_module_token->is_valid())
+      throw LLVMMemoryError("DbgRecord used after module was disposed");
   }
 
   std::optional<LLVMDbgRecordWrapper> next() const {
@@ -1465,7 +1542,7 @@ struct LLVMDbgRecordWrapper {
     LLVMDbgRecordRef next_ref = LLVMGetNextDbgRecord(m_ref);
     if (!next_ref)
       return std::nullopt;
-    return LLVMDbgRecordWrapper(next_ref, m_context_token);
+    return LLVMDbgRecordWrapper(next_ref, m_context_token, m_module_token);
   }
 
   std::optional<LLVMDbgRecordWrapper> prev() const {
@@ -1473,7 +1550,7 @@ struct LLVMDbgRecordWrapper {
     LLVMDbgRecordRef prev_ref = LLVMGetPreviousDbgRecord(m_ref);
     if (!prev_ref)
       return std::nullopt;
-    return LLVMDbgRecordWrapper(prev_ref, m_context_token);
+    return LLVMDbgRecordWrapper(prev_ref, m_context_token, m_module_token);
   }
 };
 
@@ -1484,10 +1561,14 @@ struct LLVMDbgRecordWrapper {
 struct LLVMValueWrapper {
   LLVMValueRef m_ref = nullptr;
   std::shared_ptr<ValidityToken> m_context_token;
+  std::shared_ptr<ValidityToken> m_module_token;
 
   LLVMValueWrapper() = default;
-  LLVMValueWrapper(LLVMValueRef ref, std::shared_ptr<ValidityToken> token)
-      : m_ref(ref), m_context_token(std::move(token)) {}
+  LLVMValueWrapper(LLVMValueRef ref, std::shared_ptr<ValidityToken> context_token,
+                   std::shared_ptr<ValidityToken> module_token = nullptr)
+      : m_ref(ref), m_context_token(std::move(context_token)),
+        m_module_token(module_token ? std::move(module_token)
+                                    : module_token_for_value(ref)) {}
 
   bool operator==(const LLVMValueWrapper &other) const {
     return m_ref == other.m_ref;
@@ -1501,6 +1582,8 @@ struct LLVMValueWrapper {
       throw LLVMMemoryError("Value is null");
     if (!m_context_token || !m_context_token->is_valid())
       throw LLVMMemoryError("Value used after context was destroyed");
+    if (m_module_token && !m_module_token->is_valid())
+      throw LLVMMemoryError("Value used after module was disposed");
   }
 
   static const char *opcode_name(LLVMOpcode op) {
@@ -3014,7 +3097,11 @@ struct LLVMValueWrapper {
       throw LLVMAssertionError("get_operand_bundle_at_index: operand bundle at index " +
                                std::to_string(index) + " is null");
     }
-    return LLVMOperandBundleWrapper(bundle, m_context_token);
+    std::vector<std::shared_ptr<ValidityToken>> module_tokens;
+    if (m_module_token)
+      module_tokens.push_back(m_module_token);
+    return LLVMOperandBundleWrapper(bundle, m_context_token,
+                                    std::move(module_tokens));
   }
 
   // Get indices for extractvalue/insertvalue
@@ -3486,7 +3573,7 @@ struct LLVMValueWrapper {
     LLVMDbgRecordRef ref = LLVMGetFirstDbgRecord(m_ref);
     if (!ref)
       return std::nullopt;
-    return LLVMDbgRecordWrapper(ref, m_context_token);
+    return LLVMDbgRecordWrapper(ref, m_context_token, m_module_token);
   }
 
   std::optional<LLVMDbgRecordWrapper> last_dbg_record() const {
@@ -3497,7 +3584,7 @@ struct LLVMValueWrapper {
     LLVMDbgRecordRef ref = LLVMGetLastDbgRecord(m_ref);
     if (!ref)
       return std::nullopt;
-    return LLVMDbgRecordWrapper(ref, m_context_token);
+    return LLVMDbgRecordWrapper(ref, m_context_token, m_module_token);
   }
 
   // Create a builder positioned before this instruction
@@ -3511,11 +3598,15 @@ struct LLVMValueWrapper {
 struct LLVMBasicBlockWrapper {
   LLVMBasicBlockRef m_ref = nullptr;
   std::shared_ptr<ValidityToken> m_context_token;
+  std::shared_ptr<ValidityToken> m_module_token;
 
   LLVMBasicBlockWrapper() = default;
-  LLVMBasicBlockWrapper(LLVMBasicBlockRef ref,
-                        std::shared_ptr<ValidityToken> token)
-      : m_ref(ref), m_context_token(std::move(token)) {}
+  LLVMBasicBlockWrapper(
+      LLVMBasicBlockRef ref, std::shared_ptr<ValidityToken> context_token,
+      std::shared_ptr<ValidityToken> module_token = nullptr)
+      : m_ref(ref), m_context_token(std::move(context_token)),
+        m_module_token(module_token ? std::move(module_token)
+                                    : module_token_for_basic_block(ref)) {}
 
   bool operator==(const LLVMBasicBlockWrapper &other) const {
     return m_ref == other.m_ref;
@@ -3529,6 +3620,8 @@ struct LLVMBasicBlockWrapper {
       throw LLVMMemoryError("BasicBlock is null");
     if (!m_context_token || !m_context_token->is_valid())
       throw LLVMMemoryError("BasicBlock used after context was destroyed");
+    if (m_module_token && !m_module_token->is_valid())
+      throw LLVMMemoryError("BasicBlock used after module was disposed");
   }
 
   std::string get_name() const {
@@ -3979,8 +4072,11 @@ struct LLVMBasicBlockWrapper {
 
 struct LLVMFunctionWrapper : LLVMValueWrapper {
   LLVMFunctionWrapper() = default;
-  LLVMFunctionWrapper(LLVMValueRef ref, std::shared_ptr<ValidityToken> token)
-      : LLVMValueWrapper(ref, std::move(token)) {}
+  LLVMFunctionWrapper(
+      LLVMValueRef ref, std::shared_ptr<ValidityToken> context_token,
+      std::shared_ptr<ValidityToken> module_token = nullptr)
+      : LLVMValueWrapper(ref, std::move(context_token),
+                         std::move(module_token)) {}
 
   unsigned param_count() const {
     check_valid();
@@ -4108,6 +4204,7 @@ struct LLVMFunctionWrapper : LLVMValueWrapper {
           "append_existing_basic_block requires an unattached basic block");
     }
     LLVMAppendExistingBasicBlock(m_ref, bb.m_ref);
+    const_cast<LLVMBasicBlockWrapper &>(bb).m_module_token = m_module_token;
   }
 
   void erase() {
@@ -4289,16 +4386,19 @@ enum class LLVMAttributeAccessorTarget { Function, CallSite };
 struct LLVMAttributeAccessorWrapper {
   LLVMValueRef m_ref = nullptr;
   std::shared_ptr<ValidityToken> m_context_token;
+  std::shared_ptr<ValidityToken> m_module_token;
   unsigned m_idx = LLVMAttributeReturnIndex;
   LLVMAttributeAccessorTarget m_target = LLVMAttributeAccessorTarget::Function;
 
   LLVMAttributeAccessorWrapper() = default;
-  LLVMAttributeAccessorWrapper(LLVMValueRef ref,
-                               std::shared_ptr<ValidityToken> token,
-                               unsigned idx,
-                               LLVMAttributeAccessorTarget target)
-      : m_ref(ref), m_context_token(std::move(token)), m_idx(idx),
-        m_target(target) {}
+  LLVMAttributeAccessorWrapper(
+      LLVMValueRef ref, std::shared_ptr<ValidityToken> context_token,
+      unsigned idx, LLVMAttributeAccessorTarget target,
+      std::shared_ptr<ValidityToken> module_token = nullptr)
+      : m_ref(ref), m_context_token(std::move(context_token)),
+        m_module_token(module_token ? std::move(module_token)
+                                    : module_token_for_value(ref)),
+        m_idx(idx), m_target(target) {}
 
   static unsigned normalize_function_index(LLVMValueRef fn,
                                            const char *api_name, int idx) {
@@ -4383,6 +4483,8 @@ struct LLVMAttributeAccessorWrapper {
     if (!m_context_token || !m_context_token->is_valid())
       throw LLVMMemoryError(
           "AttributeAccessor used after context was destroyed");
+    if (m_module_token && !m_module_token->is_valid())
+      throw LLVMMemoryError("AttributeAccessor used after module was disposed");
     if (m_target == LLVMAttributeAccessorTarget::Function) {
       if (!LLVMIsAFunction(m_ref)) {
         throw LLVMAssertionError(
@@ -4687,7 +4789,7 @@ inline LLVMValueWrapper LLVMUseWrapper::get_user() const {
   LLVMValueRef user = LLVMGetUser(m_ref);
   if (!user)
     throw LLVMAssertionError("Use has no user");
-  return LLVMValueWrapper(user, m_context_token);
+  return LLVMValueWrapper(user, m_context_token, m_module_token);
 }
 
 inline LLVMValueWrapper LLVMUseWrapper::get_used_value() const {
@@ -4695,7 +4797,7 @@ inline LLVMValueWrapper LLVMUseWrapper::get_used_value() const {
   LLVMValueRef used = LLVMGetUsedValue(m_ref);
   if (!used)
     throw LLVMAssertionError("Use has no used value");
-  return LLVMValueWrapper(used, m_context_token);
+  return LLVMValueWrapper(used, m_context_token, m_module_token);
 }
 
 // Implementation of LLVMUseWrapper::get_operand_index
@@ -6353,6 +6455,8 @@ struct LLVMModuleWrapper : NoMoveCopy {
     auto *wrapper = new LLVMModuleWrapper();
     wrapper->m_ref = mod;
     wrapper->m_context_token = std::move(context_token);
+    if (!module_token)
+      module_token = module_token_for_module(mod);
     wrapper->m_token = module_token ? std::move(module_token)
                                     : std::make_shared<ValidityToken>();
     wrapper->m_ctx_ref = ctx;
@@ -6397,12 +6501,19 @@ struct LLVMModuleWrapper : NoMoveCopy {
 
   void dispose() {
     if (m_ref) {
-      if (!m_borrowed)
+      if (!m_borrowed) {
         ModuleTokenRegistry::instance().unregister_module(m_ref);
-      LLVMDisposeModule(m_ref);
+        if (m_context_token && m_context_token->is_valid()) {
+          LLVMDisposeModule(m_ref);
+        } else {
+          fprintf(stderr, "Warning: LLVM Module outlived its Context. "
+                          "This may cause a memory leak. "
+                          "Ensure modules are deleted before their context.\n");
+        }
+      }
       m_ref = nullptr;
     }
-    if (m_token) {
+    if (m_token && !m_borrowed) {
       m_token->invalidate();
     }
   }
@@ -6698,6 +6809,7 @@ struct LLVMModuleWrapper : NoMoveCopy {
       throw LLVMError("Failed to link modules");
     }
     // LLVMLinkModules2 destroys the source module, so mark it as disposed
+    ModuleTokenRegistry::instance().unregister_module(src.m_ref);
     src.m_ref = nullptr;
     if (src.m_token) {
       src.m_token->invalidate();
@@ -6850,7 +6962,7 @@ struct LLVMModuleWrapper : NoMoveCopy {
     LLVMNamedMDNodeRef md = LLVMGetFirstNamedMetadata(m_ref);
     if (!md)
       return std::nullopt;
-    return LLVMNamedMDNodeWrapper(md, m_context_token);
+    return LLVMNamedMDNodeWrapper(md, m_context_token, m_token);
   }
 
   std::optional<LLVMNamedMDNodeWrapper> last_named_metadata() {
@@ -6858,7 +6970,7 @@ struct LLVMModuleWrapper : NoMoveCopy {
     LLVMNamedMDNodeRef md = LLVMGetLastNamedMetadata(m_ref);
     if (!md)
       return std::nullopt;
-    return LLVMNamedMDNodeWrapper(md, m_context_token);
+    return LLVMNamedMDNodeWrapper(md, m_context_token, m_token);
   }
 
   std::optional<LLVMNamedMDNodeWrapper>
@@ -6868,14 +6980,14 @@ struct LLVMModuleWrapper : NoMoveCopy {
         LLVMGetNamedMetadata(m_ref, name.c_str(), name.size());
     if (!md)
       return std::nullopt;
-    return LLVMNamedMDNodeWrapper(md, m_context_token);
+    return LLVMNamedMDNodeWrapper(md, m_context_token, m_token);
   }
 
   LLVMNamedMDNodeWrapper add_named_metadata(const std::string &name) {
     check_valid();
     return LLVMNamedMDNodeWrapper(
         LLVMGetOrInsertNamedMetadata(m_ref, name.c_str(), name.size()),
-        m_context_token);
+        m_context_token, m_token);
   }
 
   unsigned get_named_metadata_num_operands(const std::string &name) {
@@ -7420,18 +7532,25 @@ struct LLVMContextWrapper : NoMoveCopy {
 
 struct LLVMContextManager : NoMoveCopy {
   std::unique_ptr<LLVMContextWrapper> m_context;
+  bool m_entered = false;
+  bool m_disposed = false;
 
   LLVMContextWrapper &enter() {
-    if (m_context)
+    if (m_entered)
       throw LLVMMemoryError("Context manager already entered");
+    if (m_disposed)
+      throw LLVMMemoryError("Context manager has already exited");
     m_context = std::make_unique<LLVMContextWrapper>();
+    m_entered = true;
     return *m_context;
   }
 
   void exit(const nb::object &, const nb::object &, const nb::object &) {
-    if (!m_context)
+    if (!m_entered || !m_context)
       throw LLVMMemoryError("Context manager not entered");
-    m_context.reset();
+    m_context->dispose();
+    m_entered = false;
+    m_disposed = true;
   }
 };
 
@@ -7488,7 +7607,7 @@ struct LLVMModuleManager : NoMoveCopy {
       throw LLVMMemoryError("Module has already been disposed");
     if (!m_entered)
       throw LLVMMemoryError("Module manager was not entered");
-    m_module.reset();
+    m_module->dispose();
     m_disposed = true;
   }
 
@@ -7567,7 +7686,7 @@ struct LLVMBuilderManager : NoMoveCopy {
       throw LLVMMemoryError("Builder has already been disposed");
     if (!m_entered)
       throw LLVMMemoryError("Builder manager was not entered");
-    m_builder.reset();
+    m_builder->dispose();
     m_disposed = true;
   }
 
@@ -7596,7 +7715,12 @@ LLVMBuilderManager *
 LLVMContextWrapper::create_builder(const LLVMBasicBlockWrapper &bb) {
   check_valid();
   bb.check_valid();
+  if (bb.m_context_token != m_token) {
+    throw LLVMAssertionError(
+        "Context.create_builder requires a basic block from this context");
+  }
   auto manager = new LLVMBuilderManager(this);
+  manager->m_module_token = bb.m_module_token;
   manager->m_initial_bb = bb.m_ref;
   return manager;
 }
@@ -7611,7 +7735,12 @@ LLVMContextWrapper::create_builder(const LLVMValueWrapper &inst,
   if (!LLVMGetInstructionParent(inst.m_ref))
     throw LLVMAssertionError(
         "create_builder requires an instruction in a basic block");
+  if (inst.m_context_token != m_token) {
+    throw LLVMAssertionError(
+        "Context.create_builder requires an instruction from this context");
+  }
   auto manager = new LLVMBuilderManager(this);
+  manager->m_module_token = inst.m_module_token;
   manager->m_initial_inst = inst.m_ref;
   manager->m_before_dbg = before_dbg;
   return manager;
@@ -7630,6 +7759,7 @@ LLVMBuilderManager *LLVMBasicBlockWrapper::create_builder(
   LLVMContextWrapper *ctx =
       const_cast<LLVMBasicBlockWrapper *>(this)->context();
   auto manager = new LLVMBuilderManager(ctx);
+  manager->m_module_token = m_module_token;
 
   if (first_non_phi) {
     LLVMValueRef inst = LLVMGetFirstInstruction(m_ref);
@@ -7663,7 +7793,7 @@ LLVMBuilderManager *LLVMFunctionWrapper::create_builder(
     entry = LLVMGetEntryBasicBlock(m_ref);
   }
 
-  LLVMBasicBlockWrapper entry_wrapper(entry, m_context_token);
+  LLVMBasicBlockWrapper entry_wrapper(entry, m_context_token, m_module_token);
   return entry_wrapper.create_builder(first_non_phi);
 }
 
@@ -7677,6 +7807,7 @@ LLVMBuilderManager *LLVMValueWrapper::create_builder(bool before_dbg) const {
   // Get the context for this value
   LLVMContextWrapper *ctx = get_context();
   auto manager = new LLVMBuilderManager(ctx);
+  manager->m_module_token = m_module_token;
   manager->m_initial_inst = m_ref;
   manager->m_before_dbg = before_dbg;
   return manager;
@@ -7814,6 +7945,8 @@ LLVMModuleManager *LLVMModuleWrapper::clone() const {
   raw_wrapper->m_context_token = m_context_token;
   raw_wrapper->m_token = std::make_shared<ValidityToken>();
   raw_wrapper->m_ctx_ref = m_ctx_ref;
+  ModuleTokenRegistry::instance().register_module(cloned_ref,
+                                                  raw_wrapper->m_token);
 
   // Wrap in unique_ptr and return a manager that owns the cloned module
   return new LLVMModuleManager(std::unique_ptr<LLVMModuleWrapper>(raw_wrapper));
@@ -9853,7 +9986,7 @@ struct LLVMBinaryManager : NoMoveCopy {
       throw LLVMMemoryError("Binary has already been disposed");
     if (!m_entered)
       throw LLVMMemoryError("Binary manager was not entered");
-    m_binary.reset();
+    m_binary->dispose_internal();
     m_disposed = true;
   }
 
@@ -9945,16 +10078,21 @@ struct LLVMMetadataWrapper;
 struct LLVMDIBuilderWrapper : NoMoveCopy {
   LLVMDIBuilderRef m_ref = nullptr;
   LLVMContextRef m_ctx_ref = nullptr;
+  std::shared_ptr<ValidityToken> m_context_token;
   std::shared_ptr<ValidityToken> m_module_token;
 
   LLVMDIBuilderWrapper(LLVMModuleRef mod,
+                       std::shared_ptr<ValidityToken> context_token,
                        std::shared_ptr<ValidityToken> module_token)
       : m_ctx_ref(mod ? LLVMGetModuleContext(mod) : nullptr),
+        m_context_token(std::move(context_token)),
         m_module_token(std::move(module_token)) {
     m_ref = LLVMCreateDIBuilder(mod);
   }
 
-  ~LLVMDIBuilderWrapper() {
+  ~LLVMDIBuilderWrapper() { dispose(); }
+
+  void dispose() {
     if (m_ref) {
       LLVMDisposeDIBuilder(m_ref);
       m_ref = nullptr;
@@ -9964,6 +10102,8 @@ struct LLVMDIBuilderWrapper : NoMoveCopy {
   void check_valid() const {
     if (!m_ref)
       throw LLVMMemoryError("DIBuilder is null");
+    if (!m_context_token || !m_context_token->is_valid())
+      throw LLVMMemoryError("DIBuilder used after context was destroyed");
     if (!m_module_token || !m_module_token->is_valid())
       throw LLVMMemoryError("DIBuilder used after module was destroyed");
   }
@@ -10375,17 +10515,23 @@ struct LLVMMetadataWrapper {
   LLVMMetadataRef m_ref = nullptr;
   LLVMContextRef m_ctx_ref = nullptr;
   std::shared_ptr<ValidityToken> m_context_token;
+  std::shared_ptr<ValidityToken> m_module_token;
 
   LLVMMetadataWrapper() = default;
-  LLVMMetadataWrapper(LLVMMetadataRef ref, std::shared_ptr<ValidityToken> token,
-                      LLVMContextRef ctx = nullptr)
-      : m_ref(ref), m_ctx_ref(ctx), m_context_token(std::move(token)) {}
+  LLVMMetadataWrapper(
+      LLVMMetadataRef ref, std::shared_ptr<ValidityToken> context_token,
+      LLVMContextRef ctx = nullptr,
+      std::shared_ptr<ValidityToken> module_token = nullptr)
+      : m_ref(ref), m_ctx_ref(ctx), m_context_token(std::move(context_token)),
+        m_module_token(std::move(module_token)) {}
 
   void check_valid() const {
     if (!m_ref)
       throw LLVMMemoryError("Metadata is null");
     if (!m_context_token || !m_context_token->is_valid())
       throw LLVMMemoryError("Metadata used after context was destroyed");
+    if (m_module_token && !m_module_token->is_valid())
+      throw LLVMMemoryError("Metadata used after module was disposed");
   }
 
   unsigned kind() const {
@@ -10454,7 +10600,7 @@ struct LLVMMetadataWrapper {
       if (!operand)
         throw LLVMAssertionError("metadata node operand is null");
       result.emplace_back(LLVMValueAsMetadata(operand), m_context_token,
-                          m_ctx_ref);
+                          m_ctx_ref, m_module_token);
     }
     return result;
   }
@@ -10463,7 +10609,8 @@ struct LLVMMetadataWrapper {
   LLVMValueWrapper as_value(LLVMContextWrapper &ctx) const {
     check_valid();
     ctx.check_valid();
-    return LLVMValueWrapper(LLVMMetadataAsValue(ctx.m_ref, m_ref), ctx.m_token);
+    return LLVMValueWrapper(LLVMMetadataAsValue(ctx.m_ref, m_ref), ctx.m_token,
+                            m_module_token);
   }
 
   // Replace all uses of this temporary metadata with another
@@ -10481,18 +10628,7 @@ struct LLVMMetadataWrapper {
 };
 
 static LLVMModuleRef module_for_metadata_value(LLVMValueRef value) {
-  if (LLVMIsAInstruction(value)) {
-    LLVMBasicBlockRef bb = LLVMGetInstructionParent(value);
-    if (!bb)
-      return nullptr;
-    LLVMValueRef fn = LLVMGetBasicBlockParent(bb);
-    if (!fn)
-      return nullptr;
-    return LLVMGetGlobalParent(fn);
-  }
-  if (LLVMIsAGlobalValue(value))
-    return LLVMGetGlobalParent(value);
-  return nullptr;
+  return module_for_value_if_parented(value);
 }
 
 static LLVMContextRef context_for_metadata_value(LLVMValueRef value) {
@@ -10524,13 +10660,19 @@ static LLVMContextRef context_for_metadata_value(LLVMValueRef value) {
   return LLVMGetModuleContext(mod);
 }
 
+static void require_metadata_context(LLVMContextRef ctx,
+                                     const LLVMMetadataWrapper &md,
+                                     const char *api_name) {
+  if (md.m_ctx_ref && md.m_ctx_ref != ctx) {
+    throw LLVMAssertionError(std::string(api_name) +
+                             " requires metadata from the same context");
+  }
+}
+
 static LLVMMetadataRef normalize_metadata_for_attachment(
     LLVMContextRef ctx, const LLVMMetadataWrapper &md) {
   md.check_valid();
-  if (md.m_ctx_ref && md.m_ctx_ref != ctx) {
-    throw LLVMAssertionError(
-        "metadata attachment requires metadata from the same context");
-  }
+  require_metadata_context(ctx, md, "metadata attachment");
   LLVMMetadataRef metadata_ref = md.m_ref;
   LLVMValueRef md_value = LLVMMetadataAsValue(ctx, metadata_ref);
   bool is_md_node = LLVMIsAMDNode(md_value) && !LLVMIsAValueAsMetadata(md_value);
@@ -10584,7 +10726,7 @@ struct LLVMMetadataMapWrapper {
       if (!val)
         return std::nullopt;
       return LLVMMetadataWrapper(LLVMValueAsMetadata(val), m_context_token,
-                                 m_ctx_ref);
+                                 m_ctx_ref, m_module_token);
     }
 
     size_t count = 0;
@@ -10593,7 +10735,8 @@ struct LLVMMetadataMapWrapper {
       if (LLVMValueMetadataEntriesGetKind(entries, i) == kind) {
         LLVMMetadataRef md = LLVMValueMetadataEntriesGetMetadata(entries, i);
         LLVMDisposeValueMetadataEntries(entries);
-        return LLVMMetadataWrapper(md, m_context_token, m_ctx_ref);
+        return LLVMMetadataWrapper(md, m_context_token, m_ctx_ref,
+                                   m_module_token);
       }
     }
     if (entries)
@@ -10632,7 +10775,8 @@ struct LLVMMetadataMapWrapper {
 
   void attach_entry(LLVMValueRef target_ref, LLVMContextRef target_ctx,
                     unsigned kind, LLVMMetadataRef md) const {
-    LLVMMetadataWrapper md_wrapper(md, m_context_token, m_ctx_ref);
+    LLVMMetadataWrapper md_wrapper(md, m_context_token, m_ctx_ref,
+                                   m_module_token);
     LLVMMetadataRef metadata_ref =
         normalize_metadata_for_attachment(target_ctx, md_wrapper);
     if (LLVMIsAGlobalValue(target_ref)) {
@@ -10743,7 +10887,8 @@ struct LLVMNamedMetadataListWrapper {
     std::vector<LLVMMetadataWrapper> result;
     result.reserve(count);
     for (LLVMValueRef value : values) {
-      result.emplace_back(LLVMValueAsMetadata(value), m_context_token, m_ctx_ref);
+      result.emplace_back(LLVMValueAsMetadata(value), m_context_token,
+                          m_ctx_ref, m_module_token);
     }
     return result;
   }
@@ -10855,7 +11000,8 @@ struct LLVMModuleFlagsWrapper {
     LLVMMetadataRef md = LLVMGetModuleFlag(m_module_ref, key.c_str(), key.size());
     if (!md)
       return std::nullopt;
-    return LLVMMetadataWrapper(md, m_context_token, m_ctx_ref);
+    return LLVMMetadataWrapper(md, m_context_token, m_ctx_ref,
+                               m_module_token);
   }
 
   LLVMMetadataWrapper get_item(const std::string &key) const {
@@ -10956,15 +11102,15 @@ inline LLVMMetadataWrapper LLVMValueWrapper::as_metadata() const {
   if (ty)
     ctx_ref = LLVMGetTypeContext(ty);
   return LLVMMetadataWrapper(LLVMValueAsMetadata(m_ref), m_context_token,
-                             ctx_ref);
+                             ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataMapWrapper LLVMValueWrapper::metadata() const {
   check_valid();
   LLVMContextRef ctx_ref = context_for_metadata_value(m_ref);
-  LLVMModuleRef mod_ref = module_for_metadata_value(m_ref);
-  std::shared_ptr<ValidityToken> module_token =
-      ModuleTokenRegistry::instance().lookup(mod_ref);
+  std::shared_ptr<ValidityToken> module_token = m_module_token;
+  if (!module_token)
+    module_token = module_token_for_module(module_for_metadata_value(m_ref));
   return LLVMMetadataMapWrapper(m_ref, ctx_ref, m_context_token, module_token);
 }
 
@@ -11028,6 +11174,7 @@ LLVMContextWrapper::md_node(const Iterable<LLVMMetadataWrapper> &mds) {
   refs.reserve(mds.size());
   for (const auto &md : mds) {
     md.check_valid();
+    require_metadata_context(m_ref, md, "Context.md_node");
     refs.push_back(md.m_ref);
   }
   return LLVMMetadataWrapper(
@@ -11039,9 +11186,12 @@ inline LLVMMetadataWrapper LLVMContextWrapper::create_debug_location(
     const LLVMMetadataWrapper *inlined_at) {
   check_valid();
   scope.check_valid();
+  require_metadata_context(m_ref, scope, "Context.debug_location scope");
   LLVMMetadataRef inlined = nullptr;
   if (inlined_at) {
     inlined_at->check_valid();
+    require_metadata_context(m_ref, *inlined_at,
+                             "Context.debug_location inlined_at");
     inlined = inlined_at->m_ref;
   }
   return LLVMMetadataWrapper(
@@ -11060,6 +11210,7 @@ inline LLVMBuilderDebugLocationManager *
 LLVMBuilderWrapper::debug_location(const LLVMMetadataWrapper &loc) const {
   check_valid();
   loc.check_valid();
+  require_metadata_context(m_ctx_ref, loc, "Builder.debug_location");
   return new LLVMBuilderDebugLocationManager(m_ref, loc.m_ref, m_context_token,
                                              m_module_token, m_token);
 }
@@ -11069,9 +11220,12 @@ inline LLVMBuilderDebugLocationManager *LLVMBuilderWrapper::debug_location(
     const LLVMMetadataWrapper *inlined_at) const {
   check_valid();
   scope.check_valid();
+  require_metadata_context(m_ctx_ref, scope, "Builder.debug_location scope");
   LLVMMetadataRef inlined = nullptr;
   if (inlined_at) {
     inlined_at->check_valid();
+    require_metadata_context(m_ctx_ref, *inlined_at,
+                             "Builder.debug_location inlined_at");
     inlined = inlined_at->m_ref;
   }
   LLVMMetadataRef loc = LLVMDIBuilderCreateDebugLocation(
@@ -11100,6 +11254,7 @@ LLVMModuleWrapper::add_named_metadata_operand(const std::string &name,
                                               const LLVMMetadataWrapper &md) {
   check_valid();
   md.check_valid();
+  require_metadata_context(m_ctx_ref, md, "Module.add_named_metadata_operand");
   // Need to convert metadata to value first for LLVMAddNamedMetadataOperand
   LLVMValueRef val = LLVMMetadataAsValue(m_ctx_ref, md.m_ref);
   LLVMAddNamedMetadataOperand(m_ref, name.c_str(), val);
@@ -11112,6 +11267,7 @@ inline void LLVMModuleWrapper::add_module_flag(LLVMModuleFlagBehavior behavior,
                                                const LLVMMetadataWrapper &val) {
   check_valid();
   val.check_valid();
+  require_metadata_context(m_ctx_ref, val, "Module.add_module_flag");
   LLVMAddModuleFlag(m_ref, behavior, key.c_str(), key.size(), val.m_ref);
 }
 
@@ -11123,7 +11279,7 @@ LLVMModuleWrapper::get_module_flag(const std::string &key) {
   LLVMMetadataRef md = LLVMGetModuleFlag(m_ref, key.c_str(), key.size());
   if (!md)
     return std::nullopt;
-  return LLVMMetadataWrapper(md, m_context_token, m_ctx_ref);
+  return LLVMMetadataWrapper(md, m_context_token, m_ctx_ref, m_token);
 }
 
 inline LLVMNamedMetadataMapWrapper LLVMModuleWrapper::named_metadata() const {
@@ -11181,7 +11337,7 @@ LLVMDIBuilderWrapper::create_file(const std::string &filename,
   return LLVMMetadataWrapper(
       LLVMDIBuilderCreateFile(m_ref, filename.c_str(), filename.size(),
                               directory.c_str(), directory.size()),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper
@@ -11206,7 +11362,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_compile_unit(
           (LLVMDWARFEmissionKind)kind, dwo_id, split_debug_inlining,
           debug_info_for_profiling, sys_root.c_str(), sys_root.size(),
           sdk.c_str(), sdk.size()),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::compile_unit(
@@ -11234,7 +11390,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_module(
           m_ref, parent_scope.m_ref, name.c_str(), name.size(),
           config_macros.c_str(), config_macros.size(), include_path.c_str(),
           include_path.size(), api_notes_file.c_str(), api_notes_file.size()),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper
@@ -11246,7 +11402,7 @@ LLVMDIBuilderWrapper::create_namespace(const LLVMMetadataWrapper &parent_scope,
   return LLVMMetadataWrapper(
       LLVMDIBuilderCreateNameSpace(m_ref, parent_scope.m_ref, name.c_str(),
                                    name.size(), export_symbols),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper
@@ -11258,7 +11414,7 @@ LLVMDIBuilderWrapper::create_lexical_block(const LLVMMetadataWrapper &scope,
   file.check_valid();
   return LLVMMetadataWrapper(LLVMDIBuilderCreateLexicalBlock(
                                  m_ref, scope.m_ref, file.m_ref, line, column),
-                             m_module_token, m_ctx_ref);
+                             m_context_token, m_ctx_ref, m_module_token);
 }
 
 // Function & Subroutine Creation
@@ -11277,7 +11433,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_function(
           m_ref, scope.m_ref, name.c_str(), name.size(), linkage_name.c_str(),
           linkage_name.size(), file.m_ref, line_no, type, is_local_to_unit,
           is_definition, scope_line, (LLVMDIFlags)flags, is_optimized),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_subroutine_type(
@@ -11294,7 +11450,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_subroutine_type(
   return LLVMMetadataWrapper(
       LLVMDIBuilderCreateSubroutineType(m_ref, file.m_ref, param_refs.data(),
                                         param_refs.size(), (LLVMDIFlags)flags),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::function(
@@ -11329,7 +11485,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::function(
       m_ref, scope_ref, name.c_str(), name.size(), linkage.c_str(), linkage.size(),
       file.m_ref, line, subroutine_type, is_local_to_unit, is_definition,
       actual_scope_line, (LLVMDIFlags)flags, is_optimized);
-  LLVMMetadataWrapper wrapper(sp, m_module_token, m_ctx_ref);
+  LLVMMetadataWrapper wrapper(sp, m_context_token, m_ctx_ref, m_module_token);
   fn.set_subprogram(wrapper);
   return wrapper;
 }
@@ -11343,7 +11499,7 @@ LLVMDIBuilderWrapper::create_basic_type(const std::string &name,
   return LLVMMetadataWrapper(
       LLVMDIBuilderCreateBasicType(m_ref, name.c_str(), name.size(),
                                    size_in_bits, encoding, (LLVMDIFlags)flags),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_pointer_type(
@@ -11355,7 +11511,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_pointer_type(
       LLVMDIBuilderCreatePointerType(m_ref, pointee.m_ref, size_in_bits,
                                      align_in_bits, address_space, name.c_str(),
                                      name.size()),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_vector_type(
@@ -11374,7 +11530,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_vector_type(
       LLVMDIBuilderCreateVectorType(m_ref, size_in_bits, align_in_bits,
                                     element_type.m_ref, sub_refs.data(),
                                     sub_refs.size()),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_typedef(
@@ -11389,7 +11545,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_typedef(
       LLVMDIBuilderCreateTypedef(m_ref, type.m_ref, name.c_str(), name.size(),
                                  file.m_ref, line_no, scope.m_ref,
                                  align_in_bits),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_struct_type(
@@ -11417,7 +11573,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_struct_type(
           elem_refs.empty() ? nullptr : elem_refs.data(),
           static_cast<unsigned>(elem_refs.size()), runtime_lang, vtable,
           unique_id.c_str(), unique_id.size()),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_enumeration_type(
@@ -11441,7 +11597,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_enumeration_type(
                                  file.m_ref, line_number, size_in_bits,
                                  align_in_bits, elem_refs.data(),
                                  elem_refs.size(), underlying_type.m_ref),
-                             m_module_token, m_ctx_ref);
+                             m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_forward_decl(
@@ -11457,7 +11613,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_forward_decl(
                                      scope.m_ref, file.m_ref, line,
                                      runtime_lang, size_in_bits, align_in_bits,
                                      unique_id.c_str(), unique_id.size()),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper
@@ -11474,7 +11630,7 @@ LLVMDIBuilderWrapper::create_replaceable_composite_type(
           m_ref, tag, name.c_str(), name.size(), scope.m_ref, file.m_ref, line,
           runtime_lang, size_in_bits, align_in_bits, (LLVMDIFlags)flags,
           unique_id.c_str(), unique_id.size()),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_subrange_type(
@@ -11498,7 +11654,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_subrange_type(
                                  line, file.m_ref, size_in_bits, align_in_bits,
                                  (LLVMDIFlags)flags, element_type.m_ref, lb, ub,
                                  st, bi),
-                             m_module_token, m_ctx_ref);
+                             m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_set_type(
@@ -11513,7 +11669,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_set_type(
       LLVMDIBuilderCreateSetType(m_ref, scope.m_ref, name.c_str(), name.size(),
                                  file.m_ref, line, size_in_bits, align_in_bits,
                                  base_type.m_ref),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_dynamic_array_type(
@@ -11544,7 +11700,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_dynamic_array_type(
           m_ref, scope.m_ref, name.c_str(), name.size(), line, file.m_ref,
           size_in_bits, align_in_bits, element_type.m_ref, sub_refs.data(),
           sub_refs.size(), data_location.m_ref, assoc, alloc, rnk, stride_ref),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 // Variable & Expression
@@ -11560,7 +11716,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_parameter_variable(
                                  m_ref, scope.m_ref, name.c_str(), name.size(),
                                  arg_no, file.m_ref, line_no, type.m_ref,
                                  always_preserve, (LLVMDIFlags)flags),
-                             m_module_token, m_ctx_ref);
+                             m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_auto_variable(
@@ -11576,7 +11732,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_auto_variable(
       LLVMDIBuilderCreateAutoVariable(
           m_ref, scope.m_ref, name.c_str(), name.size(), file.m_ref, line_no,
           type.m_ref, always_preserve, (LLVMDIFlags)flags, align_in_bits),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::local_variable(
@@ -11595,7 +11751,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::local_variable(
       LLVMDIBuilderCreateAutoVariable(
           m_ref, scope.m_ref, name.c_str(), name.size(), file.m_ref, line_no,
           di_type, always_preserve, (LLVMDIFlags)flags, align_in_bits),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper
@@ -11616,7 +11772,7 @@ LLVMDIBuilderWrapper::create_global_variable_expression(
                                  linkage.c_str(), linkage.size(), file.m_ref,
                                  line_no, type.m_ref, is_local_to_unit,
                                  expr.m_ref, decl_ref, align_in_bits),
-                             m_module_token, m_ctx_ref);
+                             m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper
@@ -11627,14 +11783,14 @@ LLVMDIBuilderWrapper::create_expression(const Iterable<uint64_t> &addr) {
   std::vector<uint64_t> addr_copy = addr;
   return LLVMMetadataWrapper(
       LLVMDIBuilderCreateExpression(m_ref, addr_copy.data(), addr_copy.size()),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper
 LLVMDIBuilderWrapper::create_constant_value_expression(uint64_t value) {
   check_valid();
   return LLVMMetadataWrapper(
-      LLVMDIBuilderCreateConstantValueExpression(m_ref, value), m_module_token, m_ctx_ref);
+      LLVMDIBuilderCreateConstantValueExpression(m_ref, value), m_context_token, m_ctx_ref, m_module_token);
 }
 
 // Label Methods
@@ -11647,7 +11803,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_label(
   return LLVMMetadataWrapper(
       LLVMDIBuilderCreateLabel(m_ref, scope.m_ref, name.c_str(), name.size(),
                                file.m_ref, line_no, always_preserve),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline void
@@ -11710,7 +11866,7 @@ inline LLVMMetadataWrapper
 LLVMDIBuilderWrapper::get_or_create_subrange(int64_t lo, int64_t count) {
   check_valid();
   return LLVMMetadataWrapper(LLVMDIBuilderGetOrCreateSubrange(m_ref, lo, count),
-                             m_module_token, m_ctx_ref);
+                             m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::get_or_create_array(
@@ -11724,7 +11880,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::get_or_create_array(
   }
   return LLVMMetadataWrapper(
       LLVMDIBuilderGetOrCreateArray(m_ref, elem_refs.data(), elem_refs.size()),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 // Enumerator Methods
@@ -11735,7 +11891,7 @@ LLVMDIBuilderWrapper::create_enumerator(const std::string &name, int64_t value,
   return LLVMMetadataWrapper(LLVMDIBuilderCreateEnumerator(m_ref, name.c_str(),
                                                            name.size(), value,
                                                            is_unsigned),
-                             m_module_token, m_ctx_ref);
+                             m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper
@@ -11746,7 +11902,7 @@ LLVMDIBuilderWrapper::create_enumerator_of_arbitrary_precision(
   return LLVMMetadataWrapper(LLVMDIBuilderCreateEnumeratorOfArbitraryPrecision(
                                  m_ref, name.c_str(), name.size(),
                                  value.size() * 64, value.data(), is_unsigned),
-                             m_module_token, m_ctx_ref);
+                             m_context_token, m_ctx_ref, m_module_token);
 }
 
 // ObjC & Inheritance Methods
@@ -11762,7 +11918,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_objc_property(
           m_ref, name.c_str(), name.size(), file.m_ref, line_no,
           getter_name.c_str(), getter_name.size(), setter_name.c_str(),
           setter_name.size(), property_attributes, type.m_ref),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_objc_ivar(
@@ -11779,7 +11935,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_objc_ivar(
                                   line_no, size_in_bits, align_in_bits,
                                   offset_in_bits, (LLVMDIFlags)flags,
                                   type.m_ref, property.m_ref),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_inheritance(
@@ -11793,7 +11949,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_inheritance(
       LLVMDIBuilderCreateInheritance(m_ref, derived_type.m_ref, base_type.m_ref,
                                      offset_in_bits, v_bptr_offset,
                                      (LLVMDIFlags)flags),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 // Import & Macro Methods
@@ -11816,7 +11972,7 @@ LLVMDIBuilderWrapper::create_imported_module_from_module(
                                  m_ref, scope.m_ref, import_module.m_ref,
                                  file.m_ref, line, elem_refs.data(),
                                  elem_refs.size()),
-                             m_module_token, m_ctx_ref);
+                             m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper
@@ -11838,7 +11994,7 @@ LLVMDIBuilderWrapper::create_imported_module_from_alias(
                                  m_ref, scope.m_ref, imported_entity.m_ref,
                                  file.m_ref, line, elem_refs.data(),
                                  elem_refs.size()),
-                             m_module_token, m_ctx_ref);
+                             m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_temp_macro_file(
@@ -11850,7 +12006,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_temp_macro_file(
       parent_macro_file ? parent_macro_file->m_ref : nullptr;
   return LLVMMetadataWrapper(
       LLVMDIBuilderCreateTempMacroFile(m_ref, parent, line, file.m_ref),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_macro(
@@ -11863,7 +12019,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_macro(
                                (LLVMDWARFMacinfoRecordType)macro_type,
                                name.c_str(), name.size(), value.c_str(),
                                value.size()),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 // Missing DIBuilder Method Implementations
@@ -11889,7 +12045,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_member_type(
                                     name.size(), file.m_ref, line_no,
                                     size_in_bits, align_in_bits, offset_in_bits,
                                     (LLVMDIFlags)flags, type.m_ref),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_union_type(
@@ -11913,7 +12069,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_union_type(
           line_number, size_in_bits, align_in_bits, (LLVMDIFlags)flags,
           elem_refs.data(), elem_refs.size(), runtime_lang, unique_id.c_str(),
           unique_id.size()),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_array_type(
@@ -11932,7 +12088,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_array_type(
       LLVMDIBuilderCreateArrayType(m_ref, size_in_bits, align_in_bits,
                                    element_type.m_ref, sub_refs.data(),
                                    sub_refs.size()),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper
@@ -11941,7 +12097,7 @@ LLVMDIBuilderWrapper::create_qualified_type(unsigned tag,
   check_valid();
   type.check_valid();
   return LLVMMetadataWrapper(
-      LLVMDIBuilderCreateQualifiedType(m_ref, tag, type.m_ref), m_module_token, m_ctx_ref);
+      LLVMDIBuilderCreateQualifiedType(m_ref, tag, type.m_ref), m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper
@@ -11950,13 +12106,13 @@ LLVMDIBuilderWrapper::create_reference_type(unsigned tag,
   check_valid();
   type.check_valid();
   return LLVMMetadataWrapper(
-      LLVMDIBuilderCreateReferenceType(m_ref, tag, type.m_ref), m_module_token, m_ctx_ref);
+      LLVMDIBuilderCreateReferenceType(m_ref, tag, type.m_ref), m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_null_ptr_type() {
   check_valid();
   return LLVMMetadataWrapper(LLVMDIBuilderCreateNullPtrType(m_ref),
-                             m_module_token, m_ctx_ref);
+                             m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_bit_field_member_type(
@@ -11973,7 +12129,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_bit_field_member_type(
                                  file.m_ref, line_no, size_in_bits,
                                  offset_in_bits, storage_offset_in_bits,
                                  (LLVMDIFlags)flags, type.m_ref),
-                             m_module_token, m_ctx_ref);
+                             m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper
@@ -11981,7 +12137,7 @@ LLVMDIBuilderWrapper::create_artificial_type(const LLVMMetadataWrapper &type) {
   check_valid();
   type.check_valid();
   return LLVMMetadataWrapper(
-      LLVMDIBuilderCreateArtificialType(m_ref, type.m_ref), m_module_token, m_ctx_ref);
+      LLVMDIBuilderCreateArtificialType(m_ref, type.m_ref), m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::get_or_create_type_array(
@@ -11995,7 +12151,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::get_or_create_type_array(
   }
   return LLVMMetadataWrapper(LLVMDIBuilderGetOrCreateTypeArray(
                                  m_ref, type_refs.data(), type_refs.size()),
-                             m_module_token, m_ctx_ref);
+                             m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_lexical_block_file(
@@ -12006,7 +12162,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_lexical_block_file(
   file.check_valid();
   return LLVMMetadataWrapper(LLVMDIBuilderCreateLexicalBlockFile(
                                  m_ref, scope.m_ref, file.m_ref, discriminator),
-                             m_module_token, m_ctx_ref);
+                             m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_imported_declaration(
@@ -12027,7 +12183,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_imported_declaration(
                                  m_ref, scope.m_ref, decl.m_ref, file.m_ref,
                                  line, name.c_str(), name.size(),
                                  elem_refs.data(), elem_refs.size()),
-                             m_module_token, m_ctx_ref);
+                             m_context_token, m_ctx_ref, m_module_token);
 }
 
 inline LLVMMetadataWrapper
@@ -12041,7 +12197,7 @@ LLVMDIBuilderWrapper::create_imported_module_from_namespace(
   return LLVMMetadataWrapper(
       LLVMDIBuilderCreateImportedModuleFromNamespace(
           m_ref, scope.m_ref, ns.m_ref, file.m_ref, line),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 // Utility Methods
@@ -12095,7 +12251,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_class_type(
           vtable_holder ? vtable_holder->m_ref : nullptr,
           template_params ? template_params->m_ref : nullptr, unique_id.c_str(),
           unique_id.size()),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 // Create static member type debug info
@@ -12116,7 +12272,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_static_member_type(
           m_ref, scope.m_ref, name.c_str(), name.size(), file.m_ref, line_no,
           type.m_ref, (LLVMDIFlags)flags,
           const_val ? const_val->m_ref : nullptr, align_in_bits),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 // Create member pointer type debug info (C++ pointer-to-member)
@@ -12132,7 +12288,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_member_pointer_type(
       LLVMDIBuilderCreateMemberPointerType(m_ref, pointee_type.m_ref,
                                            class_type.m_ref, size_in_bits,
                                            align_in_bits, (LLVMDIFlags)flags),
-      m_module_token, m_ctx_ref);
+      m_context_token, m_ctx_ref, m_module_token);
 }
 
 // Insert declare record before an instruction
@@ -12194,8 +12350,8 @@ struct LLVMDIBuilderManager : NoMoveCopy {
     if (!m_module_token || !m_module_token->is_valid())
       throw LLVMMemoryError("DIBuilder's module has been destroyed");
     m_module->check_valid();
-    m_dibuilder = std::make_unique<LLVMDIBuilderWrapper>(m_module->m_ref,
-                                                         m_module->m_token);
+    m_dibuilder = std::make_unique<LLVMDIBuilderWrapper>(
+        m_module->m_ref, m_module->m_context_token, m_module->m_token);
     m_entered = true;
     return *m_dibuilder;
   }
@@ -12205,9 +12361,9 @@ struct LLVMDIBuilderManager : NoMoveCopy {
       throw LLVMMemoryError("DIBuilder has already been disposed");
     if (!m_entered)
       throw LLVMMemoryError("DIBuilder manager was not entered");
-    // Finalize is typically called explicitly, but we could auto-finalize here
-    // For now, just clean up - user should call finalize() before exiting
-    m_dibuilder.reset();
+    // Finalize is typically called explicitly; users should call finalize()
+    // before exiting when debug info must be complete.
+    m_dibuilder->dispose();
     m_disposed = true;
   }
 
@@ -12332,7 +12488,8 @@ inline LLVMModuleWrapper *LLVMBasicBlockWrapper::module() const {
   if (!mod_ref)
     throw LLVMAssertionError("BasicBlock's function has no parent module");
   LLVMContextRef ctx_ref = LLVMGetModuleContext(mod_ref);
-  return LLVMModuleWrapper::create_borrowed(mod_ref, ctx_ref, m_context_token);
+  return LLVMModuleWrapper::create_borrowed(mod_ref, ctx_ref, m_context_token,
+                                            m_module_token);
 }
 
 inline LLVMContextWrapper *LLVMBasicBlockWrapper::context() const {
@@ -12358,7 +12515,8 @@ inline LLVMModuleWrapper *LLVMFunctionWrapper::module() const {
     throw LLVMAssertionError("Function has no parent module");
   LLVMContextRef ctx_ref = LLVMGetModuleContext(mod_ref);
   // Return a non-owning (borrowed) wrapper for the function's module
-  return LLVMModuleWrapper::create_borrowed(mod_ref, ctx_ref, m_context_token);
+  return LLVMModuleWrapper::create_borrowed(mod_ref, ctx_ref, m_context_token,
+                                            m_module_token);
 }
 
 inline LLVMContextWrapper *LLVMFunctionWrapper::context() const {
@@ -12431,7 +12589,8 @@ inline LLVMModuleWrapper *LLVMValueWrapper::get_module() const {
   if (!mod_ref)
     throw LLVMAssertionError("Value has no parent module");
   LLVMContextRef ctx_ref = LLVMGetModuleContext(mod_ref);
-  return LLVMModuleWrapper::create_borrowed(mod_ref, ctx_ref, m_context_token);
+  return LLVMModuleWrapper::create_borrowed(mod_ref, ctx_ref, m_context_token,
+                                            m_module_token);
 }
 
 inline LLVMContextWrapper *LLVMValueWrapper::get_context() const {
@@ -16432,12 +16591,25 @@ Valid when:
       "create_operand_bundle",
       [](const std::string &tag, const Iterable<LLVMValueWrapper> &args,
          LLVMContextWrapper *ctx) {
+        if (!ctx)
+          throw LLVMMemoryError("create_operand_bundle requires a context");
+        ctx->check_valid();
         std::vector<LLVMValueRef> arg_refs;
-        for (const auto &a : args)
+        std::vector<std::shared_ptr<ValidityToken>> module_tokens;
+        for (const auto &a : args) {
+          a.check_valid();
+          if (a.m_context_token != ctx->m_token) {
+            throw LLVMAssertionError(
+                "create_operand_bundle requires values from the context");
+          }
+          if (a.m_module_token)
+            module_tokens.push_back(a.m_module_token);
           arg_refs.push_back(a.m_ref);
+        }
         LLVMOperandBundleRef bundle = LLVMCreateOperandBundle(
             tag.c_str(), tag.size(), arg_refs.data(), arg_refs.size());
-        return new LLVMOperandBundleWrapper(bundle, ctx->m_token);
+        return new LLVMOperandBundleWrapper(bundle, ctx->m_token,
+                                            std::move(module_tokens));
       },
       "tag"_a, "args"_a, "ctx"_a, nb::rv_policy::take_ownership,
       R"(Create operand bundle.
@@ -17949,7 +18121,8 @@ Raises NotImplementedError because LLVM-C has no unwrap API for ValueAsMetadata.
       .def_prop_ro("di_location_scope", [](const LLVMMetadataWrapper &self) -> LLVMMetadataWrapper {
         self.check_valid();
         return LLVMMetadataWrapper(LLVMDILocationGetScope(self.m_ref),
-                                   self.m_context_token, self.m_ctx_ref);
+                                   self.m_context_token, self.m_ctx_ref,
+                                   self.m_module_token);
       }, R"(Get scope from this debug location.
 
 <sub>C API: LLVMDILocationGetScope</sub>)")
@@ -17958,7 +18131,8 @@ Raises NotImplementedError because LLVM-C has no unwrap API for ValueAsMetadata.
         self.check_valid();
         LLVMMetadataRef ref = LLVMDILocationGetInlinedAt(self.m_ref);
         if (ref)
-          return LLVMMetadataWrapper(ref, self.m_context_token, self.m_ctx_ref);
+          return LLVMMetadataWrapper(ref, self.m_context_token, self.m_ctx_ref,
+                                     self.m_module_token);
         return std::nullopt;
       }, R"(Get inlined-at location from this debug location, or None.
 
@@ -17968,7 +18142,8 @@ Raises NotImplementedError because LLVM-C has no unwrap API for ValueAsMetadata.
         self.check_valid();
         LLVMMetadataRef ref = LLVMDIScopeGetFile(self.m_ref);
         if (ref)
-          return LLVMMetadataWrapper(ref, self.m_context_token, self.m_ctx_ref);
+          return LLVMMetadataWrapper(ref, self.m_context_token, self.m_ctx_ref,
+                                     self.m_module_token);
         return std::nullopt;
       }, R"(Get file from this debug scope, or None.
 
@@ -18008,7 +18183,8 @@ Raises NotImplementedError because LLVM-C has no unwrap API for ValueAsMetadata.
         self.check_valid();
         LLVMMetadataRef ref = LLVMDIVariableGetFile(self.m_ref);
         if (ref)
-          return LLVMMetadataWrapper(ref, self.m_context_token, self.m_ctx_ref);
+          return LLVMMetadataWrapper(ref, self.m_context_token, self.m_ctx_ref,
+                                     self.m_module_token);
         return std::nullopt;
       }, R"(Get file from this debug variable, or None.
 
@@ -18018,7 +18194,8 @@ Raises NotImplementedError because LLVM-C has no unwrap API for ValueAsMetadata.
         self.check_valid();
         LLVMMetadataRef ref = LLVMDIVariableGetScope(self.m_ref);
         if (ref)
-          return LLVMMetadataWrapper(ref, self.m_context_token, self.m_ctx_ref);
+          return LLVMMetadataWrapper(ref, self.m_context_token, self.m_ctx_ref,
+                                     self.m_module_token);
         return std::nullopt;
       }, R"(Get scope from this debug variable, or None.
 
@@ -18033,7 +18210,7 @@ Raises NotImplementedError because LLVM-C has no unwrap API for ValueAsMetadata.
         self.check_valid();
         return LLVMMetadataWrapper(
             LLVMDIGlobalVariableExpressionGetVariable(self.m_ref),
-            self.m_context_token, self.m_ctx_ref);
+            self.m_context_token, self.m_ctx_ref, self.m_module_token);
       }, R"(Get the DIGlobalVariable from this DIGlobalVariableExpression.
 
 <sub>C API: LLVMDIGlobalVariableExpressionGetVariable</sub>)")
@@ -18041,7 +18218,7 @@ Raises NotImplementedError because LLVM-C has no unwrap API for ValueAsMetadata.
         self.check_valid();
         return LLVMMetadataWrapper(
             LLVMDIGlobalVariableExpressionGetExpression(self.m_ref),
-            self.m_context_token, self.m_ctx_ref);
+            self.m_context_token, self.m_ctx_ref, self.m_module_token);
       }, R"(Get the DIExpression from this DIGlobalVariableExpression.
 
 <sub>C API: LLVMDIGlobalVariableExpressionGetExpression</sub>)");
