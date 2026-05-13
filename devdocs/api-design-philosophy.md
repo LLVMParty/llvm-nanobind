@@ -94,8 +94,10 @@ Python developers expect `object.operation()`, not `module.operation(object)`.
 
 **Acceptable globals**:
 - Ownerless factories: `create_context()`
-- Initialization: `initialize_all_targets()`
 - Target and intrinsic registry lookups that do not mutate IR
+
+LLVM target/disassembler registries are initialized when the module is imported;
+public initialization functions add no user-facing value.
 
 Factories with a natural owner should be static methods instead (for example,
 `BinaryManager.from_file()` rather than a module-level binary factory).

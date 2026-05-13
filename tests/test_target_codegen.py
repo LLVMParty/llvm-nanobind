@@ -7,9 +7,6 @@ This is the Python equivalent of tests/test_target_codegen.cpp.
 Output should match the C++ golden master test.
 
 LLVM Python APIs tested:
-- llvm.initialize_all_targets(), llvm.initialize_all_target_mcs()
-- llvm.initialize_all_asm_printers(), llvm.initialize_all_asm_parsers()
-- llvm.initialize_native_target(), llvm.initialize_native_asm_printer()
 - llvm.default_target_triple, llvm.normalize_target_triple()
 - llvm.host_cpu_name, llvm.host_cpu_features
 - llvm.Target.from_triple(), llvm.Target.from_name()
@@ -26,13 +23,6 @@ import llvm
 
 
 def main():
-    # Initialize all targets
-    llvm.initialize_all_target_infos()
-    llvm.initialize_all_targets()
-    llvm.initialize_all_target_mcs()
-    llvm.initialize_all_asm_printers()
-    llvm.initialize_all_asm_parsers()
-
     print("; Test: test_target_codegen")
     print("; Tests target initialization, queries, and code generation")
     print(";")

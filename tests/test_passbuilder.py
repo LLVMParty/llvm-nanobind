@@ -98,13 +98,6 @@ def count_functions(mod):
 
 
 def main():
-    # Initialize all targets (needed for pass manager)
-    llvm.initialize_all_target_infos()
-    llvm.initialize_all_targets()
-    llvm.initialize_all_target_mcs()
-    llvm.initialize_all_asm_printers()
-    llvm.initialize_all_asm_parsers()
-
     # Get default target for running passes
     triple = llvm.default_target_triple
     target = llvm.Target.from_triple(triple)

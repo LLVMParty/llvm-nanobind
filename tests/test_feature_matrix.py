@@ -295,10 +295,6 @@ def test_debuginfo_member_pointer_type():
 
 def test_object_binary_copy_to_memory_buffer():
     """Test LLVMBinaryCopyMemoryBuffer → binary.copy_to_memory_buffer()"""
-    # Initialize targets first (before creating context)
-    llvm.initialize_native_target()
-    llvm.initialize_native_asm_printer()
-
     with llvm.create_context() as ctx:
         with ctx.create_module("test") as mod:
             # Create a simple function
@@ -338,10 +334,6 @@ def test_object_binary_copy_to_memory_buffer():
 
 def test_object_section_contains_symbol():
     """Test LLVMGetSectionContainsSymbol → section.contains_symbol()"""
-    # Initialize targets first
-    llvm.initialize_native_target()
-    llvm.initialize_native_asm_printer()
-
     with llvm.create_context() as ctx:
         with ctx.create_module("test") as mod:
             # Create a function

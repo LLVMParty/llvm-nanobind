@@ -9,10 +9,6 @@ import llvm
 
 def targets_list():
     """List all registered LLVM targets."""
-    # Initialize all target info and targets
-    llvm.initialize_all_target_infos()
-    llvm.initialize_all_targets()
-
     # Iterate through targets
     target = llvm.get_first_target()
     while target is not None:

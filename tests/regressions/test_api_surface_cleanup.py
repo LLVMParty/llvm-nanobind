@@ -111,12 +111,6 @@ def test_named_struct_reuse_existing_semantics() -> None:
 
 
 def test_member_factories_and_builder_navigation() -> None:
-    llvm.initialize_all_target_infos()
-    llvm.initialize_all_targets()
-    llvm.initialize_all_target_mcs()
-    llvm.initialize_all_asm_printers()
-    llvm.initialize_all_asm_parsers()
-
     removed_globals = [
         "AttributeFunctionIndex",
         "AttributeReturnIndex",
@@ -159,6 +153,16 @@ def test_member_factories_and_builder_navigation() -> None:
         "get_host_cpu_name",
         "get_inline_asm",
         "get_md_kind_id",
+        "initialize_all_asm_parsers",
+        "initialize_all_asm_printers",
+        "initialize_all_disassemblers",
+        "initialize_all_target_infos",
+        "initialize_all_target_mcs",
+        "initialize_all_targets",
+        "initialize_native_asm_parser",
+        "initialize_native_asm_printer",
+        "initialize_native_disassembler",
+        "initialize_native_target",
         "get_di_node_tag",
         "get_last_dbg_record",
         "get_last_enum_attribute_kind",

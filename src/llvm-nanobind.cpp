@@ -8112,27 +8112,6 @@ struct LLVMTargetWrapper {
   }
 };
 
-// Target initialization functions
-void initialize_all_target_infos() { LLVMInitializeAllTargetInfos(); }
-
-void initialize_all_targets() { LLVMInitializeAllTargets(); }
-
-void initialize_all_target_mcs() { LLVMInitializeAllTargetMCs(); }
-
-void initialize_all_asm_printers() { LLVMInitializeAllAsmPrinters(); }
-
-void initialize_all_asm_parsers() { LLVMInitializeAllAsmParsers(); }
-
-void initialize_all_disassemblers() { LLVMInitializeAllDisassemblers(); }
-
-// Convenience: initialize all targets, MCs, asm printers, and asm parsers
-void initialize_all() {
-  LLVMInitializeAllTargetInfos();
-  LLVMInitializeAllTargets();
-  LLVMInitializeAllTargetMCs();
-  LLVMInitializeAllAsmPrinters();
-  LLVMInitializeAllAsmParsers();
-}
 
 std::optional<LLVMTargetWrapper> get_first_target() {
   LLVMTargetRef ref = LLVMGetFirstTarget();
@@ -8194,21 +8173,6 @@ std::string get_host_cpu_features() {
   std::string result(features);
   LLVMDisposeMessage(features);
   return result;
-}
-
-// Native target initialization
-bool initialize_native_target() { return LLVMInitializeNativeTarget() == 0; }
-
-bool initialize_native_asm_printer() {
-  return LLVMInitializeNativeAsmPrinter() == 0;
-}
-
-bool initialize_native_asm_parser() {
-  return LLVMInitializeNativeAsmParser() == 0;
-}
-
-bool initialize_native_disassembler() {
-  return LLVMInitializeNativeDisassembler() == 0;
 }
 
 // =============================================================================
@@ -12173,6 +12137,14 @@ inline LLVMContextWrapper *LLVMValueWrapper::get_context() const {
 // =============================================================================
 
 NB_MODULE(llvm, m) {
+  // Initialize LLVM-C
+  LLVMInitializeAllTargetInfos();
+  LLVMInitializeAllTargets();
+  LLVMInitializeAllTargetMCs();
+  LLVMInitializeAllAsmPrinters();
+  LLVMInitializeAllAsmParsers();
+  LLVMInitializeAllDisassemblers();
+
   // Register exceptions
   auto exc_error = nb::exception<LLVMError>(m, "LLVMError");
   auto exc_memory =
@@ -16091,67 +16063,10 @@ Raises LLVMError if the target is not found.
 
 <sub>C API: LLVMGetTargetFromName</sub>)");
 
-  // Target initialization functions are explicit so callers control process-wide
-  // LLVM target registration.
-  m.def("initialize_all", &initialize_all,
-        R"(Initialize all targets, MCs, ASM printers, and ASM parsers.
-Convenience function that calls initialize_all_target_infos(),
-initialize_all_targets(), initialize_all_target_mcs(),
-initialize_all_asm_printers(), and initialize_all_asm_parsers().)");
-  m.def("initialize_all_target_infos", &initialize_all_target_infos,
-        R"(Initialize all target infos.
-
-<sub>C API: LLVMInitializeAllTargetInfos</sub>)");
-  m.def("initialize_all_targets", &initialize_all_targets,
-        R"(Initialize all targets.
-
-<sub>C API: LLVMInitializeAllTargets</sub>)");
-  m.def("initialize_all_target_mcs", &initialize_all_target_mcs,
-        R"(Initialize all target MCs.
-
-<sub>C API: LLVMInitializeAllTargetMCs</sub>)");
-  m.def("initialize_all_asm_printers", &initialize_all_asm_printers,
-        R"(Initialize all ASM printers.
-
-<sub>C API: LLVMInitializeAllAsmPrinters</sub>)");
-  m.def("initialize_all_asm_parsers", &initialize_all_asm_parsers,
-        R"(Initialize all ASM parsers.
-
-<sub>C API: LLVMInitializeAllAsmParsers</sub>)");
-  m.def("initialize_all_disassemblers", &initialize_all_disassemblers,
-        R"(Initialize all disassemblers.
-
-<sub>C API: LLVMInitializeAllDisassemblers</sub>)");
   m.def("get_first_target", &get_first_target,
         R"(Get the first registered target (returns None if no targets).
 
 <sub>C API: LLVMGetFirstTarget</sub>)");
-
-  // Native target initialization
-  m.def("initialize_native_target", &initialize_native_target,
-        R"(Initialize the native target.
-
-        Returns True on success, False on failure.
-
-<sub>C API: LLVMInitializeNativeTarget</sub>)");
-  m.def("initialize_native_asm_printer", &initialize_native_asm_printer,
-        R"(Initialize the native ASM printer.
-
-        Returns True on success, False on failure.
-
-<sub>C API: LLVMInitializeNativeAsmPrinter</sub>)");
-  m.def("initialize_native_asm_parser", &initialize_native_asm_parser,
-        R"(Initialize the native ASM parser.
-
-        Returns True on success, False on failure.
-
-<sub>C API: LLVMInitializeNativeAsmParser</sub>)");
-  m.def("initialize_native_disassembler", &initialize_native_disassembler,
-        R"(Initialize the native disassembler.
-
-        Returns True on success, False on failure.
-
-<sub>C API: LLVMInitializeNativeDisassembler</sub>)");
 
   // Host target queries
   m.attr("default_target_triple") = get_default_target_triple();
@@ -16381,9 +16296,7 @@ Returns:
                   nb::rv_policy::take_ownership,
                   R"(Create a target machine for the host target.
 
-This initializes the native target and native ASM printer internally.
-
-<sub>C API: LLVMInitializeNativeTarget, LLVMCreateTargetMachine</sub>)");
+<sub>C API: LLVMCreateTargetMachine</sub>)");
 
   // NOTE: target machine creation moved to TargetMachine.create().
 

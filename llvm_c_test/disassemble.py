@@ -104,11 +104,6 @@ def disassemble() -> int:
     Returns:
         Exit code (0 for success)
     """
-    # Initialize all targets
-    llvm.initialize_all_target_infos()
-    llvm.initialize_all_target_mcs()
-    llvm.initialize_all_disassemblers()
-
     # Process stdin
     tokenize_stdin(handle_line)
 
