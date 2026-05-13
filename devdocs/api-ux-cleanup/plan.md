@@ -2,12 +2,13 @@
 
 ## Goal
 
-Make the remaining high-value workflows clean from a Python user's perspective while keeping useful LLVM controls available. This plan covers four areas only:
+Make the remaining high-value workflows clean from a Python user's perspective while keeping useful LLVM controls available. This plan covers five areas:
 
 1. generic intrinsic calls,
 2. explicit module optimization by pass pipeline,
 3. object/assembly emission convenience,
-4. JIT through LLVM-C.
+4. JIT through LLVM-C,
+5. metadata/debug-info cleanup.
 
 The API should let users write the operation they mean without requiring LLVM-C boilerplate.
 
@@ -234,6 +235,50 @@ jit.add_symbol("py_func", callback)
 - Callback test if symbol registration is implemented.
 - Unsupported platforms skip cleanly.
 
+## Phase 5: Metadata/debug-info cleanup
+
+### User problem
+
+Common metadata operations should not require numeric metadata kind IDs or raw LLVM-C named-metadata handles.
+
+### Target UX
+
+```python
+inst.metadata["llvm.loop"] = loop_md
+md = inst.metadata.get("llvm.loop")
+del inst.metadata["llvm.loop"]
+
+mod.named_metadata["llvm.dbg.cu"].append(compile_unit)
+for md in mod.named_metadata["llvm.dbg.cu"]:
+    ...
+
+mod.module_flags.add("Debug Info Version", llvm.ModuleFlagBehavior.Warning, value_md)
+
+loc = ctx.debug_location(line=12, column=4, scope=subprogram)
+with builder.debug_location(loc):
+    value = builder.add(a, b, "sum")
+```
+
+### Behavior
+
+- Hide metadata kind IDs from normal use.
+- Provide a bulk metadata copy path for transforms without exposing kind IDs.
+- Expose named metadata as a mapping from name to appendable list.
+- Expose module flags as a keyed view.
+- Keep advanced DIBuilder creation methods that model useful debug-info concepts.
+- Remove redundant raw APIs where the new views have parity.
+
+### Tests
+
+- Metadata set/get/delete by name.
+- Detached instruction metadata.
+- Metadata bulk copy.
+- Named metadata append, iteration, key iteration.
+- Module flags add/get/key iteration.
+- Debug-location context manager.
+- DIBuilder recipes for file, compile unit, function, and local variable.
+- Removed raw APIs stay absent from the public surface.
+
 ## API audit process
 
 After each phase:
@@ -251,6 +296,7 @@ After each phase:
 3. Add `TargetMachine.host()`.
 4. Add `Module.emit_object(...)` and `Module.emit_assembly(...)`.
 5. Design and implement `llvm.JIT` using LLVM-C.
+6. Add metadata/debug-info mapping views and DIBuilder recipes.
 
 ## Acceptance criteria
 
@@ -258,6 +304,7 @@ After each phase:
 - Optimization examples use `mod.optimize(<pass pipeline>)`.
 - Object/assembly examples use `mod.emit_object()` / `mod.emit_assembly()`.
 - JIT design and implementation use LLVM-C only.
+- Metadata examples avoid raw metadata kind IDs.
 - Low-level APIs remain available when they are useful advanced controls.
 - Tests pass:
 

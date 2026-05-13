@@ -61,6 +61,9 @@ More examples worth browsing:
 - [`examples/optimize_module.py`](examples/optimize_module.py) - optimize a module with a PassBuilder pipeline string
 - [`examples/emit_object_assembly.py`](examples/emit_object_assembly.py) - emit host object code and assembly from a module
 - [`examples/jit_add.py`](examples/jit_add.py) - JIT-compile IR, call it through ctypes, and register a Python callback
+- [`examples/instruction_metadata.py`](examples/instruction_metadata.py) - attach custom metadata to an instruction and print the IR
+- [`examples/named_metadata.py`](examples/named_metadata.py) - create module named metadata and print the IR
+- [`examples/metadata_debug_info.py`](examples/metadata_debug_info.py) - attach metadata, create debug info, and use debug-location scopes
 - [`examples/transform_replace_add.py`](examples/transform_replace_add.py) - simple IR transformation using operands, RAUW, and instruction deletion
 - [`examples/bc-stats.py`](examples/bc-stats.py) - print per-function instruction histograms from LLVM IR
 - [`examples/bc-graphviz.py`](examples/bc-graphviz.py) - emit a GraphViz-style control-flow graph from LLVM IR
@@ -70,7 +73,8 @@ More examples worth browsing:
 
 - Pythonic wrappers for contexts, modules, types, values, functions, basic blocks, builders, metadata, debug info, object files, targets, target machines, and pass builder options
 - IR construction, traversal, and transformation helpers: constants, globals, PHI/control flow/memory/cast/cmp instructions, operands, predecessors, RAUW, split blocks, move/clone/erase instructions
-- IR and bitcode parsing/writing, lazy bitcode modules, module cloning/linking, module flags, diagnostics, attributes, COMDATs, calling conventions, linkage/visibility/storage controls
+- IR and bitcode parsing/writing, lazy bitcode modules, module cloning/linking, diagnostics, attributes, COMDATs, calling conventions, linkage/visibility/storage controls
+- Metadata/debug-info APIs including named metadata views, module flag views, instruction/global metadata mappings, DIBuilder recipes, and debug-location scopes
 - Target initialization/lookup, data layouts, `Module.emit_object()`, `Module.emit_assembly()`, target-machine emission, and PassBuilder pipeline execution via `Module.optimize()` / `Module.run_passes()`
 - Generic intrinsic calls with `Builder.intrinsic(...)` and in-process JIT execution through the LLVM-C ORC LLJIT API
 - Lifetime/validity guards that turn many use-after-free, disposed-object, null-reference, and wrong-kind mistakes into Python exceptions instead of hard crashes

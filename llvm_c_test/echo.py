@@ -1029,13 +1029,8 @@ class FunCloner:
         if src.can_use_fast_math_flags:
             dst.fast_math_flags = src.fast_math_flags
 
-        # Copy instruction metadata
-        ctx = self.module.context
-        all_metadata = src.instruction_get_all_metadata_other_than_debug_loc()
-        for i in range(len(all_metadata)):
-            kind = all_metadata.get_kind(i)
-            md = all_metadata.get_metadata(i)
-            dst.set_metadata(kind, md, ctx)
+        # Copy instruction metadata.
+        src.metadata.copy_to(dst)
 
         check_value_kind(dst, llvm.ValueKind.Instruction)
         self.vmap[src] = dst
@@ -1239,30 +1234,11 @@ def declare_symbols(src: llvm.Module, m: llvm.Module) -> None:
 
             cur = next_i
 
-    # Declare named metadata
-    cur_md = src.first_named_metadata
-    end_md = src.last_named_metadata
-    if cur_md is None:
-        if end_md is not None:
-            raise RuntimeError("Range has an end but no beginning")
-    else:
-        while True:
-            name = cur_md.name
-            if m.get_named_metadata(name):
-                raise RuntimeError("Named Metadata Node already cloned")
-            m.add_named_metadata(name)
-
-            next_md = cur_md.next
-            if next_md is None:
-                if cur_md != end_md:
-                    raise RuntimeError("")
-                break
-
-            prev_md = next_md.prev
-            if prev_md != cur_md:
-                raise RuntimeError("Next.Previous global is not Current")
-
-            cur_md = next_md
+    # Declare named metadata.
+    for name in src.named_metadata:
+        if m.named_metadata.get(name) is not None:
+            raise RuntimeError("Named Metadata Node already cloned")
+        _ = m.named_metadata[name]
 
 
 def clone_symbols(src: llvm.Module, m: llvm.Module) -> None:
@@ -1284,13 +1260,8 @@ def clone_symbols(src: llvm.Module, m: llvm.Module) -> None:
             if init:
                 g.initializer = clone_constant(init, m)
 
-            # Copy global metadata
-            ctx = m.context
-            all_metadata = cur.global_copy_all_metadata()
-            for i in range(len(all_metadata)):
-                kind = all_metadata.get_kind(i)
-                md = all_metadata.get_metadata(i)
-                g.set_metadata(kind, md, ctx)
+            # Copy global metadata.
+            cur.metadata.copy_to(g)
 
             g.is_global_constant = cur.is_global_constant
             g.is_thread_local = cur.is_thread_local
@@ -1335,13 +1306,8 @@ def clone_symbols(src: llvm.Module, m: llvm.Module) -> None:
                     raise RuntimeError("Could not find personality function")
                 fun.personality_fn = p
 
-            # Copy function metadata
-            ctx = m.context
-            all_metadata = cur.global_copy_all_metadata()
-            for i in range(len(all_metadata)):
-                kind = all_metadata.get_kind(i)
-                md = all_metadata.get_metadata(i)
-                fun.set_metadata(kind, md, ctx)
+            # Copy function metadata.
+            cur.metadata.copy_to(fun)
 
             # Copy prefix and prologue data
             if cur.has_prefix_data:
@@ -1433,37 +1399,13 @@ def clone_symbols(src: llvm.Module, m: llvm.Module) -> None:
 
             cur = next_i
 
-    # Clone named metadata contents
-    cur_md = src.first_named_metadata
-    end_md = src.last_named_metadata
-    if cur_md is None:
-        if end_md is not None:
-            raise RuntimeError("Range has an end but no beginning")
-    else:
-        while True:
-            name = cur_md.name
-            named_md = m.get_named_metadata(name)
-            if not named_md:
-                raise RuntimeError("Named MD Node must have been declared already")
-
-            operand_count = src.get_named_metadata_num_operands(name)
-            operands = src.get_named_metadata_operands(name)
-            for op in operands:
-                # Convert value to metadata before adding
-                md = op.as_metadata()
-                m.add_named_metadata_operand(name, md)
-
-            next_md = cur_md.next
-            if next_md is None:
-                if cur_md != end_md:
-                    raise RuntimeError("Last Named MD Node does not match End")
-                break
-
-            prev_md = next_md.prev
-            if prev_md != cur_md:
-                raise RuntimeError("Next.Previous Named MD Node is not Current")
-
-            cur_md = next_md
+    # Clone named metadata contents.
+    for name in src.named_metadata:
+        named_md = m.named_metadata.get(name)
+        if named_md is None:
+            raise RuntimeError("Named MD Node must have been declared already")
+        for md in src.named_metadata[name]:
+            named_md.append(md)
 
 
 def echo() -> int:

@@ -255,6 +255,11 @@ struct LLVMTypeWrapper;
 struct LLVMValueWrapper;
 struct LLVMFunctionWrapper;
 struct LLVMAttributeAccessorWrapper;
+struct LLVMMetadataMapWrapper;
+struct LLVMNamedMetadataMapWrapper;
+struct LLVMNamedMetadataListWrapper;
+struct LLVMModuleFlagsWrapper;
+struct LLVMBuilderDebugLocationManager;
 struct LLVMBasicBlockWrapper;
 struct LLVMBuilderWrapper;
 struct LLVMModuleManager;
@@ -3262,6 +3267,8 @@ struct LLVMValueWrapper {
   // LLVMMetadataWrapper
   LLVMMetadataWrapper as_metadata() const;
 
+  LLVMMetadataMapWrapper metadata() const;
+
   // Unified set_metadata - works for both instructions and globals
   // Declared here, implemented after LLVMMetadataWrapper
   // Takes a context for converting metadata to value (needed for instructions)
@@ -4790,6 +4797,12 @@ struct LLVMBuilderWrapper : NoMoveCopy {
 
   LLVMModuleWrapper *module() const;
   LLVMContextWrapper *context() const;
+
+  LLVMBuilderDebugLocationManager *debug_location(
+      const LLVMMetadataWrapper &loc) const;
+  LLVMBuilderDebugLocationManager *debug_location(
+      unsigned line, unsigned column, const LLVMMetadataWrapper &scope,
+      const LLVMMetadataWrapper *inlined_at) const;
 
   void position_at(const LLVMBasicBlockWrapper &bb,
                    const LLVMValueWrapper &inst) {
@@ -6696,6 +6709,9 @@ struct LLVMModuleWrapper : NoMoveCopy {
   /// Get a module-level flag by key.
   std::optional<LLVMMetadataWrapper> get_module_flag(const std::string &key);
 
+  LLVMNamedMetadataMapWrapper named_metadata() const;
+  LLVMModuleFlagsWrapper module_flags() const;
+
   // =========================================================================
   // Module API Refactor: Methods moved from global functions
   // =========================================================================
@@ -7153,6 +7169,9 @@ struct LLVMContextWrapper : NoMoveCopy {
   LLVMMetadataWrapper create_debug_location(
       unsigned line, unsigned column, const LLVMMetadataWrapper &scope,
       const LLVMMetadataWrapper *inlined_at);
+  LLVMMetadataWrapper debug_location(unsigned line, unsigned column,
+                                     const LLVMMetadataWrapper &scope,
+                                     const LLVMMetadataWrapper *inlined_at);
 
   // Module creation (returns context manager) - defined after LLVMModuleManager
   LLVMModuleManager *create_module(const std::string &name);
@@ -9660,11 +9679,13 @@ struct LLVMMetadataWrapper;
 
 struct LLVMDIBuilderWrapper : NoMoveCopy {
   LLVMDIBuilderRef m_ref = nullptr;
+  LLVMContextRef m_ctx_ref = nullptr;
   std::shared_ptr<ValidityToken> m_module_token;
 
   LLVMDIBuilderWrapper(LLVMModuleRef mod,
                        std::shared_ptr<ValidityToken> module_token)
-      : m_module_token(std::move(module_token)) {
+      : m_ctx_ref(mod ? LLVMGetModuleContext(mod) : nullptr),
+        m_module_token(std::move(module_token)) {
     m_ref = LLVMCreateDIBuilder(mod);
   }
 
@@ -9694,12 +9715,25 @@ struct LLVMDIBuilderWrapper : NoMoveCopy {
   LLVMMetadataWrapper create_file(const std::string &filename,
                                   const std::string &directory);
 
+  LLVMMetadataWrapper file(const std::string &filename,
+                           const std::string &directory = ".");
+
   LLVMMetadataWrapper create_compile_unit(
       int lang, const LLVMMetadataWrapper &file, const std::string &producer,
       bool is_optimized, const std::string &flags, unsigned runtime_ver,
       const std::string &split_name, unsigned kind, unsigned dwo_id,
       bool split_debug_inlining, bool debug_info_for_profiling,
       const std::string &sys_root, const std::string &sdk);
+
+  LLVMMetadataWrapper compile_unit(
+      LLVMDWARFSourceLanguage language, const LLVMMetadataWrapper &file,
+      const std::string &producer, bool is_optimized = false,
+      const std::string &flags = "", unsigned runtime_ver = 0,
+      const std::string &split_name = "",
+      LLVMDWARFEmissionKind kind = LLVMDWARFEmissionFull,
+      unsigned dwo_id = 0, bool split_debug_inlining = true,
+      bool debug_info_for_profiling = false, const std::string &sys_root = "",
+      const std::string &sdk = "");
 
   LLVMMetadataWrapper create_module(const LLVMMetadataWrapper &parent_scope,
                                     const std::string &name,
@@ -9731,6 +9765,16 @@ struct LLVMDIBuilderWrapper : NoMoveCopy {
   create_subroutine_type(const LLVMMetadataWrapper &file,
                          const Iterable<LLVMMetadataWrapper> &param_types,
                          unsigned flags);
+
+  LLVMMetadataWrapper function(
+      LLVMFunctionWrapper &fn, const std::string &name,
+      const LLVMMetadataWrapper &file, unsigned line,
+      const LLVMTypeWrapper &return_type,
+      const Iterable<LLVMTypeWrapper> &param_types,
+      const LLVMMetadataWrapper *scope = nullptr,
+      const std::string &linkage_name = "", bool is_local_to_unit = false,
+      bool is_definition = true, unsigned scope_line = 0, unsigned flags = 0,
+      bool is_optimized = false);
 
   // =========================================================================
   // Type Creation Methods
@@ -9828,6 +9872,15 @@ struct LLVMDIBuilderWrapper : NoMoveCopy {
                                            const LLVMMetadataWrapper &type,
                                            bool always_preserve, unsigned flags,
                                            uint32_t align_in_bits);
+
+  LLVMMetadataWrapper local_variable(const LLVMMetadataWrapper &scope,
+                                     const std::string &name,
+                                     const LLVMMetadataWrapper &file,
+                                     unsigned line_no,
+                                     const LLVMTypeWrapper &type,
+                                     bool always_preserve = true,
+                                     unsigned flags = 0,
+                                     uint32_t align_in_bits = 0);
 
   LLVMMetadataWrapper create_global_variable_expression(
       const LLVMMetadataWrapper &scope, const std::string &name,
@@ -10055,17 +10108,90 @@ struct LLVMDIBuilderWrapper : NoMoveCopy {
 
 struct LLVMMetadataWrapper {
   LLVMMetadataRef m_ref = nullptr;
+  LLVMContextRef m_ctx_ref = nullptr;
   std::shared_ptr<ValidityToken> m_context_token;
 
   LLVMMetadataWrapper() = default;
-  LLVMMetadataWrapper(LLVMMetadataRef ref, std::shared_ptr<ValidityToken> token)
-      : m_ref(ref), m_context_token(std::move(token)) {}
+  LLVMMetadataWrapper(LLVMMetadataRef ref, std::shared_ptr<ValidityToken> token,
+                      LLVMContextRef ctx = nullptr)
+      : m_ref(ref), m_ctx_ref(ctx), m_context_token(std::move(token)) {}
 
   void check_valid() const {
     if (!m_ref)
       throw LLVMMemoryError("Metadata is null");
     if (!m_context_token || !m_context_token->is_valid())
       throw LLVMMemoryError("Metadata used after context was destroyed");
+  }
+
+  unsigned kind() const {
+    check_valid();
+    return LLVMGetMetadataKind(m_ref);
+  }
+
+  bool is_string() const { return kind() == LLVMMDStringMetadataKind; }
+
+  bool is_value() const {
+    unsigned k = kind();
+    return k == LLVMConstantAsMetadataMetadataKind ||
+           k == LLVMLocalAsMetadataMetadataKind;
+  }
+
+  bool is_node() const {
+    check_valid();
+    if (!m_ctx_ref)
+      return false;
+    LLVMValueRef value = LLVMMetadataAsValue(m_ctx_ref, m_ref);
+    return LLVMIsAMDNode(value) != nullptr;
+  }
+
+  std::string string() const {
+    check_valid();
+    if (!is_string())
+      throw LLVMAssertionError("metadata is not an MDString");
+    if (!m_ctx_ref)
+      throw LLVMAssertionError("metadata string access requires context");
+    LLVMValueRef value = LLVMMetadataAsValue(m_ctx_ref, m_ref);
+    unsigned len = 0;
+    const char *str = LLVMGetMDString(value, &len);
+    if (!str)
+      throw LLVMAssertionError("metadata is not an MDString");
+    return std::string(str, len);
+  }
+
+  LLVMValueWrapper value() const {
+    check_valid();
+    if (!is_value())
+      throw LLVMAssertionError(
+          "metadata is not ConstantAsMetadata or LocalAsMetadata");
+    PyErr_SetString(PyExc_NotImplementedError,
+                    "LLVM-C cannot unwrap ValueAsMetadata to Value");
+    throw nb::python_error();
+  }
+
+  LLVMValueRef as_md_node_value() const {
+    check_valid();
+    if (!m_ctx_ref)
+      throw LLVMAssertionError("metadata node access requires context");
+    LLVMValueRef value = LLVMMetadataAsValue(m_ctx_ref, m_ref);
+    if (!LLVMIsAMDNode(value))
+      throw LLVMAssertionError("metadata is not an MDNode");
+    return value;
+  }
+
+  std::vector<LLVMMetadataWrapper> operands() const {
+    LLVMValueRef value = as_md_node_value();
+    unsigned count = LLVMGetMDNodeNumOperands(value);
+    std::vector<LLVMValueRef> refs(count);
+    LLVMGetMDNodeOperands(value, refs.data());
+    std::vector<LLVMMetadataWrapper> result;
+    result.reserve(count);
+    for (LLVMValueRef operand : refs) {
+      if (!operand)
+        throw LLVMAssertionError("metadata node operand is null");
+      result.emplace_back(LLVMValueAsMetadata(operand), m_context_token,
+                          m_ctx_ref);
+    }
+    return result;
   }
 
   // Convert metadata to value (requires context)
@@ -10089,6 +10215,430 @@ struct LLVMMetadataWrapper {
   }
 };
 
+static LLVMContextRef context_for_metadata_value(LLVMValueRef value) {
+  if (!LLVMIsAInstruction(value) && !LLVMIsAGlobalValue(value)) {
+    throw LLVMAssertionError(
+        "metadata view requires an instruction or global value");
+  }
+
+  LLVMTypeRef ty = LLVMTypeOf(value);
+  if (ty)
+    return LLVMGetTypeContext(ty);
+
+  if (LLVMIsAInstruction(value)) {
+    LLVMBasicBlockRef bb = LLVMGetInstructionParent(value);
+    if (!bb)
+      throw LLVMAssertionError("metadata requires an instruction in a basic block");
+    LLVMValueRef fn = LLVMGetBasicBlockParent(bb);
+    if (!fn)
+      throw LLVMAssertionError("metadata requires an instruction in a function");
+    LLVMModuleRef mod = LLVMGetGlobalParent(fn);
+    if (!mod)
+      throw LLVMAssertionError("metadata requires an instruction in a module");
+    return LLVMGetModuleContext(mod);
+  }
+
+  LLVMModuleRef mod = LLVMGetGlobalParent(value);
+  if (!mod)
+    throw LLVMAssertionError("metadata requires a global value in a module");
+  return LLVMGetModuleContext(mod);
+}
+
+static LLVMMetadataRef normalize_metadata_for_attachment(
+    LLVMContextRef ctx, const LLVMMetadataWrapper &md) {
+  md.check_valid();
+  LLVMMetadataRef metadata_ref = md.m_ref;
+  LLVMValueRef md_value = LLVMMetadataAsValue(ctx, metadata_ref);
+  bool is_md_node = LLVMIsAMDNode(md_value) && !LLVMIsAValueAsMetadata(md_value);
+  if (!is_md_node) {
+    LLVMMetadataRef refs[] = {metadata_ref};
+    metadata_ref = LLVMMDNodeInContext2(ctx, refs, 1);
+  }
+  return metadata_ref;
+}
+
+struct LLVMMetadataMapWrapper {
+  LLVMValueRef m_value_ref = nullptr;
+  LLVMContextRef m_ctx_ref = nullptr;
+  std::shared_ptr<ValidityToken> m_context_token;
+
+  LLVMMetadataMapWrapper() = default;
+  LLVMMetadataMapWrapper(LLVMValueRef value, LLVMContextRef ctx,
+                         std::shared_ptr<ValidityToken> token)
+      : m_value_ref(value), m_ctx_ref(ctx), m_context_token(std::move(token)) {}
+
+  void check_valid() const {
+    if (!m_value_ref)
+      throw LLVMMemoryError("Metadata view has no value");
+    if (!m_ctx_ref)
+      throw LLVMMemoryError("Metadata view has no context");
+    if (!m_context_token || !m_context_token->is_valid())
+      throw LLVMMemoryError("Metadata view used after context was destroyed");
+    if (!LLVMIsAInstruction(m_value_ref) && !LLVMIsAGlobalValue(m_value_ref)) {
+      throw LLVMAssertionError(
+          "metadata view requires an instruction or global value");
+    }
+  }
+
+  unsigned kind_id(const std::string &name) const {
+    check_valid();
+    if (name.empty())
+      throw LLVMAssertionError("metadata kind name cannot be empty");
+    return LLVMGetMDKindIDInContext(m_ctx_ref, name.c_str(), name.size());
+  }
+
+  std::optional<LLVMMetadataWrapper> get(const std::string &name) const {
+    unsigned kind = kind_id(name);
+    if (LLVMIsAInstruction(m_value_ref)) {
+      LLVMValueRef val = LLVMGetMetadata(m_value_ref, kind);
+      if (!val)
+        return std::nullopt;
+      return LLVMMetadataWrapper(LLVMValueAsMetadata(val), m_context_token,
+                                 m_ctx_ref);
+    }
+
+    size_t count = 0;
+    LLVMValueMetadataEntry *entries = LLVMGlobalCopyAllMetadata(m_value_ref, &count);
+    for (size_t i = 0; i < count; ++i) {
+      if (LLVMValueMetadataEntriesGetKind(entries, i) == kind) {
+        LLVMMetadataRef md = LLVMValueMetadataEntriesGetMetadata(entries, i);
+        LLVMDisposeValueMetadataEntries(entries);
+        return LLVMMetadataWrapper(md, m_context_token, m_ctx_ref);
+      }
+    }
+    if (entries)
+      LLVMDisposeValueMetadataEntries(entries);
+    return std::nullopt;
+  }
+
+  LLVMMetadataWrapper get_item(const std::string &name) const {
+    auto md = get(name);
+    if (!md)
+      throw nb::key_error(name.c_str());
+    return *md;
+  }
+
+  bool contains(const std::string &name) const { return get(name).has_value(); }
+
+  void set(const std::string &name, const LLVMMetadataWrapper &md) {
+    unsigned kind = kind_id(name);
+    LLVMMetadataRef metadata_ref = normalize_metadata_for_attachment(m_ctx_ref, md);
+    if (LLVMIsAGlobalValue(m_value_ref)) {
+      LLVMGlobalSetMetadata(m_value_ref, kind, metadata_ref);
+    } else {
+      LLVMValueRef md_value = LLVMMetadataAsValue(m_ctx_ref, metadata_ref);
+      LLVMSetMetadata(m_value_ref, kind, md_value);
+    }
+  }
+
+  void erase(const std::string &name) {
+    unsigned kind = kind_id(name);
+    if (LLVMIsAGlobalValue(m_value_ref)) {
+      LLVMGlobalEraseMetadata(m_value_ref, kind);
+    } else {
+      LLVMSetMetadata(m_value_ref, kind, nullptr);
+    }
+  }
+
+  void attach_entry(LLVMValueRef target_ref, LLVMContextRef target_ctx,
+                    unsigned kind, LLVMMetadataRef md) const {
+    LLVMMetadataWrapper md_wrapper(md, m_context_token, m_ctx_ref);
+    LLVMMetadataRef metadata_ref =
+        normalize_metadata_for_attachment(target_ctx, md_wrapper);
+    if (LLVMIsAGlobalValue(target_ref)) {
+      LLVMGlobalSetMetadata(target_ref, kind, metadata_ref);
+    } else {
+      LLVMValueRef md_value = LLVMMetadataAsValue(target_ctx, metadata_ref);
+      LLVMSetMetadata(target_ref, kind, md_value);
+    }
+  }
+
+  void copy_entries_to(LLVMValueMetadataEntry *entries, size_t count,
+                       LLVMValueRef target_ref,
+                       LLVMContextRef target_ctx) const {
+    for (size_t i = 0; i < count; ++i) {
+      unsigned kind = LLVMValueMetadataEntriesGetKind(entries, i);
+      LLVMMetadataRef md = LLVMValueMetadataEntriesGetMetadata(entries, i);
+      attach_entry(target_ref, target_ctx, kind, md);
+    }
+  }
+
+  void copy_to(const LLVMValueWrapper &target,
+               bool include_debug_location = false) const {
+    check_valid();
+    target.check_valid();
+    if (!LLVMIsAInstruction(target.m_ref) && !LLVMIsAGlobalValue(target.m_ref)) {
+      throw LLVMAssertionError(
+          "metadata copy target requires an instruction or global value");
+    }
+    if (target.m_context_token != m_context_token) {
+      throw LLVMAssertionError(
+          "metadata copy requires source and target in the same context");
+    }
+    if (include_debug_location &&
+        (!LLVMIsAInstruction(m_value_ref) || !LLVMIsAInstruction(target.m_ref))) {
+      throw LLVMAssertionError(
+          "include_debug_location requires instruction source and target");
+    }
+
+    LLVMContextRef target_ctx = context_for_metadata_value(target.m_ref);
+    size_t count = 0;
+    LLVMValueMetadataEntry *entries = nullptr;
+    if (LLVMIsAInstruction(m_value_ref)) {
+      entries = LLVMInstructionGetAllMetadataOtherThanDebugLoc(m_value_ref,
+                                                               &count);
+    } else {
+      entries = LLVMGlobalCopyAllMetadata(m_value_ref, &count);
+    }
+
+    copy_entries_to(entries, count, target.m_ref, target_ctx);
+    if (entries)
+      LLVMDisposeValueMetadataEntries(entries);
+
+    if (include_debug_location) {
+      LLVMInstructionSetDebugLoc(target.m_ref,
+                                 LLVMInstructionGetDebugLoc(m_value_ref));
+    }
+  }
+};
+
+struct LLVMNamedMetadataListWrapper {
+  LLVMModuleRef m_module_ref = nullptr;
+  LLVMContextRef m_ctx_ref = nullptr;
+  std::string m_name;
+  std::shared_ptr<ValidityToken> m_context_token;
+  std::shared_ptr<ValidityToken> m_module_token;
+
+  LLVMNamedMetadataListWrapper() = default;
+  LLVMNamedMetadataListWrapper(LLVMModuleRef mod, LLVMContextRef ctx,
+                               std::string name,
+                               std::shared_ptr<ValidityToken> context_token,
+                               std::shared_ptr<ValidityToken> module_token)
+      : m_module_ref(mod), m_ctx_ref(ctx), m_name(std::move(name)),
+        m_context_token(std::move(context_token)),
+        m_module_token(std::move(module_token)) {}
+
+  void check_valid() const {
+    if (!m_module_ref)
+      throw LLVMMemoryError("Named metadata view has no module");
+    if (!m_context_token || !m_context_token->is_valid())
+      throw LLVMMemoryError("Named metadata view used after context was destroyed");
+    if (!m_module_token || !m_module_token->is_valid())
+      throw LLVMMemoryError("Named metadata view used after module was disposed");
+  }
+
+  size_t size() const {
+    check_valid();
+    return LLVMGetNamedMetadataNumOperands(m_module_ref, m_name.c_str());
+  }
+
+  void append(const LLVMMetadataWrapper &md) {
+    check_valid();
+    md.check_valid();
+    LLVMValueRef val = LLVMMetadataAsValue(m_ctx_ref, md.m_ref);
+    LLVMAddNamedMetadataOperand(m_module_ref, m_name.c_str(), val);
+  }
+
+  std::vector<LLVMMetadataWrapper> all() const {
+    check_valid();
+    unsigned count = LLVMGetNamedMetadataNumOperands(m_module_ref, m_name.c_str());
+    if (count == 0)
+      return {};
+    std::vector<LLVMValueRef> values(count);
+    LLVMGetNamedMetadataOperands(m_module_ref, m_name.c_str(), values.data());
+    std::vector<LLVMMetadataWrapper> result;
+    result.reserve(count);
+    for (LLVMValueRef value : values) {
+      result.emplace_back(LLVMValueAsMetadata(value), m_context_token, m_ctx_ref);
+    }
+    return result;
+  }
+
+  LLVMMetadataWrapper get_item(size_t index) const {
+    auto values = all();
+    if (index >= values.size())
+      throw nb::index_error("named metadata index out of range");
+    return values[index];
+  }
+};
+
+struct LLVMNamedMetadataMapWrapper {
+  LLVMModuleRef m_module_ref = nullptr;
+  LLVMContextRef m_ctx_ref = nullptr;
+  std::shared_ptr<ValidityToken> m_context_token;
+  std::shared_ptr<ValidityToken> m_module_token;
+
+  LLVMNamedMetadataMapWrapper() = default;
+  LLVMNamedMetadataMapWrapper(LLVMModuleRef mod, LLVMContextRef ctx,
+                              std::shared_ptr<ValidityToken> context_token,
+                              std::shared_ptr<ValidityToken> module_token)
+      : m_module_ref(mod), m_ctx_ref(ctx),
+        m_context_token(std::move(context_token)),
+        m_module_token(std::move(module_token)) {}
+
+  void check_valid() const {
+    if (!m_module_ref)
+      throw LLVMMemoryError("Named metadata map has no module");
+    if (!m_context_token || !m_context_token->is_valid())
+      throw LLVMMemoryError("Named metadata map used after context was destroyed");
+    if (!m_module_token || !m_module_token->is_valid())
+      throw LLVMMemoryError("Named metadata map used after module was disposed");
+  }
+
+  bool contains(const std::string &name) const {
+    check_valid();
+    return LLVMGetNamedMetadata(m_module_ref, name.c_str(), name.size()) != nullptr;
+  }
+
+  LLVMNamedMetadataListWrapper get_item(const std::string &name) const {
+    check_valid();
+    if (name.empty())
+      throw LLVMAssertionError("named metadata name cannot be empty");
+    LLVMGetOrInsertNamedMetadata(m_module_ref, name.c_str(), name.size());
+    return LLVMNamedMetadataListWrapper(m_module_ref, m_ctx_ref, name,
+                                        m_context_token, m_module_token);
+  }
+
+  std::optional<LLVMNamedMetadataListWrapper> get(const std::string &name) const {
+    check_valid();
+    if (!contains(name))
+      return std::nullopt;
+    return LLVMNamedMetadataListWrapper(m_module_ref, m_ctx_ref, name,
+                                        m_context_token, m_module_token);
+  }
+
+  std::vector<std::string> keys() const {
+    check_valid();
+    std::vector<std::string> result;
+    for (LLVMNamedMDNodeRef cur = LLVMGetFirstNamedMetadata(m_module_ref); cur;
+         cur = LLVMGetNextNamedMetadata(cur)) {
+      size_t len = 0;
+      const char *name = LLVMGetNamedMetadataName(cur, &len);
+      result.emplace_back(name, len);
+    }
+    return result;
+  }
+};
+
+struct LLVMModuleFlagsWrapper {
+  LLVMModuleRef m_module_ref = nullptr;
+  LLVMContextRef m_ctx_ref = nullptr;
+  std::shared_ptr<ValidityToken> m_context_token;
+  std::shared_ptr<ValidityToken> m_module_token;
+
+  LLVMModuleFlagsWrapper() = default;
+  LLVMModuleFlagsWrapper(LLVMModuleRef mod,
+                         std::shared_ptr<ValidityToken> context_token,
+                         std::shared_ptr<ValidityToken> module_token)
+      : m_module_ref(mod), m_ctx_ref(mod ? LLVMGetModuleContext(mod) : nullptr),
+        m_context_token(std::move(context_token)),
+        m_module_token(std::move(module_token)) {}
+
+  void check_valid() const {
+    if (!m_module_ref)
+      throw LLVMMemoryError("Module flags view has no module");
+    if (!m_context_token || !m_context_token->is_valid())
+      throw LLVMMemoryError("Module flags view used after context was destroyed");
+    if (!m_module_token || !m_module_token->is_valid())
+      throw LLVMMemoryError("Module flags view used after module was disposed");
+  }
+
+  void add(const std::string &key, LLVMModuleFlagBehavior behavior,
+           const LLVMMetadataWrapper &value) {
+    check_valid();
+    value.check_valid();
+    if (key.empty())
+      throw LLVMAssertionError("module flag key cannot be empty");
+    LLVMAddModuleFlag(m_module_ref, behavior, key.c_str(), key.size(), value.m_ref);
+  }
+
+  std::optional<LLVMMetadataWrapper> get(const std::string &key) const {
+    check_valid();
+    LLVMMetadataRef md = LLVMGetModuleFlag(m_module_ref, key.c_str(), key.size());
+    if (!md)
+      return std::nullopt;
+    return LLVMMetadataWrapper(md, m_context_token, m_ctx_ref);
+  }
+
+  LLVMMetadataWrapper get_item(const std::string &key) const {
+    auto md = get(key);
+    if (!md)
+      throw nb::key_error(key.c_str());
+    return *md;
+  }
+
+  bool contains(const std::string &key) const { return get(key).has_value(); }
+
+  std::vector<std::string> keys() const {
+    check_valid();
+    size_t count = 0;
+    LLVMModuleFlagEntry *entries = LLVMCopyModuleFlagsMetadata(m_module_ref, &count);
+    std::vector<std::string> result;
+    result.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+      size_t len = 0;
+      const char *key = LLVMModuleFlagEntriesGetKey(entries, i, &len);
+      result.emplace_back(key, len);
+    }
+    if (entries)
+      LLVMDisposeModuleFlagsMetadata(entries);
+    return result;
+  }
+};
+
+struct LLVMBuilderDebugLocationManager : NoMoveCopy {
+  LLVMBuilderRef m_builder_ref = nullptr;
+  LLVMMetadataRef m_new_loc = nullptr;
+  LLVMMetadataRef m_saved_loc = nullptr;
+  std::shared_ptr<ValidityToken> m_context_token;
+  std::shared_ptr<ValidityToken> m_module_token;
+  std::shared_ptr<ValidityToken> m_builder_token;
+  bool m_entered = false;
+
+  LLVMBuilderDebugLocationManager() = default;
+  LLVMBuilderDebugLocationManager(
+      LLVMBuilderRef builder, LLVMMetadataRef loc,
+      std::shared_ptr<ValidityToken> context_token,
+      std::shared_ptr<ValidityToken> module_token,
+      std::shared_ptr<ValidityToken> builder_token)
+      : m_builder_ref(builder), m_new_loc(loc),
+        m_context_token(std::move(context_token)),
+        m_module_token(std::move(module_token)),
+        m_builder_token(std::move(builder_token)) {}
+
+  void check_valid() const {
+    if (!m_builder_ref)
+      throw LLVMMemoryError("Debug location manager has no builder");
+    if (!m_builder_token || !m_builder_token->is_valid())
+      throw LLVMMemoryError(
+          "Debug location manager used after builder was disposed");
+    if (!m_context_token || !m_context_token->is_valid())
+      throw LLVMMemoryError(
+          "Debug location manager used after context was destroyed");
+    if (m_module_token && !m_module_token->is_valid())
+      throw LLVMMemoryError(
+          "Debug location manager used after module was disposed");
+  }
+
+  LLVMBuilderDebugLocationManager &enter() {
+    check_valid();
+    if (m_entered)
+      throw LLVMMemoryError("Debug location manager already entered");
+    m_saved_loc = LLVMGetCurrentDebugLocation2(m_builder_ref);
+    LLVMSetCurrentDebugLocation2(m_builder_ref, m_new_loc);
+    m_entered = true;
+    return *this;
+  }
+
+  void exit(const nb::object &, const nb::object &, const nb::object &) {
+    check_valid();
+    if (!m_entered)
+      throw LLVMMemoryError("Debug location manager was not entered");
+    LLVMSetCurrentDebugLocation2(m_builder_ref, m_saved_loc);
+    m_entered = false;
+  }
+};
+
 // Implementation of get_metadata for ValueMetadataEntriesWrapper
 inline LLVMMetadataWrapper LLVMValueMetadataEntriesWrapper_get_metadata(
     const LLVMValueMetadataEntriesWrapper &entries, unsigned index) {
@@ -10103,7 +10653,18 @@ inline LLVMMetadataWrapper LLVMValueMetadataEntriesWrapper_get_metadata(
 // Implementation of LLVMValueWrapper::as_metadata() - needs LLVMMetadataWrapper
 inline LLVMMetadataWrapper LLVMValueWrapper::as_metadata() const {
   check_valid();
-  return LLVMMetadataWrapper(LLVMValueAsMetadata(m_ref), m_context_token);
+  LLVMContextRef ctx_ref = nullptr;
+  LLVMTypeRef ty = LLVMTypeOf(m_ref);
+  if (ty)
+    ctx_ref = LLVMGetTypeContext(ty);
+  return LLVMMetadataWrapper(LLVMValueAsMetadata(m_ref), m_context_token,
+                             ctx_ref);
+}
+
+inline LLVMMetadataMapWrapper LLVMValueWrapper::metadata() const {
+  check_valid();
+  LLVMContextRef ctx_ref = context_for_metadata_value(m_ref);
+  return LLVMMetadataMapWrapper(m_ref, ctx_ref, m_context_token);
 }
 
 // Implementation of replace_md_node_operand_with - needs LLVMMetadataWrapper
@@ -10155,7 +10716,7 @@ inline LLVMMetadataWrapper
 LLVMContextWrapper::md_string(const std::string &str) {
   check_valid();
   return LLVMMetadataWrapper(
-      LLVMMDStringInContext2(m_ref, str.c_str(), str.size()), m_token);
+      LLVMMDStringInContext2(m_ref, str.c_str(), str.size()), m_token, m_ref);
 }
 
 // Implementation of LLVMContextWrapper::md_node() - needs LLVMMetadataWrapper
@@ -10169,7 +10730,7 @@ LLVMContextWrapper::md_node(const Iterable<LLVMMetadataWrapper> &mds) {
     refs.push_back(md.m_ref);
   }
   return LLVMMetadataWrapper(
-      LLVMMDNodeInContext2(m_ref, refs.data(), refs.size()), m_token);
+      LLVMMDNodeInContext2(m_ref, refs.data(), refs.size()), m_token, m_ref);
 }
 
 inline LLVMMetadataWrapper LLVMContextWrapper::create_debug_location(
@@ -10185,7 +10746,37 @@ inline LLVMMetadataWrapper LLVMContextWrapper::create_debug_location(
   return LLVMMetadataWrapper(
       LLVMDIBuilderCreateDebugLocation(m_ref, line, column, scope.m_ref,
                                        inlined),
-      m_token);
+      m_token, m_ref);
+}
+
+inline LLVMMetadataWrapper LLVMContextWrapper::debug_location(
+    unsigned line, unsigned column, const LLVMMetadataWrapper &scope,
+    const LLVMMetadataWrapper *inlined_at) {
+  return create_debug_location(line, column, scope, inlined_at);
+}
+
+inline LLVMBuilderDebugLocationManager *
+LLVMBuilderWrapper::debug_location(const LLVMMetadataWrapper &loc) const {
+  check_valid();
+  loc.check_valid();
+  return new LLVMBuilderDebugLocationManager(m_ref, loc.m_ref, m_context_token,
+                                             m_module_token, m_token);
+}
+
+inline LLVMBuilderDebugLocationManager *LLVMBuilderWrapper::debug_location(
+    unsigned line, unsigned column, const LLVMMetadataWrapper &scope,
+    const LLVMMetadataWrapper *inlined_at) const {
+  check_valid();
+  scope.check_valid();
+  LLVMMetadataRef inlined = nullptr;
+  if (inlined_at) {
+    inlined_at->check_valid();
+    inlined = inlined_at->m_ref;
+  }
+  LLVMMetadataRef loc = LLVMDIBuilderCreateDebugLocation(
+      m_ctx_ref, line, column, scope.m_ref, inlined);
+  return new LLVMBuilderDebugLocationManager(m_ref, loc, m_context_token,
+                                             m_module_token, m_token);
 }
 
 // Implementation of LLVMContextWrapper::create_type_attribute() - needs
@@ -10231,7 +10822,17 @@ LLVMModuleWrapper::get_module_flag(const std::string &key) {
   LLVMMetadataRef md = LLVMGetModuleFlag(m_ref, key.c_str(), key.size());
   if (!md)
     return std::nullopt;
-  return LLVMMetadataWrapper(md, m_context_token);
+  return LLVMMetadataWrapper(md, m_context_token, m_ctx_ref);
+}
+
+inline LLVMNamedMetadataMapWrapper LLVMModuleWrapper::named_metadata() const {
+  check_valid();
+  return LLVMNamedMetadataMapWrapper(m_ref, m_ctx_ref, m_context_token, m_token);
+}
+
+inline LLVMModuleFlagsWrapper LLVMModuleWrapper::module_flags() const {
+  check_valid();
+  return LLVMModuleFlagsWrapper(m_ref, m_context_token, m_token);
 }
 
 // Implementation of LLVMFunctionWrapper::set_subprogram() - needs
@@ -10246,6 +10847,31 @@ inline void LLVMFunctionWrapper::set_subprogram(const LLVMMetadataWrapper &sp) {
 // DIBuilder Method Implementations
 // =============================================================================
 
+static LLVMMetadataRef create_debug_type_from_ir_type(LLVMDIBuilderRef dib,
+                                                      LLVMTypeRef ty) {
+  LLVMTypeKind kind = LLVMGetTypeKind(ty);
+  switch (kind) {
+  case LLVMVoidTypeKind:
+    return nullptr;
+  case LLVMIntegerTypeKind: {
+    unsigned width = LLVMGetIntTypeWidth(ty);
+    std::string name = width == 1 ? "bool" : "i" + std::to_string(width);
+    unsigned encoding = width == 1 ? 0x02 : 0x05; // DW_ATE_boolean/signed
+    return LLVMDIBuilderCreateBasicType(dib, name.c_str(), name.size(), width,
+                                        encoding, LLVMDIFlagZero);
+  }
+  case LLVMFloatTypeKind:
+    return LLVMDIBuilderCreateBasicType(dib, "float", 5, 32, 0x04,
+                                        LLVMDIFlagZero);
+  case LLVMDoubleTypeKind:
+    return LLVMDIBuilderCreateBasicType(dib, "double", 6, 64, 0x04,
+                                        LLVMDIFlagZero);
+  default:
+    throw LLVMAssertionError(
+        "DIBuilder type recipe supports void, integer, float, and double IR types");
+  }
+}
+
 // File & Scope Creation
 inline LLVMMetadataWrapper
 LLVMDIBuilderWrapper::create_file(const std::string &filename,
@@ -10254,7 +10880,13 @@ LLVMDIBuilderWrapper::create_file(const std::string &filename,
   return LLVMMetadataWrapper(
       LLVMDIBuilderCreateFile(m_ref, filename.c_str(), filename.size(),
                               directory.c_str(), directory.size()),
-      m_module_token);
+      m_module_token, m_ctx_ref);
+}
+
+inline LLVMMetadataWrapper
+LLVMDIBuilderWrapper::file(const std::string &filename,
+                           const std::string &directory) {
+  return create_file(filename, directory);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_compile_unit(
@@ -10273,7 +10905,21 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_compile_unit(
           (LLVMDWARFEmissionKind)kind, dwo_id, split_debug_inlining,
           debug_info_for_profiling, sys_root.c_str(), sys_root.size(),
           sdk.c_str(), sdk.size()),
-      m_module_token);
+      m_module_token, m_ctx_ref);
+}
+
+inline LLVMMetadataWrapper LLVMDIBuilderWrapper::compile_unit(
+    LLVMDWARFSourceLanguage language, const LLVMMetadataWrapper &file,
+    const std::string &producer, bool is_optimized,
+    const std::string &flags, unsigned runtime_ver,
+    const std::string &split_name, LLVMDWARFEmissionKind kind,
+    unsigned dwo_id, bool split_debug_inlining,
+    bool debug_info_for_profiling, const std::string &sys_root,
+    const std::string &sdk) {
+  return create_compile_unit((int)language, file, producer, is_optimized, flags,
+                             runtime_ver, split_name, (unsigned)kind, dwo_id,
+                             split_debug_inlining, debug_info_for_profiling,
+                             sys_root, sdk);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_module(
@@ -10287,7 +10933,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_module(
           m_ref, parent_scope.m_ref, name.c_str(), name.size(),
           config_macros.c_str(), config_macros.size(), include_path.c_str(),
           include_path.size(), api_notes_file.c_str(), api_notes_file.size()),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper
@@ -10299,7 +10945,7 @@ LLVMDIBuilderWrapper::create_namespace(const LLVMMetadataWrapper &parent_scope,
   return LLVMMetadataWrapper(
       LLVMDIBuilderCreateNameSpace(m_ref, parent_scope.m_ref, name.c_str(),
                                    name.size(), export_symbols),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper
@@ -10311,7 +10957,7 @@ LLVMDIBuilderWrapper::create_lexical_block(const LLVMMetadataWrapper &scope,
   file.check_valid();
   return LLVMMetadataWrapper(LLVMDIBuilderCreateLexicalBlock(
                                  m_ref, scope.m_ref, file.m_ref, line, column),
-                             m_module_token);
+                             m_module_token, m_ctx_ref);
 }
 
 // Function & Subroutine Creation
@@ -10330,7 +10976,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_function(
           m_ref, scope.m_ref, name.c_str(), name.size(), linkage_name.c_str(),
           linkage_name.size(), file.m_ref, line_no, type, is_local_to_unit,
           is_definition, scope_line, (LLVMDIFlags)flags, is_optimized),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_subroutine_type(
@@ -10347,7 +10993,44 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_subroutine_type(
   return LLVMMetadataWrapper(
       LLVMDIBuilderCreateSubroutineType(m_ref, file.m_ref, param_refs.data(),
                                         param_refs.size(), (LLVMDIFlags)flags),
-      m_module_token);
+      m_module_token, m_ctx_ref);
+}
+
+inline LLVMMetadataWrapper LLVMDIBuilderWrapper::function(
+    LLVMFunctionWrapper &fn, const std::string &name,
+    const LLVMMetadataWrapper &file, unsigned line,
+    const LLVMTypeWrapper &return_type,
+    const Iterable<LLVMTypeWrapper> &param_types,
+    const LLVMMetadataWrapper *scope, const std::string &linkage_name,
+    bool is_local_to_unit, bool is_definition, unsigned scope_line,
+    unsigned flags, bool is_optimized) {
+  check_valid();
+  fn.check_valid();
+  file.check_valid();
+  return_type.check_valid();
+  LLVMMetadataRef scope_ref = scope ? scope->m_ref : file.m_ref;
+  if (scope)
+    scope->check_valid();
+
+  std::vector<LLVMMetadataRef> di_types;
+  di_types.reserve(param_types.size() + 1);
+  di_types.push_back(create_debug_type_from_ir_type(m_ref, return_type.m_ref));
+  for (const auto &param_ty : param_types) {
+    param_ty.check_valid();
+    di_types.push_back(create_debug_type_from_ir_type(m_ref, param_ty.m_ref));
+  }
+
+  LLVMMetadataRef subroutine_type = LLVMDIBuilderCreateSubroutineType(
+      m_ref, file.m_ref, di_types.data(), di_types.size(), LLVMDIFlagZero);
+  std::string linkage = linkage_name.empty() ? fn.get_name() : linkage_name;
+  unsigned actual_scope_line = scope_line == 0 ? line : scope_line;
+  LLVMMetadataRef sp = LLVMDIBuilderCreateFunction(
+      m_ref, scope_ref, name.c_str(), name.size(), linkage.c_str(), linkage.size(),
+      file.m_ref, line, subroutine_type, is_local_to_unit, is_definition,
+      actual_scope_line, (LLVMDIFlags)flags, is_optimized);
+  LLVMMetadataWrapper wrapper(sp, m_module_token, m_ctx_ref);
+  fn.set_subprogram(wrapper);
+  return wrapper;
 }
 
 // Type Creation
@@ -10359,7 +11042,7 @@ LLVMDIBuilderWrapper::create_basic_type(const std::string &name,
   return LLVMMetadataWrapper(
       LLVMDIBuilderCreateBasicType(m_ref, name.c_str(), name.size(),
                                    size_in_bits, encoding, (LLVMDIFlags)flags),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_pointer_type(
@@ -10371,7 +11054,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_pointer_type(
       LLVMDIBuilderCreatePointerType(m_ref, pointee.m_ref, size_in_bits,
                                      align_in_bits, address_space, name.c_str(),
                                      name.size()),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_vector_type(
@@ -10390,7 +11073,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_vector_type(
       LLVMDIBuilderCreateVectorType(m_ref, size_in_bits, align_in_bits,
                                     element_type.m_ref, sub_refs.data(),
                                     sub_refs.size()),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_typedef(
@@ -10405,7 +11088,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_typedef(
       LLVMDIBuilderCreateTypedef(m_ref, type.m_ref, name.c_str(), name.size(),
                                  file.m_ref, line_no, scope.m_ref,
                                  align_in_bits),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_struct_type(
@@ -10433,7 +11116,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_struct_type(
           elem_refs.empty() ? nullptr : elem_refs.data(),
           static_cast<unsigned>(elem_refs.size()), runtime_lang, vtable,
           unique_id.c_str(), unique_id.size()),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_enumeration_type(
@@ -10457,7 +11140,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_enumeration_type(
                                  file.m_ref, line_number, size_in_bits,
                                  align_in_bits, elem_refs.data(),
                                  elem_refs.size(), underlying_type.m_ref),
-                             m_module_token);
+                             m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_forward_decl(
@@ -10473,7 +11156,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_forward_decl(
                                      scope.m_ref, file.m_ref, line,
                                      runtime_lang, size_in_bits, align_in_bits,
                                      unique_id.c_str(), unique_id.size()),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper
@@ -10490,7 +11173,7 @@ LLVMDIBuilderWrapper::create_replaceable_composite_type(
           m_ref, tag, name.c_str(), name.size(), scope.m_ref, file.m_ref, line,
           runtime_lang, size_in_bits, align_in_bits, (LLVMDIFlags)flags,
           unique_id.c_str(), unique_id.size()),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_subrange_type(
@@ -10514,7 +11197,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_subrange_type(
                                  line, file.m_ref, size_in_bits, align_in_bits,
                                  (LLVMDIFlags)flags, element_type.m_ref, lb, ub,
                                  st, bi),
-                             m_module_token);
+                             m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_set_type(
@@ -10529,7 +11212,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_set_type(
       LLVMDIBuilderCreateSetType(m_ref, scope.m_ref, name.c_str(), name.size(),
                                  file.m_ref, line, size_in_bits, align_in_bits,
                                  base_type.m_ref),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_dynamic_array_type(
@@ -10560,7 +11243,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_dynamic_array_type(
           m_ref, scope.m_ref, name.c_str(), name.size(), line, file.m_ref,
           size_in_bits, align_in_bits, element_type.m_ref, sub_refs.data(),
           sub_refs.size(), data_location.m_ref, assoc, alloc, rnk, stride_ref),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 // Variable & Expression
@@ -10576,7 +11259,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_parameter_variable(
                                  m_ref, scope.m_ref, name.c_str(), name.size(),
                                  arg_no, file.m_ref, line_no, type.m_ref,
                                  always_preserve, (LLVMDIFlags)flags),
-                             m_module_token);
+                             m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_auto_variable(
@@ -10592,7 +11275,26 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_auto_variable(
       LLVMDIBuilderCreateAutoVariable(
           m_ref, scope.m_ref, name.c_str(), name.size(), file.m_ref, line_no,
           type.m_ref, always_preserve, (LLVMDIFlags)flags, align_in_bits),
-      m_module_token);
+      m_module_token, m_ctx_ref);
+}
+
+inline LLVMMetadataWrapper LLVMDIBuilderWrapper::local_variable(
+    const LLVMMetadataWrapper &scope, const std::string &name,
+    const LLVMMetadataWrapper &file, unsigned line_no,
+    const LLVMTypeWrapper &type, bool always_preserve, unsigned flags,
+    uint32_t align_in_bits) {
+  check_valid();
+  scope.check_valid();
+  file.check_valid();
+  type.check_valid();
+  LLVMMetadataRef di_type = create_debug_type_from_ir_type(m_ref, type.m_ref);
+  if (!di_type)
+    throw LLVMAssertionError("local_variable type cannot be void");
+  return LLVMMetadataWrapper(
+      LLVMDIBuilderCreateAutoVariable(
+          m_ref, scope.m_ref, name.c_str(), name.size(), file.m_ref, line_no,
+          di_type, always_preserve, (LLVMDIFlags)flags, align_in_bits),
+      m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper
@@ -10613,7 +11315,7 @@ LLVMDIBuilderWrapper::create_global_variable_expression(
                                  linkage.c_str(), linkage.size(), file.m_ref,
                                  line_no, type.m_ref, is_local_to_unit,
                                  expr.m_ref, decl_ref, align_in_bits),
-                             m_module_token);
+                             m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper
@@ -10624,14 +11326,14 @@ LLVMDIBuilderWrapper::create_expression(const Iterable<uint64_t> &addr) {
   std::vector<uint64_t> addr_copy = addr;
   return LLVMMetadataWrapper(
       LLVMDIBuilderCreateExpression(m_ref, addr_copy.data(), addr_copy.size()),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper
 LLVMDIBuilderWrapper::create_constant_value_expression(uint64_t value) {
   check_valid();
   return LLVMMetadataWrapper(
-      LLVMDIBuilderCreateConstantValueExpression(m_ref, value), m_module_token);
+      LLVMDIBuilderCreateConstantValueExpression(m_ref, value), m_module_token, m_ctx_ref);
 }
 
 // Label Methods
@@ -10644,7 +11346,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_label(
   return LLVMMetadataWrapper(
       LLVMDIBuilderCreateLabel(m_ref, scope.m_ref, name.c_str(), name.size(),
                                file.m_ref, line_no, always_preserve),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 inline void
@@ -10707,7 +11409,7 @@ inline LLVMMetadataWrapper
 LLVMDIBuilderWrapper::get_or_create_subrange(int64_t lo, int64_t count) {
   check_valid();
   return LLVMMetadataWrapper(LLVMDIBuilderGetOrCreateSubrange(m_ref, lo, count),
-                             m_module_token);
+                             m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::get_or_create_array(
@@ -10721,7 +11423,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::get_or_create_array(
   }
   return LLVMMetadataWrapper(
       LLVMDIBuilderGetOrCreateArray(m_ref, elem_refs.data(), elem_refs.size()),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 // Enumerator Methods
@@ -10732,7 +11434,7 @@ LLVMDIBuilderWrapper::create_enumerator(const std::string &name, int64_t value,
   return LLVMMetadataWrapper(LLVMDIBuilderCreateEnumerator(m_ref, name.c_str(),
                                                            name.size(), value,
                                                            is_unsigned),
-                             m_module_token);
+                             m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper
@@ -10743,7 +11445,7 @@ LLVMDIBuilderWrapper::create_enumerator_of_arbitrary_precision(
   return LLVMMetadataWrapper(LLVMDIBuilderCreateEnumeratorOfArbitraryPrecision(
                                  m_ref, name.c_str(), name.size(),
                                  value.size() * 64, value.data(), is_unsigned),
-                             m_module_token);
+                             m_module_token, m_ctx_ref);
 }
 
 // ObjC & Inheritance Methods
@@ -10759,7 +11461,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_objc_property(
           m_ref, name.c_str(), name.size(), file.m_ref, line_no,
           getter_name.c_str(), getter_name.size(), setter_name.c_str(),
           setter_name.size(), property_attributes, type.m_ref),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_objc_ivar(
@@ -10776,7 +11478,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_objc_ivar(
                                   line_no, size_in_bits, align_in_bits,
                                   offset_in_bits, (LLVMDIFlags)flags,
                                   type.m_ref, property.m_ref),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_inheritance(
@@ -10790,7 +11492,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_inheritance(
       LLVMDIBuilderCreateInheritance(m_ref, derived_type.m_ref, base_type.m_ref,
                                      offset_in_bits, v_bptr_offset,
                                      (LLVMDIFlags)flags),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 // Import & Macro Methods
@@ -10813,7 +11515,7 @@ LLVMDIBuilderWrapper::create_imported_module_from_module(
                                  m_ref, scope.m_ref, import_module.m_ref,
                                  file.m_ref, line, elem_refs.data(),
                                  elem_refs.size()),
-                             m_module_token);
+                             m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper
@@ -10835,7 +11537,7 @@ LLVMDIBuilderWrapper::create_imported_module_from_alias(
                                  m_ref, scope.m_ref, imported_entity.m_ref,
                                  file.m_ref, line, elem_refs.data(),
                                  elem_refs.size()),
-                             m_module_token);
+                             m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_temp_macro_file(
@@ -10847,7 +11549,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_temp_macro_file(
       parent_macro_file ? parent_macro_file->m_ref : nullptr;
   return LLVMMetadataWrapper(
       LLVMDIBuilderCreateTempMacroFile(m_ref, parent, line, file.m_ref),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_macro(
@@ -10860,7 +11562,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_macro(
                                (LLVMDWARFMacinfoRecordType)macro_type,
                                name.c_str(), name.size(), value.c_str(),
                                value.size()),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 // Missing DIBuilder Method Implementations
@@ -10886,7 +11588,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_member_type(
                                     name.size(), file.m_ref, line_no,
                                     size_in_bits, align_in_bits, offset_in_bits,
                                     (LLVMDIFlags)flags, type.m_ref),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_union_type(
@@ -10910,7 +11612,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_union_type(
           line_number, size_in_bits, align_in_bits, (LLVMDIFlags)flags,
           elem_refs.data(), elem_refs.size(), runtime_lang, unique_id.c_str(),
           unique_id.size()),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_array_type(
@@ -10929,7 +11631,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_array_type(
       LLVMDIBuilderCreateArrayType(m_ref, size_in_bits, align_in_bits,
                                    element_type.m_ref, sub_refs.data(),
                                    sub_refs.size()),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper
@@ -10938,7 +11640,7 @@ LLVMDIBuilderWrapper::create_qualified_type(unsigned tag,
   check_valid();
   type.check_valid();
   return LLVMMetadataWrapper(
-      LLVMDIBuilderCreateQualifiedType(m_ref, tag, type.m_ref), m_module_token);
+      LLVMDIBuilderCreateQualifiedType(m_ref, tag, type.m_ref), m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper
@@ -10947,13 +11649,13 @@ LLVMDIBuilderWrapper::create_reference_type(unsigned tag,
   check_valid();
   type.check_valid();
   return LLVMMetadataWrapper(
-      LLVMDIBuilderCreateReferenceType(m_ref, tag, type.m_ref), m_module_token);
+      LLVMDIBuilderCreateReferenceType(m_ref, tag, type.m_ref), m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_null_ptr_type() {
   check_valid();
   return LLVMMetadataWrapper(LLVMDIBuilderCreateNullPtrType(m_ref),
-                             m_module_token);
+                             m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_bit_field_member_type(
@@ -10970,7 +11672,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_bit_field_member_type(
                                  file.m_ref, line_no, size_in_bits,
                                  offset_in_bits, storage_offset_in_bits,
                                  (LLVMDIFlags)flags, type.m_ref),
-                             m_module_token);
+                             m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper
@@ -10978,7 +11680,7 @@ LLVMDIBuilderWrapper::create_artificial_type(const LLVMMetadataWrapper &type) {
   check_valid();
   type.check_valid();
   return LLVMMetadataWrapper(
-      LLVMDIBuilderCreateArtificialType(m_ref, type.m_ref), m_module_token);
+      LLVMDIBuilderCreateArtificialType(m_ref, type.m_ref), m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::get_or_create_type_array(
@@ -10992,7 +11694,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::get_or_create_type_array(
   }
   return LLVMMetadataWrapper(LLVMDIBuilderGetOrCreateTypeArray(
                                  m_ref, type_refs.data(), type_refs.size()),
-                             m_module_token);
+                             m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_lexical_block_file(
@@ -11003,7 +11705,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_lexical_block_file(
   file.check_valid();
   return LLVMMetadataWrapper(LLVMDIBuilderCreateLexicalBlockFile(
                                  m_ref, scope.m_ref, file.m_ref, discriminator),
-                             m_module_token);
+                             m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_imported_declaration(
@@ -11024,7 +11726,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_imported_declaration(
                                  m_ref, scope.m_ref, decl.m_ref, file.m_ref,
                                  line, name.c_str(), name.size(),
                                  elem_refs.data(), elem_refs.size()),
-                             m_module_token);
+                             m_module_token, m_ctx_ref);
 }
 
 inline LLVMMetadataWrapper
@@ -11038,7 +11740,7 @@ LLVMDIBuilderWrapper::create_imported_module_from_namespace(
   return LLVMMetadataWrapper(
       LLVMDIBuilderCreateImportedModuleFromNamespace(
           m_ref, scope.m_ref, ns.m_ref, file.m_ref, line),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 // Utility Methods
@@ -11092,7 +11794,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_class_type(
           vtable_holder ? vtable_holder->m_ref : nullptr,
           template_params ? template_params->m_ref : nullptr, unique_id.c_str(),
           unique_id.size()),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 // Create static member type debug info
@@ -11113,7 +11815,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_static_member_type(
           m_ref, scope.m_ref, name.c_str(), name.size(), file.m_ref, line_no,
           type.m_ref, (LLVMDIFlags)flags,
           const_val ? const_val->m_ref : nullptr, align_in_bits),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 // Create member pointer type debug info (C++ pointer-to-member)
@@ -11129,7 +11831,7 @@ inline LLVMMetadataWrapper LLVMDIBuilderWrapper::create_member_pointer_type(
       LLVMDIBuilderCreateMemberPointerType(m_ref, pointee_type.m_ref,
                                            class_type.m_ref, size_in_bits,
                                            align_in_bits, (LLVMDIFlags)flags),
-      m_module_token);
+      m_module_token, m_ctx_ref);
 }
 
 // Insert declare record before an instruction
@@ -11578,6 +12280,26 @@ NB_MODULE(llvm, m) {
           "AppendUnique", LLVMModuleFlagBehaviorAppendUnique,
           "Appends the two values, dropping duplicates from the second list.")
       .export_values();
+
+  nb::enum_<LLVMDWARFSourceLanguage>(m, "DwarfLanguage")
+      .value("C89", LLVMDWARFSourceLanguageC89)
+      .value("C", LLVMDWARFSourceLanguageC)
+      .value("C99", LLVMDWARFSourceLanguageC99)
+      .value("C11", LLVMDWARFSourceLanguageC11)
+      .value("C17", LLVMDWARFSourceLanguageC17)
+      .value("CPlusPlus", LLVMDWARFSourceLanguageC_plus_plus)
+      .value("CPlusPlus11", LLVMDWARFSourceLanguageC_plus_plus_11)
+      .value("CPlusPlus14", LLVMDWARFSourceLanguageC_plus_plus_14)
+      .value("CPlusPlus17", LLVMDWARFSourceLanguageC_plus_plus_17)
+      .value("CPlusPlus20", LLVMDWARFSourceLanguageC_plus_plus_20)
+      .value("Python", LLVMDWARFSourceLanguagePython)
+      .value("Rust", LLVMDWARFSourceLanguageRust)
+      .value("Swift", LLVMDWARFSourceLanguageSwift);
+
+  nb::enum_<LLVMDWARFEmissionKind>(m, "DwarfEmissionKind")
+      .value("None_", LLVMDWARFEmissionNone)
+      .value("Full", LLVMDWARFEmissionFull)
+      .value("LineTablesOnly", LLVMDWARFEmissionLineTablesOnly);
 
   nb::enum_<LLVMVisibility>(m, "Visibility")
       .value("Default", LLVMDefaultVisibility)
@@ -12362,6 +13084,75 @@ Valid when:
 
 <sub>C API: LLVMGetPreviousDbgRecord</sub>)");
 
+  nb::class_<LLVMMetadataMapWrapper>(m, "MetadataMap")
+      .def("__getitem__", &LLVMMetadataMapWrapper::get_item, "name"_a)
+      .def("__setitem__", &LLVMMetadataMapWrapper::set, "name"_a, "md"_a)
+      .def("__delitem__", &LLVMMetadataMapWrapper::erase, "name"_a)
+      .def("__contains__", &LLVMMetadataMapWrapper::contains, "name"_a)
+      .def("get", &LLVMMetadataMapWrapper::get, "name"_a,
+           R"(Get metadata by kind name, or None.)")
+      .def("remove", &LLVMMetadataMapWrapper::erase, "name"_a,
+           R"(Remove metadata by kind name.)")
+      .def("copy_to", &LLVMMetadataMapWrapper::copy_to, "target"_a,
+           "include_debug_location"_a = false,
+           R"(Copy all attached metadata to another instruction or global value.
+
+Instruction debug locations are copied only when include_debug_location=True.)");
+
+  nb::class_<LLVMNamedMetadataListWrapper>(m, "NamedMetadataList")
+      .def("__len__", &LLVMNamedMetadataListWrapper::size)
+      .def("__getitem__", &LLVMNamedMetadataListWrapper::get_item, "index"_a)
+      .def(
+          "__iter__",
+          [](const LLVMNamedMetadataListWrapper &self) {
+            nb::object items = nb::cast(self.all());
+            return nb::iter(items);
+          })
+      .def("append", &LLVMNamedMetadataListWrapper::append, "md"_a,
+           R"(Append a metadata node to this named metadata list.)")
+      .def("all", &LLVMNamedMetadataListWrapper::all,
+           R"(Return all operands as Metadata objects.)");
+
+  nb::class_<LLVMNamedMetadataMapWrapper>(m, "NamedMetadataMap")
+      .def("__getitem__", &LLVMNamedMetadataMapWrapper::get_item, "name"_a,
+           R"(Return a named metadata list, creating it if needed.)")
+      .def("__contains__", &LLVMNamedMetadataMapWrapper::contains, "name"_a)
+      .def("get", &LLVMNamedMetadataMapWrapper::get, "name"_a,
+           R"(Return a named metadata list, or None if missing.)")
+      .def("keys", &LLVMNamedMetadataMapWrapper::keys,
+           R"(Return named metadata keys.)")
+      .def(
+          "__iter__",
+          [](const LLVMNamedMetadataMapWrapper &self) {
+            nb::object keys = nb::cast(self.keys());
+            return nb::iter(keys);
+          });
+
+  nb::class_<LLVMModuleFlagsWrapper>(m, "ModuleFlags")
+      .def("add", &LLVMModuleFlagsWrapper::add, "key"_a, "behavior"_a,
+           "value"_a,
+           R"(Add a module flag by key.)")
+      .def("get", &LLVMModuleFlagsWrapper::get, "key"_a,
+           R"(Get a module flag by key, or None.)")
+      .def("__getitem__", &LLVMModuleFlagsWrapper::get_item, "key"_a)
+      .def("__contains__", &LLVMModuleFlagsWrapper::contains, "key"_a)
+      .def("keys", &LLVMModuleFlagsWrapper::keys,
+           R"(Return module flag keys.)")
+      .def(
+          "__iter__",
+          [](const LLVMModuleFlagsWrapper &self) {
+            nb::object keys = nb::cast(self.keys());
+            return nb::iter(keys);
+          });
+
+  nb::class_<LLVMBuilderDebugLocationManager>(m, "DebugLocationManager")
+      .def("__enter__", &LLVMBuilderDebugLocationManager::enter,
+           nb::rv_policy::reference_internal,
+           R"(Set the builder's current debug location.)")
+      .def("__exit__", &LLVMBuilderDebugLocationManager::exit,
+           "exc_type"_a.none(), "exc_value"_a.none(), "traceback"_a.none(),
+           R"(Restore the builder's previous debug location.)");
+
   // Value wrapper
   nb::class_<LLVMValueWrapper>(m, "Value")
       .def("__eq__", [](const LLVMValueWrapper &a,
@@ -12969,7 +13760,7 @@ Returns True when the alloca size operand is not the constant 1.
 <sub>C++ API parity: AllocaInst::isArrayAllocation</sub>)")
       .def_prop_ro("function_type", &LLVMValueWrapper::get_function_type,
                    R"(Get function type.
-          
+
 <sub>C API: LLVMGlobalGetValueType</sub>)")
       .def_prop_ro("value_kind", &LLVMValueWrapper::value_kind,
                    R"(Get value kind.
@@ -13249,17 +14040,6 @@ Alias for `.block`.
           R"(Get the indices for GEP or ExtractValue/InsertValue instructions.
 
 <sub>C API: LLVMGetIndices</sub>)")
-      // Global/instruction metadata
-      .def("global_copy_all_metadata",
-           &LLVMValueWrapper::global_copy_all_metadata,
-           R"(Copy all metadata.
-
-<sub>C API: LLVMGlobalCopyAllMetadata</sub>)")
-      .def("instruction_get_all_metadata_other_than_debug_loc",
-           &LLVMValueWrapper::instruction_get_all_metadata_other_than_debug_loc,
-           R"(Get all metadata except debug loc.
-
-<sub>C API: LLVMInstructionGetAllMetadataOtherThanDebugLoc</sub>)")
       // Value methods
       .def("const_bitcast", &LLVMValueWrapper::const_bitcast, "type"_a,
            R"(Create constant bitcast.
@@ -13279,6 +14059,15 @@ Alias for `.block`.
            R"(Convert to metadata.
 
 <sub>C API: LLVMValueAsMetadata</sub>)")
+      .def_prop_ro("metadata", &LLVMValueWrapper::metadata,
+                   R"(Metadata mapping view for this instruction or global value.
+
+Use metadata kind names instead of numeric kind IDs:
+    inst.metadata["llvm.loop"] = md
+    md = inst.metadata.get("llvm.loop")
+    del inst.metadata["llvm.loop"]
+
+<sub>C API: LLVMGetMDKindIDInContext, LLVMSetMetadata, LLVMGlobalSetMetadata</sub>)")
       .def("delete_instruction", &LLVMValueWrapper::delete_instruction,
            R"(Delete this instruction from its parent block.
 
@@ -13370,12 +14159,6 @@ TODO: needs safe LLVM-C API equivalent.
           },
           "index"_a,
           R"(Attributes for a callsite argument, using a 0-based Python index.)")
-      // Unified metadata method
-      .def("set_metadata", &LLVMValueWrapper::set_metadata, "kind"_a, "md"_a,
-           "ctx"_a,
-           R"(Set metadata on value.
-
-<sub>C API: LLVMSetMetadata, LLVMGlobalSetMetadata</sub>)")
       // Builder creation for instructions.
       .def("create_builder", &LLVMValueWrapper::create_builder, nb::kw_only(),
            "before_dbg"_a = false, nb::rv_policy::take_ownership,
@@ -13708,7 +14491,7 @@ Valid when:
            R"(Verify function.
 
 <sub>C API: LLVMVerifyFunction</sub>
-           
+
            Returns True if the function is valid, False otherwise.
            <sub>C API: LLVMVerifyFunction</sub>)")
       .def("verify_and_print", &LLVMFunctionWrapper::verify_and_print,
@@ -13720,7 +14503,7 @@ Valid when:
       // =====================================================================
       .def_prop_ro("intrinsic_id", &LLVMFunctionWrapper::intrinsic_id,
                    R"(Get the intrinsic ID for this function.
-           
+
            Returns 0 if the function is not an intrinsic.
 
 <sub>C API: LLVMGetIntrinsicID</sub>)")
@@ -13750,7 +14533,7 @@ Valid when reading:
       .def_prop_rw("gc", &LLVMFunctionWrapper::get_gc,
                    &LLVMFunctionWrapper::set_gc,
                    R"(Get or set the GC name for this function.
-           
+
            Returns None if no GC is set.
 
 <sub>C API: LLVMGetGC, LLVMSetGC</sub>)")
@@ -13813,6 +14596,30 @@ Valid when:
                    R"(Get the context this builder was created in.
 
 <sub>C API: LLVMCreateBuilderInContext</sub>)")
+      .def("debug_location",
+           nb::overload_cast<const LLVMMetadataWrapper &>(
+               &LLVMBuilderWrapper::debug_location, nb::const_),
+           "loc"_a, nb::rv_policy::take_ownership,
+           R"(Temporarily set this builder's current debug location.
+
+Use with a with-statement:
+    with builder.debug_location(loc):
+        inst = builder.add(a, b)
+
+<sub>C API: LLVMSetCurrentDebugLocation2</sub>)")
+      .def("debug_location",
+           nb::overload_cast<unsigned, unsigned, const LLVMMetadataWrapper &,
+                             const LLVMMetadataWrapper *>(
+               &LLVMBuilderWrapper::debug_location, nb::const_),
+           nb::kw_only(), "line"_a, "column"_a, "scope"_a,
+           "inlined_at"_a.none() = nullptr, nb::rv_policy::take_ownership,
+           R"(Create and temporarily set this builder's current debug location.
+
+Use with a with-statement:
+    with builder.debug_location(line=12, column=4, scope=subprogram):
+        inst = builder.add(a, b)
+
+<sub>C API: LLVMDIBuilderCreateDebugLocation, LLVMSetCurrentDebugLocation2</sub>)")
       // Arithmetic
       .def("add", &LLVMBuilderWrapper::add, "lhs"_a, "rhs"_a, "name"_a = "",
            R"(Build add.
@@ -14494,42 +15301,6 @@ removes a string attribute with the same key.)")
 
 <sub>C API: LLVMGetComdatSelectionKind, LLVMSetComdatSelectionKind</sub>)");
 
-  // Value metadata entries wrapper (for global/instruction metadata copying)
-  nb::class_<LLVMValueMetadataEntriesWrapper>(m, "ValueMetadataEntries")
-      .def("__len__", &LLVMValueMetadataEntriesWrapper::size)
-      .def("get_kind", &LLVMValueMetadataEntriesWrapper::get_kind, "index"_a,
-           R"(Get metadata kind at index.
-
-<sub>C API: LLVMValueMetadataEntriesGetKind</sub>)")
-      .def("get_metadata", &LLVMValueMetadataEntriesWrapper_get_metadata,
-           "index"_a,
-           R"(Get metadata at index.
-
-<sub>C API: LLVMValueMetadataEntriesGetMetadata</sub>)");
-
-  // Named metadata node wrapper
-  nb::class_<LLVMNamedMDNodeWrapper>(m, "NamedMDNode")
-      .def("__eq__", [](const LLVMNamedMDNodeWrapper &a,
-                        const LLVMNamedMDNodeWrapper &b) { return a == b; })
-      .def("__ne__", [](const LLVMNamedMDNodeWrapper &a,
-                        const LLVMNamedMDNodeWrapper &b) { return a != b; })
-      .def("__hash__",
-           [](const LLVMNamedMDNodeWrapper &v) {
-             return std::hash<LLVMNamedMDNodeRef>{}(v.m_ref);
-           })
-      .def_prop_ro("name", &LLVMNamedMDNodeWrapper::get_name,
-                   R"(Get name.
-
-<sub>C API: LLVMGetNamedMetadataName</sub>)")
-      .def_prop_ro("next", &LLVMNamedMDNodeWrapper::next,
-                   R"(Get next.
-
-<sub>C API: LLVMGetNextNamedMetadata</sub>)")
-      .def_prop_ro("prev", &LLVMNamedMDNodeWrapper::prev,
-                   R"(Get previous.
-
-<sub>C API: LLVMGetPreviousNamedMetadata</sub>)");
-
   // Module wrapper
   nb::class_<LLVMModuleWrapper>(m, "Module")
       .def("__eq__", [](const LLVMModuleWrapper &a,
@@ -14703,40 +15474,6 @@ address space, and resolver match. Pass reuse_existing=False for LLVM's raw
 inserting behavior.
 
 <sub>C API: LLVMGetNamedGlobalIFunc, LLVMAddGlobalIFunc</sub>)")
-      // Named metadata support
-      .def_prop_ro("first_named_metadata",
-                   &LLVMModuleWrapper::first_named_metadata,
-                   R"(First named metadata.
-
-<sub>C API: LLVMGetFirstNamedMetadata</sub>)")
-      .def_prop_ro("last_named_metadata",
-                   &LLVMModuleWrapper::last_named_metadata,
-                   R"(Last named metadata.
-
-<sub>C API: LLVMGetLastNamedMetadata</sub>)")
-      .def("get_named_metadata", &LLVMModuleWrapper::get_named_metadata,
-           "name"_a, R"(Get named metadata.
-
-<sub>C API: LLVMGetNamedMetadata</sub>)")
-      .def("add_named_metadata",
-           &LLVMModuleWrapper::add_named_metadata, "name"_a,
-           R"(Add named metadata, or return the existing node with this name.
-
-This method has get-or-insert behavior: if named metadata with `name` already
-exists in the module, it is returned unchanged; otherwise a new empty named
-metadata node is created and returned.
-
-<sub>C API: LLVMGetOrInsertNamedMetadata</sub>)")
-      .def("get_named_metadata_num_operands",
-           &LLVMModuleWrapper::get_named_metadata_num_operands, "name"_a,
-           R"(Get operand count.
-
-<sub>C API: LLVMGetNamedMetadataNumOperands</sub>)")
-      .def("get_named_metadata_operands",
-           &LLVMModuleWrapper::get_named_metadata_operands, "name"_a,
-           R"(Get operands.
-
-<sub>C API: LLVMGetNamedMetadataOperands</sub>)")
       // Inline assembly support
       .def_prop_rw("inline_asm", &LLVMModuleWrapper::get_inline_asm,
                    &LLVMModuleWrapper::set_inline_asm,
@@ -14751,7 +15488,7 @@ metadata node is created and returned.
       .def("write_bitcode_to_file", &LLVMModuleWrapper::write_bitcode_to_file,
            "path"_a,
            R"(Write the module as bitcode to a file.
-           
+
            Args:
                path: Output file path
 
@@ -14759,7 +15496,7 @@ metadata node is created and returned.
       .def("write_bitcode_to_memory_buffer",
            &LLVMModuleWrapper::write_bitcode_to_memory_buffer,
            R"(Write the module as bitcode to a bytes object.
-           
+
            Returns:
                bytes: The bitcode data.
 
@@ -14767,9 +15504,9 @@ metadata node is created and returned.
       // Linker methods
       .def("link_module", &LLVMModuleWrapper::link_module, "src"_a,
            R"(Link another module into this module.
-           
+
            The source module is destroyed after linking.
-           
+
            Args:
                src: Source module to link in
 
@@ -14795,40 +15532,25 @@ Returns:
       // Module printing to file
       .def("print_to_file", &LLVMModuleWrapper::print_to_file, "filename"_a,
            R"(Print the module IR to a file.
-           
+
            Args:
                filename: Output file path
 
 <sub>C API: LLVMPrintModuleToFile</sub>)")
-      // Named metadata operand
-      .def("add_named_metadata_operand",
-           &LLVMModuleWrapper::add_named_metadata_operand, "name"_a, "md"_a,
-           R"(Add operand.
+      .def_prop_ro("named_metadata", &LLVMModuleWrapper::named_metadata,
+                   R"(Named metadata mapping view.
 
-<sub>C API: LLVMAddNamedMetadataOperand</sub>)")
-      // =====================================================================
-      // Module Flags API
-      // =====================================================================
-      .def("add_module_flag", &LLVMModuleWrapper::add_module_flag, "behavior"_a,
-           "key"_a, "val"_a,
-           R"(Add a module-level flag.
+Example:
+    mod.named_metadata["llvm.dbg.cu"].append(compile_unit)
 
-Args:
-    behavior: The merge behavior (ModuleFlagBehavior enum)
-    key: The flag name
-    val: The metadata value
+<sub>C API: LLVMGetOrInsertNamedMetadata, LLVMAddNamedMetadataOperand</sub>)")
+      .def_prop_ro("module_flags", &LLVMModuleWrapper::module_flags,
+                   R"(Module flags view keyed by flag name.
 
-<sub>C API: LLVMAddModuleFlag</sub>)")
-      .def("get_module_flag", &LLVMModuleWrapper::get_module_flag, "key"_a,
-           R"(Get a module-level flag by key.
+Example:
+    mod.module_flags.add("Debug Info Version", llvm.ModuleFlagBehavior.Warning, md)
 
-Args:
-    key: The flag name
-
-Returns:
-    The metadata value, or None if not found.
-
-<sub>C API: LLVMGetModuleFlag</sub>)")
+<sub>C API: LLVMAddModuleFlag, LLVMGetModuleFlag</sub>)")
       // Module methods
       .def_prop_ro("context", &LLVMModuleWrapper::get_context,
                    nb::rv_policy::take_ownership,
@@ -15176,10 +15898,6 @@ Returns a BuilderManager for use with Python's 'with' statement.
            R"(Create a struct constant in this context.
 
 <sub>C API: LLVMConstStructInContext</sub>)")
-      .def("get_md_kind_id", &LLVMContextWrapper::get_md_kind_id, "name"_a,
-           R"(Get metadata kind ID.
-
-<sub>C API: LLVMGetMDKindIDInContext</sub>)")
       // Metadata creation methods
       .def("md_string", &LLVMContextWrapper::md_string, "str"_a,
            R"(Create metadata string.
@@ -15203,8 +15921,9 @@ Common scope names include "singlethread" for thread-local synchronization.
            R"(Get the function type of an intrinsic in this context.
 
 <sub>C API: LLVMIntrinsicGetType</sub>)")
-      .def("create_debug_location", &LLVMContextWrapper::create_debug_location,
-           "line"_a, "column"_a, "scope"_a, "inlined_at"_a.none(),
+      .def("debug_location", &LLVMContextWrapper::debug_location,
+           "line"_a, "column"_a, "scope"_a,
+           "inlined_at"_a.none() = nullptr,
            R"(Create a debug location metadata node.
 
 <sub>C API: LLVMDIBuilderCreateDebugLocation</sub>)");
@@ -15411,25 +16130,25 @@ initialize_all_asm_printers(), and initialize_all_asm_parsers().)");
   // Native target initialization
   m.def("initialize_native_target", &initialize_native_target,
         R"(Initialize the native target.
-        
+
         Returns True on success, False on failure.
 
 <sub>C API: LLVMInitializeNativeTarget</sub>)");
   m.def("initialize_native_asm_printer", &initialize_native_asm_printer,
         R"(Initialize the native ASM printer.
-        
+
         Returns True on success, False on failure.
 
 <sub>C API: LLVMInitializeNativeAsmPrinter</sub>)");
   m.def("initialize_native_asm_parser", &initialize_native_asm_parser,
         R"(Initialize the native ASM parser.
-        
+
         Returns True on success, False on failure.
 
 <sub>C API: LLVMInitializeNativeAsmParser</sub>)");
   m.def("initialize_native_disassembler", &initialize_native_disassembler,
         R"(Initialize the native disassembler.
-        
+
         Returns True on success, False on failure.
 
 <sub>C API: LLVMInitializeNativeDisassembler</sub>)");
@@ -15495,7 +16214,7 @@ initialize_all_asm_printers(), and initialize_all_asm_parsers().)");
 
   nb::class_<LLVMTargetDataWrapper>(m, "TargetData",
                                     R"(Target data layout information.
-        
+
         Provides information about type sizes and alignment for a specific target.)")
       .def("__str__", &LLVMTargetDataWrapper::to_string)
       .def_prop_ro("byte_order", &LLVMTargetDataWrapper::byte_order,
@@ -15625,7 +16344,7 @@ Returns:
       .def("emit_to_file", &LLVMTargetMachineWrapper::emit_to_file, "mod"_a,
            "filename"_a, "file_type"_a,
            R"(Emit the module to a file.
-           
+
            Args:
                mod: Module to emit
                filename: Output filename
@@ -15636,11 +16355,11 @@ Returns:
            &LLVMTargetMachineWrapper::emit_to_memory_buffer, "mod"_a,
            "file_type"_a,
            R"(Emit the module to a memory buffer.
-           
+
            Args:
                mod: Module to emit
                file_type: Type of output (AssemblyFile or ObjectFile)
-               
+
            Returns:
                bytes: The generated output.
 
@@ -15674,7 +16393,7 @@ This initializes the native target and native ASM printer internally.
 
   nb::class_<LLVMPassBuilderOptionsWrapper>(m, "PassBuilderOptions",
                                             R"(Options for the pass builder.
-        
+
         Used to configure optimization passes when calling run_passes().)")
       .def(nb::init<>(), R"(Create options.
 
@@ -15832,12 +16551,12 @@ objects are pinned by the JIT to keep callbacks alive.
       .def("disasm_instruction", &LLVMDisasmContextWrapper::disasm_instruction,
            "bytes"_a, "offset"_a, "pc"_a,
            R"(Disassemble a single instruction.
-           
+
            Args:
                bytes: The byte array containing machine code
                offset: Offset into bytes to start disassembling
                pc: Program counter value for the instruction
-               
+
            Returns:
                Tuple of (bytes_consumed, disassembly_string)
                If bytes_consumed is 0, disassembly failed.
@@ -15950,9 +16669,9 @@ Valid when:
 <sub>C API: LLVMObjectFileCopySymbolIterator</sub>)")
       .def("copy_to_memory_buffer", &LLVMBinaryWrapper::copy_to_memory_buffer,
            R"(Copy the binary's contents to a memory buffer.
-           
+
            Returns a copy of the binary's backing memory buffer as bytes.
-           
+
            Returns:
                bytes: A copy of the binary data.
 
@@ -16250,17 +16969,6 @@ Valid when:
 
   // BitReader functions
 
-  // Static metadata function
-  m.def(
-      "get_md_kind_id",
-      [](const std::string &name) {
-        return LLVMGetMDKindID(name.c_str(),
-                               static_cast<unsigned>(name.size()));
-      },
-      "name"_a, R"(Get metadata kind ID.
-
-<sub>C API: LLVMGetMDKindID</sub>)");
-
   // NOTE: get_module_context has been moved to Module.context property
 
   // ==========================================================================
@@ -16304,15 +17012,20 @@ Valid when:
 
 <sub>C API: LLVMDIBuilderFinalize</sub>)")
       // File & Scope Creation
-      .def("create_file", &LLVMDIBuilderWrapper::create_file, "filename"_a,
-           "directory"_a, R"(Create file debug info metadata.
+      .def("file", &LLVMDIBuilderWrapper::file, "filename"_a,
+           "directory"_a = ".",
+           R"(Create file debug info metadata.
 
 <sub>C API: LLVMDIBuilderCreateFile</sub>)")
-      .def("create_compile_unit", &LLVMDIBuilderWrapper::create_compile_unit,
-           "lang"_a, "file"_a, "producer"_a, "is_optimized"_a, "flags"_a,
-           "runtime_ver"_a, "split_name"_a, "kind"_a, "dwo_id"_a,
-           "split_debug_inlining"_a, "debug_info_for_profiling"_a, "sys_root"_a,
-           "sdk"_a, R"(Create compile unit debug info.
+      .def("compile_unit", &LLVMDIBuilderWrapper::compile_unit,
+           "language"_a, "file"_a, "producer"_a,
+           "is_optimized"_a = false, "flags"_a = "",
+           "runtime_ver"_a = 0, "split_name"_a = "",
+           "kind"_a = LLVMDWARFEmissionFull, "dwo_id"_a = 0,
+           "split_debug_inlining"_a = true,
+           "debug_info_for_profiling"_a = false, "sys_root"_a = "",
+           "sdk"_a = "",
+           R"(Create compile unit debug info with defaults for common use.
 
 <sub>C API: LLVMDIBuilderCreateCompileUnit</sub>)")
       .def("create_module", &LLVMDIBuilderWrapper::create_module,
@@ -16345,6 +17058,16 @@ Valid when:
            R"(Create subroutine type debug info (function signature).
 
 <sub>C API: LLVMDIBuilderCreateSubroutineType</sub>)")
+      .def("function", &LLVMDIBuilderWrapper::function, "fn"_a, "name"_a,
+           "file"_a, "line"_a, "return_type"_a, "param_types"_a,
+           "scope"_a.none() = nullptr, "linkage_name"_a = "",
+           "is_local_to_unit"_a = false, "is_definition"_a = true,
+           "scope_line"_a = 0, "flags"_a = 0, "is_optimized"_a = false,
+           R"(Create function debug info, set it on the LLVM function, and return it.
+
+This convenience method maps simple IR types to debug types.
+
+<sub>C API: LLVMDIBuilderCreateFunction, LLVMSetSubprogram</sub>)")
       // Type Creation
       .def("create_basic_type", &LLVMDIBuilderWrapper::create_basic_type,
            "name"_a, "size_in_bits"_a, "encoding"_a, "flags"_a,
@@ -16431,6 +17154,13 @@ Valid when:
            "scope"_a, "name"_a, "file"_a, "line_no"_a, "type"_a,
            "always_preserve"_a, "flags"_a, "align_in_bits"_a,
            R"(Create local (auto) variable debug info.
+
+<sub>C API: LLVMDIBuilderCreateAutoVariable</sub>)")
+      .def("local_variable", &LLVMDIBuilderWrapper::local_variable,
+           "scope"_a, "name"_a, "file"_a, "line_no"_a, "type"_a,
+           "always_preserve"_a = true, "flags"_a = 0,
+           "align_in_bits"_a = 0,
+           R"(Create local variable debug info from a simple IR type.
 
 <sub>C API: LLVMDIBuilderCreateAutoVariable</sub>)")
       .def("create_global_variable_expression",
@@ -16625,7 +17355,7 @@ Valid when:
            "derived_from"_a.none(), "elements"_a, "vtable_holder"_a.none(),
            "template_params"_a.none(), "unique_id"_a,
            R"(Create a C++ class type.
-           
+
            Args:
                scope: The scope containing this class.
                name: Class name.
@@ -16647,9 +17377,9 @@ Valid when:
            "name"_a, "file"_a, "line_no"_a, "type"_a, "flags"_a,
            "const_val"_a.none(), "align_in_bits"_a,
            R"(Create a static member type.
-           
+
            Used for C++ static class members.
-           
+
            Args:
                scope: The scope containing this member.
                name: Member name.
@@ -16665,9 +17395,9 @@ Valid when:
            &LLVMDIBuilderWrapper::create_member_pointer_type, "pointee_type"_a,
            "class_type"_a, "size_in_bits"_a, "align_in_bits"_a, "flags"_a,
            R"(Create a C++ member pointer type.
-           
+
            Used for pointer-to-member types (e.g., int MyClass::*).
-           
+
            Args:
                pointee_type: The type being pointed to.
                class_type: The class type.
@@ -16681,9 +17411,9 @@ Valid when:
            &LLVMDIBuilderWrapper::insert_declare_record_before, "storage"_a,
            "var_info"_a, "expr"_a, "debug_loc"_a, "insert_before"_a,
            R"(Insert a declare record before an instruction.
-           
+
            Only use in "new debug format" mode (LLVMIsNewDbgInfoFormat is true).
-           
+
            Args:
                storage: The storage location (alloca).
                var_info: Variable debug info.
@@ -16696,9 +17426,9 @@ Valid when:
            &LLVMDIBuilderWrapper::insert_dbg_value_record_before, "val"_a,
            "var_info"_a, "expr"_a, "debug_loc"_a, "insert_before"_a,
            R"(Insert a dbg value record before an instruction.
-           
+
            Only use in "new debug format" mode (LLVMIsNewDbgInfoFormat is true).
-           
+
            Args:
                val: The value to track.
                var_info: Variable debug info.
@@ -16742,6 +17472,24 @@ Valid when:
 
   // NOTE: create_dibuilder has been moved to Module.create_dibuilder() method
 
+  auto require_di_type_metadata = [](const LLVMMetadataWrapper &self,
+                                     const char *accessor) {
+    self.check_valid();
+    switch (LLVMGetMetadataKind(self.m_ref)) {
+    case LLVMDIBasicTypeMetadataKind:
+    case LLVMDIDerivedTypeMetadataKind:
+    case LLVMDICompositeTypeMetadataKind:
+    case LLVMDISubroutineTypeMetadataKind:
+    case LLVMDIStringTypeMetadataKind:
+    case LLVMDISubrangeTypeMetadataKind:
+    case LLVMDIFixedPointTypeMetadataKind:
+      return;
+    default:
+      throw LLVMAssertionError(std::string(accessor) +
+                               " requires DIType metadata");
+    }
+  };
+
   nb::class_<LLVMMetadataWrapper>(m, "Metadata")
       .def("__eq__", [](const LLVMMetadataWrapper &a,
                         const LLVMMetadataWrapper &b) { return a.m_ref == b.m_ref; })
@@ -16751,10 +17499,6 @@ Valid when:
            [](const LLVMMetadataWrapper &v) {
              return std::hash<LLVMMetadataRef>{}(v.m_ref);
            })
-      .def("as_value", &LLVMMetadataWrapper::as_value, "ctx"_a,
-           R"(Convert metadata to value.
-
-<sub>C API: LLVMMetadataAsValue</sub>)")
       .def("replace_all_uses_with", &LLVMMetadataWrapper::replace_all_uses_with,
            "md"_a,
            R"(Replace all uses of this temporary metadata.
@@ -16765,6 +17509,40 @@ Valid when:
            R"(Replace this DISubprogram's subroutine type metadata.
 
 <sub>C API: LLVMDISubprogramReplaceType</sub>)")
+      .def_prop_ro("kind", &LLVMMetadataWrapper::kind,
+                   R"(Return this metadata's LLVMMetadataKind value.
+
+<sub>C API: LLVMGetMetadataKind</sub>)")
+      .def_prop_ro("is_string", &LLVMMetadataWrapper::is_string,
+                   R"(True if this metadata is an MDString.
+
+<sub>C API: LLVMGetMetadataKind</sub>)")
+      .def_prop_ro("is_node", &LLVMMetadataWrapper::is_node,
+                   R"(True if this metadata is an MDNode.
+
+<sub>C API: LLVMMetadataAsValue, LLVMIsAMDNode</sub>)")
+      .def_prop_ro("is_value", &LLVMMetadataWrapper::is_value,
+                   R"(True if this metadata wraps a Value.
+
+<sub>C API: LLVMGetMetadataKind</sub>)")
+      .def_prop_ro("string", &LLVMMetadataWrapper::string,
+                   R"(Return this MDString's Python string value.
+
+Raises LLVMAssertionError when this metadata is not an MDString.
+
+<sub>C API: LLVMMetadataAsValue, LLVMGetMDString</sub>)")
+      .def_prop_ro("operands", &LLVMMetadataWrapper::operands,
+                   R"(Return this MDNode's operands as Metadata objects.
+
+Raises LLVMAssertionError when this metadata is not an MDNode.
+
+<sub>C API: LLVMMetadataAsValue, LLVMGetMDNodeNumOperands, LLVMGetMDNodeOperands</sub>)")
+      .def_prop_ro("value", &LLVMMetadataWrapper::value,
+                   R"(Return the Value wrapped by ConstantAsMetadata or LocalAsMetadata.
+
+Raises NotImplementedError because LLVM-C has no unwrap API for ValueAsMetadata.
+
+<sub>C API limitation</sub>)")
       // DI accessors as properties
       .def_prop_ro("di_node_tag", [](const LLVMMetadataWrapper &self) -> unsigned {
         self.check_valid();
@@ -16772,14 +17550,44 @@ Valid when:
       }, R"(Get DWARF tag from this debug info node.
 
 <sub>C API: LLVMGetDINodeTag</sub>)")
-      .def_prop_ro("di_type_name", [](const LLVMMetadataWrapper &self) -> std::string {
-        self.check_valid();
+      .def_prop_ro("di_type_name", [require_di_type_metadata](const LLVMMetadataWrapper &self) -> std::string {
+        require_di_type_metadata(self, "di_type_name");
         size_t len;
         const char *name = LLVMDITypeGetName(self.m_ref, &len);
         return std::string(name, len);
       }, R"(Get name from this debug info type.
 
 <sub>C API: LLVMDITypeGetName</sub>)")
+      .def_prop_ro("di_type_size_in_bits", [require_di_type_metadata](const LLVMMetadataWrapper &self) -> uint64_t {
+        require_di_type_metadata(self, "di_type_size_in_bits");
+        return LLVMDITypeGetSizeInBits(self.m_ref);
+      }, R"(Get size in bits from this debug info type.
+
+<sub>C API: LLVMDITypeGetSizeInBits</sub>)")
+      .def_prop_ro("di_type_offset_in_bits", [require_di_type_metadata](const LLVMMetadataWrapper &self) -> uint64_t {
+        require_di_type_metadata(self, "di_type_offset_in_bits");
+        return LLVMDITypeGetOffsetInBits(self.m_ref);
+      }, R"(Get offset in bits from this debug info type.
+
+<sub>C API: LLVMDITypeGetOffsetInBits</sub>)")
+      .def_prop_ro("di_type_align_in_bits", [require_di_type_metadata](const LLVMMetadataWrapper &self) -> uint32_t {
+        require_di_type_metadata(self, "di_type_align_in_bits");
+        return LLVMDITypeGetAlignInBits(self.m_ref);
+      }, R"(Get alignment in bits from this debug info type.
+
+<sub>C API: LLVMDITypeGetAlignInBits</sub>)")
+      .def_prop_ro("di_type_line", [require_di_type_metadata](const LLVMMetadataWrapper &self) -> unsigned {
+        require_di_type_metadata(self, "di_type_line");
+        return LLVMDITypeGetLine(self.m_ref);
+      }, R"(Get line from this debug info type.
+
+<sub>C API: LLVMDITypeGetLine</sub>)")
+      .def_prop_ro("di_type_flags", [require_di_type_metadata](const LLVMMetadataWrapper &self) -> unsigned {
+        require_di_type_metadata(self, "di_type_flags");
+        return LLVMDITypeGetFlags(self.m_ref);
+      }, R"(Get DI flags from this debug info type.
+
+<sub>C API: LLVMDITypeGetFlags</sub>)")
       .def_prop_ro("di_location_line", [](const LLVMMetadataWrapper &self) -> unsigned {
         self.check_valid();
         return LLVMDILocationGetLine(self.m_ref);
@@ -16795,7 +17603,7 @@ Valid when:
       .def_prop_ro("di_location_scope", [](const LLVMMetadataWrapper &self) -> LLVMMetadataWrapper {
         self.check_valid();
         return LLVMMetadataWrapper(LLVMDILocationGetScope(self.m_ref),
-                                   self.m_context_token);
+                                   self.m_context_token, self.m_ctx_ref);
       }, R"(Get scope from this debug location.
 
 <sub>C API: LLVMDILocationGetScope</sub>)")
@@ -16804,7 +17612,7 @@ Valid when:
         self.check_valid();
         LLVMMetadataRef ref = LLVMDILocationGetInlinedAt(self.m_ref);
         if (ref)
-          return LLVMMetadataWrapper(ref, self.m_context_token);
+          return LLVMMetadataWrapper(ref, self.m_context_token, self.m_ctx_ref);
         return std::nullopt;
       }, R"(Get inlined-at location from this debug location, or None.
 
@@ -16814,7 +17622,7 @@ Valid when:
         self.check_valid();
         LLVMMetadataRef ref = LLVMDIScopeGetFile(self.m_ref);
         if (ref)
-          return LLVMMetadataWrapper(ref, self.m_context_token);
+          return LLVMMetadataWrapper(ref, self.m_context_token, self.m_ctx_ref);
         return std::nullopt;
       }, R"(Get file from this debug scope, or None.
 
@@ -16854,7 +17662,7 @@ Valid when:
         self.check_valid();
         LLVMMetadataRef ref = LLVMDIVariableGetFile(self.m_ref);
         if (ref)
-          return LLVMMetadataWrapper(ref, self.m_context_token);
+          return LLVMMetadataWrapper(ref, self.m_context_token, self.m_ctx_ref);
         return std::nullopt;
       }, R"(Get file from this debug variable, or None.
 
@@ -16864,7 +17672,7 @@ Valid when:
         self.check_valid();
         LLVMMetadataRef ref = LLVMDIVariableGetScope(self.m_ref);
         if (ref)
-          return LLVMMetadataWrapper(ref, self.m_context_token);
+          return LLVMMetadataWrapper(ref, self.m_context_token, self.m_ctx_ref);
         return std::nullopt;
       }, R"(Get scope from this debug variable, or None.
 
@@ -16879,7 +17687,7 @@ Valid when:
         self.check_valid();
         return LLVMMetadataWrapper(
             LLVMDIGlobalVariableExpressionGetVariable(self.m_ref),
-            self.m_context_token);
+            self.m_context_token, self.m_ctx_ref);
       }, R"(Get the DIGlobalVariable from this DIGlobalVariableExpression.
 
 <sub>C API: LLVMDIGlobalVariableExpressionGetVariable</sub>)")
@@ -16887,7 +17695,7 @@ Valid when:
         self.check_valid();
         return LLVMMetadataWrapper(
             LLVMDIGlobalVariableExpressionGetExpression(self.m_ref),
-            self.m_context_token);
+            self.m_context_token, self.m_ctx_ref);
       }, R"(Get the DIExpression from this DIGlobalVariableExpression.
 
 <sub>C API: LLVMDIGlobalVariableExpressionGetExpression</sub>)");
@@ -16906,10 +17714,10 @@ Valid when:
       },
       "name"_a,
       R"(Look up an intrinsic ID by name.
-      
+
       Args:
           name: Intrinsic name (e.g., "llvm.memcpy")
-          
+
       Returns:
           Intrinsic ID (0 if not found).
 
@@ -16919,7 +17727,7 @@ Valid when:
       "intrinsic_is_overloaded",
       [](unsigned id) -> bool { return LLVMIntrinsicIsOverloaded(id); }, "id"_a,
       R"(Check if an intrinsic is overloaded.
-      
+
       Overloaded intrinsics require type parameters to get a declaration.
 
 <sub>C API: LLVMIntrinsicIsOverloaded</sub>)");
@@ -16938,7 +17746,7 @@ Valid when:
 
   // NOTE: intrinsic type lookup moved to Context.get_intrinsic_type().
   // NOTE: cast-opcode and metadata-node mutation helpers moved to Value methods.
-  // NOTE: debug-location creation moved to Context.create_debug_location().
+  // NOTE: debug-location creation is exposed as Context.debug_location().
   // NOTE: DISubprogram type replacement moved to Metadata.replace_di_subprogram_type().
   // NOTE: debug record traversal moved to Value.first_dbg_record,
   // Value.last_dbg_record, and DbgRecord.next/prev.

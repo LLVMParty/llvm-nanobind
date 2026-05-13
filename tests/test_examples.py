@@ -121,3 +121,37 @@ def test_jit_add_example() -> None:
         return
     assert "add_i32(40, 2) = 42" in output
     assert "call_python(5) = 15" in output
+
+
+def test_instruction_metadata_example() -> None:
+    output = run_example("examples/instruction_metadata.py")
+    assert "instruction metadata:" in output
+    assert "has example.note: True" in output
+    assert "round trip matches: True" in output
+    assert "note operands: 1" in output
+    assert "note text: created by instruction_metadata.py" in output
+    assert "define i32 @bump" in output
+    assert "%result = add i32" in output
+    assert "!example.note" in output
+    assert "created by instruction_metadata.py" in output
+
+
+def test_named_metadata_example() -> None:
+    output = run_example("examples/named_metadata.py")
+    assert "named metadata:" in output
+    assert "keys: example.tags" in output
+    assert "example.tags operands: 2" in output
+    assert "iterated operands: 2" in output
+    assert "first tag strings: frontend, demo" in output
+    assert "!example.tags = !{" in output
+    assert '"frontend"' in output
+    assert '"purpose"' in output
+
+
+def test_metadata_debug_info_example() -> None:
+    output = run_example("examples/metadata_debug_info.py")
+    assert "define i32 @add" in output
+    assert "!example.note" in output
+    assert "!example.compile_units" in output
+    assert "!llvm.module.flags" in output
+    assert "!dbg" in output

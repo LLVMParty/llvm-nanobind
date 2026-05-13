@@ -7,7 +7,8 @@ Implemented and tested the active UX work:
 1. generic intrinsic helper,
 2. explicit module optimization helper,
 3. object/assembly emission convenience,
-4. JIT through LLVM-C ORC LLJIT.
+4. JIT through LLVM-C ORC LLJIT,
+5. metadata/debug-info cleanup.
 
 ## Implemented APIs
 
@@ -55,9 +56,27 @@ Implemented and tested the active UX work:
 - [x] ctypes callback objects are pinned while the JIT is alive and released on dispose.
 - [x] Unsupported host target/JIT setup raises `LLVMError`; tests skip target-dependent checks cleanly when unavailable.
 
+### Phase 5: Metadata/debug-info cleanup
+
+- [x] Added `Value.metadata` mapping view by metadata kind name.
+- [x] Added `Metadata.kind`, `is_string`, `is_node`, `is_value`, `string`, `operands`, and `value` accessors.
+- [x] Stubbed `Metadata.value` with `NotImplementedError` because LLVM-C cannot unwrap ValueAsMetadata to Value.
+- [x] Added `MetadataMap.copy_to(target, include_debug_location=False)` so transforms can copy arbitrary attached metadata without exposing kind IDs.
+- [x] Added support for detached instruction metadata by deriving the context from the value type.
+- [x] Added `Module.named_metadata` mapping/list view.
+- [x] Added `NamedMetadataMap.keys()` and iteration.
+- [x] Added `Module.module_flags` view.
+- [x] Added `Context.debug_location(...)`.
+- [x] Added `Builder.debug_location(...)` context manager.
+- [x] Added DIBuilder recipes: `file`, `compile_unit`, `function`, `local_variable`.
+- [x] Removed redundant public low-level metadata APIs: raw metadata kind lookup, raw `Value.set_metadata`, public `ValueMetadataEntries`, public `NamedMDNode`, `Metadata.as_value`, raw named-metadata methods, and raw module-flag methods.
+- [x] Removed redundant DIBuilder aliases covered by recipes: `create_file`, `create_compile_unit`.
+- [x] Kept advanced DIBuilder `create_*` methods where the recipes do not provide full coverage.
+
 ## Tests added
 
 - `tests/regressions/test_api_ux_cleanup.py`
+- `tests/regressions/test_metadata_ux_cleanup.py`
 
 Coverage:
 
@@ -92,6 +111,8 @@ Coverage:
 cmake --build build
 uv run tests/regressions/test_api_ux_cleanup.py
 uv run pytest tests/regressions/test_api_ux_cleanup.py -q
+uv run tests/regressions/test_metadata_ux_cleanup.py
+uv run pytest tests/regressions/test_metadata_ux_cleanup.py tests/test_examples.py -q
 uv run run_tests.py --regressions
 uv run run_tests.py
 uv run run_llvm_c_tests.py --use-python

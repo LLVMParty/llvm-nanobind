@@ -28,7 +28,7 @@ def get_di_tag():
         # Create DIBuilder
         with mod.create_dibuilder() as dib:
             # Create file
-            file_md = dib.create_file("metadata.c", ".")
+            file_md = dib.file("metadata.c", ".")
 
             # Create struct type (DW_TAG_structure_type = 0x13)
             struct_md = dib.create_struct_type(
@@ -60,7 +60,7 @@ def di_type_get_name():
         # Create DIBuilder
         with mod.create_dibuilder() as dib:
             # Create file
-            file_md = dib.create_file("metadata.c", ".")
+            file_md = dib.file("metadata.c", ".")
 
             # Create struct type with name
             name = "TestClass"
@@ -157,23 +157,23 @@ def test_dibuilder():
         # Create DIBuilder
         with mod.create_dibuilder() as dib:
             # Create file
-            file_md = dib.create_file(filename, ".")
+            file_md = dib.file(filename, ".")
 
             # Create compile unit
-            compile_unit = dib.create_compile_unit(
-                llvm.DWARFSourceLanguageC,
-                file_md,
-                "llvm-c-test",
-                False,
-                "",
-                0,
-                "",
-                llvm.DWARFEmissionFull,
-                0,
-                False,
-                False,
-                "/",
-                "",
+            compile_unit = dib.compile_unit(
+                language=llvm.DwarfLanguage.C,
+                file=file_md,
+                producer="llvm-c-test",
+                is_optimized=False,
+                flags="",
+                runtime_ver=0,
+                split_name="",
+                kind=llvm.DwarfEmissionKind.Full,
+                dwo_id=0,
+                split_debug_inlining=False,
+                debug_info_for_profiling=False,
+                sys_root="/",
+                sdk="",
             )
 
             # Create module
@@ -265,7 +265,7 @@ def test_dibuilder():
             struct_dbg_ptr_ty = dib.create_pointer_type(struct_dbg_ty, 192, 0, 0, "")
 
             # Add to named metadata
-            mod.add_named_metadata_operand("FooType", struct_dbg_ptr_ty)
+            mod.named_metadata["FooType"].append(struct_dbg_ptr_ty)
 
             # Create function
             i64_type = ctx.types.i64
@@ -289,7 +289,7 @@ def test_dibuilder():
             )
 
             # Create debug location for parameters
-            foo_param_location = ctx.create_debug_location(
+            foo_param_location = ctx.debug_location(
                 42, 0, replaceable_function_md, None
             )
 
@@ -354,7 +354,7 @@ def test_dibuilder():
 
             # Create another basic block for variables
             foo_var_block = foo_function.append_basic_block("vars")
-            foo_vars_location = ctx.create_debug_location(
+            foo_vars_location = ctx.debug_location(
                 43, 0, function_md, None
             )
 
@@ -404,7 +404,7 @@ def test_dibuilder():
             enum_test = dib.create_enumeration_type(
                 namespace, "EnumTest", file_md, 0, 64, 0, enumerators_test, int64_ty
             )
-            mod.add_named_metadata_operand("EnumTest", enum_test)
+            mod.named_metadata["EnumTest"].append(enum_test)
 
             # Create UInt128 type and large enumerators
             uint128_ty = dib.create_basic_type("UInt128", 128, 0, llvm.DIFlagZero)
@@ -429,7 +429,7 @@ def test_dibuilder():
                 large_enumerators,
                 uint128_ty,
             )
-            mod.add_named_metadata_operand("LargeEnumTest", large_enum_test)
+            mod.named_metadata["LargeEnumTest"].append(large_enum_test)
 
             # Create subrange type with metadata bounds
             foo_val3 = i64_type.constant(8)
@@ -442,7 +442,7 @@ def test_dibuilder():
             subrange_md_ty = dib.create_subrange_type(
                 file_md, "foo", 42, file_md, 64, 0, 0, int64_ty, lo, hi, strd, bias
             )
-            mod.add_named_metadata_operand("SubrangeType", subrange_md_ty)
+            mod.named_metadata["SubrangeType"].append(subrange_md_ty)
 
             # Create set types
             set_md_ty1 = dib.create_set_type(
@@ -451,8 +451,8 @@ def test_dibuilder():
             set_md_ty2 = dib.create_set_type(
                 file_md, "subrangeset", file_md, 42, 64, 0, subrange_md_ty
             )
-            mod.add_named_metadata_operand("SetType1", set_md_ty1)
-            mod.add_named_metadata_operand("SetType2", set_md_ty2)
+            mod.named_metadata["SetType1"].append(set_md_ty1)
+            mod.named_metadata["SetType2"].append(set_md_ty2)
 
             # Create dynamic array type
             dyn_subscripts = [dib.get_or_create_subrange(0, 10)]
@@ -473,7 +473,7 @@ def test_dibuilder():
                 rank_expr,
                 None,
             )
-            mod.add_named_metadata_operand("DynType", dynamic_array_md_ty)
+            mod.named_metadata["DynType"].append(dynamic_array_md_ty)
 
             # Create forward declaration
             struct_p_ty = dib.create_forward_decl(
@@ -485,7 +485,7 @@ def test_dibuilder():
             struct_elts_array = [int64_ty, int64_ty, int32_ty]
             class_arr = dib.get_or_create_array(struct_elts_array)
             dib.replace_arrays([struct_p_ty], [class_arr])
-            mod.add_named_metadata_operand("ClassType", struct_p_ty)
+            mod.named_metadata["ClassType"].append(struct_p_ty)
 
             # Build IR instructions
             with foo_entry_block.create_builder() as builder:

@@ -158,6 +158,7 @@ def test_member_factories_and_builder_navigation() -> None:
         "get_host_cpu_features",
         "get_host_cpu_name",
         "get_inline_asm",
+        "get_md_kind_id",
         "get_di_node_tag",
         "get_last_dbg_record",
         "get_last_enum_attribute_kind",
@@ -171,6 +172,8 @@ def test_member_factories_and_builder_navigation() -> None:
         "replace_md_node_operand_with",
         "run_passes",
         "strip_module_debug_info",
+        "NamedMDNode",
+        "ValueMetadataEntries",
     ]
     for name in removed_globals:
         assert not hasattr(llvm, name), name
@@ -178,11 +181,24 @@ def test_member_factories_and_builder_navigation() -> None:
     removed_class_methods = {
         llvm.Context: [
             "get_diagnostics",
+            "get_md_kind_id",
+            "create_debug_location",
             "create_enum_attribute",
             "create_string_attribute",
             "create_type_attribute",
         ],
-        llvm.Module: ["get_verification_error"],
+        llvm.Module: [
+            "get_verification_error",
+            "first_named_metadata",
+            "last_named_metadata",
+            "get_named_metadata",
+            "add_named_metadata",
+            "get_named_metadata_num_operands",
+            "get_named_metadata_operands",
+            "add_named_metadata_operand",
+            "add_module_flag",
+            "get_module_flag",
+        ],
         llvm.Function: [
             "get_personality_fn",
             "set_personality_fn",
@@ -198,6 +214,8 @@ def test_member_factories_and_builder_navigation() -> None:
         ],
         llvm.Attribute: ["kind"],
         llvm.AttributeAccessor: ["get_enum", "remove_enum"],
+        llvm.DIBuilder: ["create_file", "create_compile_unit"],
+        llvm.Metadata: ["as_value", "string_value", "__len__", "__getitem__", "__iter__"],
         llvm.Value: [
             "set_constant",
             "set_comdat",
@@ -225,6 +243,9 @@ def test_member_factories_and_builder_navigation() -> None:
             "get_callsite_attribute_count",
             "get_callsite_enum_attribute",
             "add_callsite_attribute",
+            "set_metadata",
+            "global_copy_all_metadata",
+            "instruction_get_all_metadata_other_than_debug_loc",
         ],
     }
     for cls, names in removed_class_methods.items():
@@ -265,8 +286,9 @@ def test_member_factories_and_builder_navigation() -> None:
                 assert before_ret.insert_block == bb
 
             assert not hasattr(mod, "get_or_insert_named_metadata")
-            named_md = mod.add_named_metadata("llvm.nanobind.surface")
-            assert mod.add_named_metadata("llvm.nanobind.surface") == named_md
+            named_md = mod.named_metadata["llvm.nanobind.surface"]
+            assert mod.named_metadata["llvm.nanobind.surface"] is not None
+            assert len(named_md) == 0
 
             assert not hasattr(mod, "get_or_insert_comdat")
             comdat = mod.add_comdat("surface_comdat")

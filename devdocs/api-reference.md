@@ -60,6 +60,26 @@ tm = llvm.TargetMachine.host()
 with llvm.JIT.host() as jit:
     jit.add_module(mod)  # invalidates mod on success
     addr = jit.lookup("compiled_function")
+
+# Metadata by name, without public kind IDs.
+text = ctx.md_string("frontend")
+assert text.is_string
+assert text.string == "frontend"
+node = ctx.md_node([text])
+for operand in node.operands:
+    assert operand.string == "frontend"
+inst.metadata["llvm.loop"] = loop_md
+md = inst.metadata.get("llvm.loop")
+src_inst.metadata.copy_to(dst_inst)
+del inst.metadata["llvm.loop"]
+
+# Named metadata and module flags.
+mod.named_metadata["llvm.dbg.cu"].append(compile_unit)
+mod.module_flags.add("Debug Info Version", llvm.ModuleFlagBehavior.Warning, md)
+
+# Debug-location scopes.
+with builder.debug_location(line=12, column=4, scope=subprogram):
+    inst = builder.add(a, b, "sum")
 ```
 
 `builder.intrinsic(..., overloaded_types=[...])` uses LLVM's intrinsic
@@ -96,7 +116,7 @@ calls should raise `llvm.LLVMAssertionError` (not crash).
 - Global value:
   - `global_value_type`, `unnamed_address`
   - `linkage`, `visibility`, `dll_storage_class`
-  - `global_copy_all_metadata`
+  - `metadata` mapping view; use `value.metadata.copy_to(other)` for bulk copies
 - Global object:
   - `comdat`, `set_comdat`
   - `section`
@@ -118,7 +138,7 @@ calls should raise `llvm.LLVMAssertionError` (not crash).
 
 - Any instruction:
   - `opcode`, `opcode_name`
-  - `instruction_get_all_metadata_other_than_debug_loc`
+  - `metadata` mapping view; use `inst.metadata.copy_to(other)` for bulk copies
   - `next_instruction`, `prev_instruction`
   - `remove_from_parent`, `erase_from_parent`, `delete_instruction`,
     `instruction_clone`
