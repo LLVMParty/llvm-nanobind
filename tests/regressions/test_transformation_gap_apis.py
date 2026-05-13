@@ -12,7 +12,7 @@ def test_alloca_array_size_and_is_array_allocation() -> None:
 
             with entry.create_builder() as b:
                 scalar = b.alloca(i32, "scalar")
-                array = b.array_alloca(i32, i32.constant(4, False), "array")
+                array = b.alloca(i32, i32.constant(4, False), "array")
                 b.ret_void()
 
             assert scalar.allocated_type == i32

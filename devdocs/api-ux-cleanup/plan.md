@@ -288,7 +288,7 @@ with builder.debug_location(loc):
 - Module flags add/get/key iteration.
 - Debug-location context manager.
 - DIBuilder recipes for file, compile unit, function, and local variable.
-- Removed raw APIs stay absent from the public surface.
+- Public surface is reviewed during API changes.
 
 ## API audit process
 
@@ -297,8 +297,7 @@ After each phase:
 1. Rebuild to regenerate `.pyi`.
 2. Review new public symbols.
 3. Confirm examples express user tasks directly.
-4. Add intentionally removed symbols to `tests/regressions/test_api_surface_cleanup.py`.
-5. Keep advanced lower-level APIs when they correspond to useful LLVM controls.
+4. Keep advanced lower-level APIs when they correspond to useful LLVM controls.
 
 ## Suggested implementation order
 

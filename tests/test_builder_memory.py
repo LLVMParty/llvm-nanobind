@@ -39,7 +39,7 @@ def main():
 
                 # Array alloca (dynamic size)
                 array_size = i32.constant(5)
-                array_alloca = builder.array_alloca(i32, array_size, "dynamic_array")
+                array_alloca = builder.alloca(i32, array_size, "dynamic_array")
 
                 # Static array alloca
                 static_array = builder.alloca(arr_ty, "static_array")

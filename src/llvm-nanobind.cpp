@@ -1017,6 +1017,16 @@ struct LLVMTypeFactoryWrapper {
       throw LLVMMemoryError("TypeFactory used after context was destroyed");
   }
 
+  bool operator==(const LLVMTypeFactoryWrapper &other) const {
+    check_valid();
+    other.check_valid();
+    return m_ctx_ref == other.m_ctx_ref;
+  }
+
+  bool operator!=(const LLVMTypeFactoryWrapper &other) const {
+    return !(*this == other);
+  }
+
   // =========================================================================
   // Fixed-width integer types (properties)
   // =========================================================================
@@ -3404,6 +3414,17 @@ struct LLVMValueWrapper {
 
   LLVMMetadataMapWrapper metadata() const;
 
+  LLVMTypeFactoryWrapper types() const {
+    check_valid();
+    LLVMTypeRef ty = LLVMTypeOf(m_ref);
+    if (!ty)
+      throw LLVMAssertionError("Value has no type context");
+    LLVMContextRef ctx_ref = LLVMGetTypeContext(ty);
+    if (!ctx_ref)
+      throw LLVMAssertionError("Value has no type context");
+    return LLVMTypeFactoryWrapper(ctx_ref, m_context_token);
+  }
+
   // Unified set_metadata - works for both instructions and globals
   // Declared here, implemented after LLVMMetadataWrapper
   // Takes a context for converting metadata to value (needed for instructions)
@@ -3901,6 +3922,17 @@ struct LLVMBasicBlockWrapper {
     return result;
   }
 
+  LLVMTypeFactoryWrapper types() const {
+    check_valid();
+    LLVMTypeRef ty = LLVMTypeOf(LLVMBasicBlockAsValue(m_ref));
+    if (!ty)
+      throw LLVMAssertionError("BasicBlock has no type context");
+    LLVMContextRef ctx_ref = LLVMGetTypeContext(ty);
+    if (!ctx_ref)
+      throw LLVMAssertionError("BasicBlock has no type context");
+    return LLVMTypeFactoryWrapper(ctx_ref, m_context_token);
+  }
+
   // Create a builder positioned at the end of this basic block, or before the
   // first non-PHI instruction when requested.
   LLVMBuilderManager *create_builder(bool first_non_phi = false) const;
@@ -4105,6 +4137,12 @@ struct LLVMFunctionWrapper : LLVMValueWrapper {
 
   // Get the context this function belongs to (derived via module)
   LLVMContextWrapper *context() const;
+
+  LLVMTypeFactoryWrapper types() const { return LLVMValueWrapper::types(); }
+
+  // Create a builder positioned at the end of this function's entry block.
+  // If the function has no blocks yet, create an entry block first.
+  LLVMBuilderManager *create_builder(bool first_non_phi = false) const;
 
   // =========================================================================
   // Function verification (Analysis.h)
@@ -5303,14 +5341,14 @@ struct LLVMBuilderWrapper : NoMoveCopy {
                             m_context_token);
   }
 
-  LLVMValueWrapper build_array_alloca(const LLVMTypeWrapper &ty,
-                                      const LLVMValueWrapper &size,
-                                      const std::string &name = "") {
+  LLVMValueWrapper build_alloca(const LLVMTypeWrapper &ty,
+                                const LLVMValueWrapper &count,
+                                const std::string &name = "") {
     check_valid();
     ty.check_valid();
-    size.check_valid();
+    count.check_valid();
     return LLVMValueWrapper(
-        LLVMBuildArrayAlloca(m_ref, ty.m_ref, size.m_ref, name.c_str()),
+        LLVMBuildArrayAlloca(m_ref, ty.m_ref, count.m_ref, name.c_str()),
         m_context_token);
   }
 
@@ -6854,6 +6892,11 @@ struct LLVMModuleWrapper : NoMoveCopy {
   LLVMNamedMetadataMapWrapper named_metadata() const;
   LLVMModuleFlagsWrapper module_flags() const;
 
+  LLVMTypeFactoryWrapper types() const {
+    check_valid();
+    return LLVMTypeFactoryWrapper(m_ctx_ref, m_context_token);
+  }
+
   // =========================================================================
   // Module API Refactor: Methods moved from global functions
   // =========================================================================
@@ -7562,6 +7605,25 @@ LLVMBuilderManager *LLVMBasicBlockWrapper::create_builder(
     manager->m_initial_bb = m_ref;
   }
   return manager;
+}
+
+LLVMBuilderManager *LLVMFunctionWrapper::create_builder(
+    bool first_non_phi) const {
+  check_valid();
+  LLVMModuleRef mod_ref = LLVMGetGlobalParent(m_ref);
+  if (!mod_ref)
+    throw LLVMAssertionError("create_builder requires a function in a module");
+
+  LLVMBasicBlockRef entry = nullptr;
+  if (LLVMCountBasicBlocks(m_ref) == 0) {
+    LLVMContextRef ctx_ref = LLVMGetModuleContext(mod_ref);
+    entry = LLVMAppendBasicBlockInContext(ctx_ref, m_ref, "entry");
+  } else {
+    entry = LLVMGetEntryBasicBlock(m_ref);
+  }
+
+  LLVMBasicBlockWrapper entry_wrapper(entry, m_context_token);
+  return entry_wrapper.create_builder(first_non_phi);
 }
 
 LLVMBuilderManager *LLVMValueWrapper::create_builder(bool before_dbg) const {
@@ -14150,6 +14212,10 @@ Alias for `.block`.
 
 <sub>C API: LLVMGetTypeContext</sub>)",
                    nb::rv_policy::take_ownership)
+      .def_prop_ro("types", &LLVMValueWrapper::types,
+                   R"(Type factory for this value's context.
+
+<sub>C API: LLVMTypeOf, LLVMGetTypeContext</sub>)")
       // BasicBlock properties
       .def_prop_ro("normal_dest", &LLVMValueWrapper::get_normal_dest,
                    R"(Get normal destination.
@@ -14425,6 +14491,10 @@ Returns None when the block has no non-PHI instruction.)")
 
 <sub>C API: LLVMGetTypeContext</sub>)",
                    nb::rv_policy::take_ownership)
+      .def_prop_ro("types", &LLVMBasicBlockWrapper::types,
+                   R"(Type factory for this basic block's context.
+
+<sub>C API: LLVMBasicBlockAsValue, LLVMTypeOf, LLVMGetTypeContext</sub>)")
       .def_prop_ro("successors", &LLVMBasicBlockWrapper::successors,
                    R"(Successor blocks.
 
@@ -14653,6 +14723,24 @@ Valid when:
 
 <sub>C API: LLVMGetTypeContext</sub>)",
                    nb::rv_policy::take_ownership)
+      .def_prop_ro("types", &LLVMFunctionWrapper::types,
+                   R"(Type factory for this function's context.
+
+<sub>C API: LLVMTypeOf, LLVMGetTypeContext</sub>)")
+      .def("create_builder", &LLVMFunctionWrapper::create_builder,
+           nb::kw_only(), "first_non_phi"_a = false,
+           nb::rv_policy::take_ownership,
+           R"(Create a Builder in this function's entry block.
+
+If this function has no basic blocks yet, creates an entry block first.
+
+With `first_non_phi=True`, positions before the first non-PHI instruction in
+the entry block. If the entry block has no non-PHI instruction, the builder is
+positioned at the end of the block.
+
+Returns a BuilderManager for use with Python's 'with' statement.
+
+<sub>C API: LLVMAppendBasicBlockInContext, LLVMCreateBuilderInContext</sub>)")
       // Verification
       .def("verify", &LLVMFunctionWrapper::verify,
            R"(Verify function.
@@ -14929,12 +15017,18 @@ Use with a with-statement:
 
 <sub>C API: LLVMBuildBinOp</sub>)")
       // Memory
-      .def("alloca", &LLVMBuilderWrapper::build_alloca, "ty"_a, "name"_a = "",
-           R"(Build alloca.
+      .def("alloca",
+           nb::overload_cast<const LLVMTypeWrapper &, const std::string &>(
+               &LLVMBuilderWrapper::build_alloca),
+           "ty"_a, "name"_a = "",
+           R"(Build scalar alloca.
 
 <sub>C API: LLVMBuildAlloca</sub>)")
-      .def("array_alloca", &LLVMBuilderWrapper::build_array_alloca, "ty"_a,
-           "size"_a, "name"_a = "",
+      .def("alloca",
+           nb::overload_cast<const LLVMTypeWrapper &, const LLVMValueWrapper &,
+                             const std::string &>(
+               &LLVMBuilderWrapper::build_alloca),
+           "ty"_a, "count"_a, "name"_a = "",
            R"(Build array alloca.
 
 <sub>C API: LLVMBuildArrayAlloca</sub>)")
@@ -15770,6 +15864,10 @@ Example:
                    R"(Get the context for this module.
 
 <sub>C API: LLVMGetModuleContext</sub>)")
+      .def_prop_ro("types", &LLVMModuleWrapper::types,
+                   R"(Type factory for this module's context.
+
+<sub>C API: LLVMGetModuleContext</sub>)")
       .def_prop_rw("is_new_dbg_info_format",
                    &LLVMModuleWrapper::is_new_dbg_info_format,
                    &LLVMModuleWrapper::set_is_new_dbg_info_format,
@@ -15863,6 +15961,14 @@ Returns a BuilderManager for use with Python's 'with' statement.
 
   // TypeFactory wrapper (property-based type namespace)
   nb::class_<LLVMTypeFactoryWrapper>(m, "TypeFactory")
+      .def("__eq__", &LLVMTypeFactoryWrapper::operator==, "other"_a,
+           R"(Return True when both type factories use the same LLVM context.
+
+<sub>C API limitation: compares stored LLVMContextRef pointers</sub>)")
+      .def("__ne__", &LLVMTypeFactoryWrapper::operator!=, "other"_a,
+           R"(Return True when type factories use different LLVM contexts.
+
+<sub>C API limitation: compares stored LLVMContextRef pointers</sub>)")
       // Fixed-width integer types
       .def_prop_ro("i1", &LLVMTypeFactoryWrapper::i1,
                    R"(1-bit int.

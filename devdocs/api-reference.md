@@ -265,6 +265,12 @@ This section captures guard preconditions for wrapper classes other than
   - `set_body` requires identified opaque struct type (not literal, not already
     non-opaque).
 
+### Type factory aliases
+
+- `types` is available on `Context`, `Module`, `Function`, `BasicBlock`, and `Value`.
+- All aliases for objects in the same context compare equal:
+  `ctx.types == mod.types == fn.types == bb.types == value.types`.
+
 ### BasicBlock (`llvm.BasicBlock`)
 
 - `terminator` requires the block to have a terminator.
@@ -295,6 +301,8 @@ This section captures guard preconditions for wrapper classes other than
   - `param_attributes(i)` for parameter attributes, using a 0-based Python index.
   - Use `llvm.Attribute.enum/type/string(...)` or `slot.add("noreturn")`.
   - Use `llvm.Attribute.memory(ctx, "none")` or `slot.add_memory("read")` for `memory(...)` effects without raw encoded integers.
+- `create_builder()` positions in the function entry block and creates an
+  `entry` block when the function has no blocks yet.
 - `block_address` requires block ownership by that function.
   Prefer `bb.block_address()` when the function can be inferred.
 - Parent navigation:
@@ -308,6 +316,9 @@ This section captures guard preconditions for wrapper classes other than
 - Positioning:
   - `position_before(inst)` requires an instruction attached to a block.
   - `position_at(bb, inst)` requires `inst` to be an instruction in `bb`.
+- Memory allocation:
+  - `alloca(ty, name="")` creates a scalar alloca.
+  - `alloca(ty, count, name="")` creates an array alloca.
 - Instruction-only insertion helpers:
   - `insert_into_builder_with_name(instr)` requires instruction value.
   - `add_metadata_to_inst(instr)` requires instruction value.
