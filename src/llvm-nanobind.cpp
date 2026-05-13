@@ -9074,7 +9074,12 @@ struct LLVMCtypesFunctionWrapper : NoMoveCopy {
     return nb::steal<nb::object>(result);
   }
 
-  nb::object ctypes_callable() const { return m_func; }
+  const LLVMCtypesFunctionWrapper &ctypes_callable() const {
+    if (!m_jit_token || !m_jit_token->is_valid()) {
+      throw LLVMMemoryError("JIT function called after JIT was disposed");
+    }
+    return *this;
+  }
 };
 
 static uint64_t python_address_from_object(const nb::object &value) {
@@ -16986,7 +16991,11 @@ Returns:
 
 Valid while the owning JIT has not been disposed.)")
       .def_prop_ro("ctypes_callable", &LLVMCtypesFunctionWrapper::ctypes_callable,
-                   R"(The underlying ctypes callable.)");
+                   nb::rv_policy::reference_internal,
+                   R"(A guarded callable for the JIT symbol.
+
+This returns the wrapper itself instead of the raw ctypes object so calls still
+check that the owning JIT has not been disposed.)");
 
   nb::class_<LLVMJITWrapper>(m, "JIT", R"(In-process LLVM JIT using LLVM-C ORC LLJIT.)")
       .def_static("host", &LLVMJITWrapper::host, nb::rv_policy::take_ownership,

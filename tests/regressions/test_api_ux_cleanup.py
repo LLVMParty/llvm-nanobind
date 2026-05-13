@@ -328,6 +328,39 @@ def test_jit_ctypes_function_keeps_jit_alive():
     assert add_i32(4, 6) == 10
 
 
+def test_jit_ctypes_callable_property_is_guarded_after_dispose():
+    jit = _host_jit_or_skip()
+    if jit is None:
+        return
+
+    with llvm.create_context() as ctx:
+        with ctx.create_module("jit_guarded_ctypes_callable") as mod:
+            i32 = ctx.types.i32
+            fn = mod.add_function(
+                "add_i32_guarded", ctx.types.function(i32, [i32, i32])
+            )
+            a = fn.get_param(0)
+            b = fn.get_param(1)
+            entry = fn.append_basic_block("entry")
+            with entry.create_builder() as builder:
+                builder.ret(builder.add(a, b, "sum"))
+
+            jit.add_module(mod)
+            add_i32 = jit.ctypes_function(
+                "add_i32_guarded", ctypes.c_int32, [ctypes.c_int32, ctypes.c_int32]
+            )
+            guarded = add_i32.ctypes_callable
+            assert guarded(7, 8) == 15
+
+    jit.dispose()
+    try:
+        guarded(1, 2)
+    except llvm.LLVMMemoryError as exc:
+        assert "JIT function called after JIT was disposed" in str(exc)
+    else:
+        raise AssertionError("expected guarded ctypes callable to reject disposed JIT")
+
+
 def test_jit_callback_symbol():
     jit = _host_jit_or_skip()
     if jit is None:
@@ -392,6 +425,9 @@ if __name__ == "__main__":
 
     test_jit_ctypes_function_keeps_jit_alive()
     print("test_jit_ctypes_function_keeps_jit_alive: PASSED")
+
+    test_jit_ctypes_callable_property_is_guarded_after_dispose()
+    print("test_jit_ctypes_callable_property_is_guarded_after_dispose: PASSED")
 
     test_jit_callback_symbol()
     print("test_jit_callback_symbol: PASSED")
