@@ -86,7 +86,7 @@ For development documentation, see `devdocs/README.md`.
 - The API is not stable yet; method names and ownership rules may still change.
 - Scope follows the LLVM-C API, not the full LLVM C++ API. A high-level JIT/ExecutionEngine API is not currently exposed.
 - Docs are currently the README, examples, `devdocs/`, and the generated `.pyi` stub; there is no hosted API reference yet.
-- Prebuilt wheels currently target CPython 3.12+ stable ABI on Linux x86_64/aarch64, macOS arm64, and Windows x86_64. Other platforms require a source build.
+- Prebuilt wheels currently target CPython 3.12+ stable ABI on Linux x86_64/aarch64, macOS arm64/x86_64, and Windows x86_64. Other platforms require a source build.
 
 ## Development
 
@@ -101,6 +101,7 @@ From a checkout, download the matching LLVM archive and then run `uv sync`:
 #   llvm-21.1.6-linux-x86_64.zip
 #   llvm-21.1.6-linux-aarch64.zip
 #   llvm-21.1.6-macos-arm64.zip
+#   llvm-21.1.6-macos-x86_64.zip
 #   llvm-21.1.6-windows-x86_64.zip
 python tools/ci/install_llvm.py \
   --version 21.1.6 \

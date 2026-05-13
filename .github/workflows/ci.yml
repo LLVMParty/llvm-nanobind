@@ -73,6 +73,11 @@ jobs:
             cibw-platform: macos
             cibw-archs: arm64
             llvm-archive: llvm-21.1.6-macos-arm64.zip
+          - name: macos-x86_64
+            os: macos-15-intel
+            cibw-platform: macos
+            cibw-archs: x86_64
+            llvm-archive: llvm-21.1.6-macos-x86_64.zip
           - name: windows-x86_64
             os: windows-latest
             cibw-platform: windows
