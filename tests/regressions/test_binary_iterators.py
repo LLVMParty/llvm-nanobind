@@ -29,6 +29,22 @@ def _manual_symbol_names(binary: llvm.Binary) -> list[str]:
     return names
 
 
+def _assert_exhausted_next_is_stable(iterator) -> None:
+    while True:
+        try:
+            next(iterator)
+        except StopIteration:
+            break
+
+    for _ in range(2):
+        try:
+            next(iterator)
+        except StopIteration:
+            pass
+        else:
+            raise AssertionError("expected exhausted iterator to stay exhausted")
+
+
 def test_binary_iterators_match_manual_iteration():
     obj = Path("llvm-c/llvm-c-test/inputs/simple.o")
     if not obj.exists():
@@ -52,6 +68,23 @@ def test_binary_iterators_match_manual_iteration():
         )
 
 
+def test_binary_iterators_stay_stopped_after_exhaustion():
+    obj = Path("llvm-c/llvm-c-test/inputs/simple.o")
+    if not obj.exists():
+        print(f"SKIP: object file not found: {obj.resolve()}")
+        return
+
+    with llvm.BinaryManager.from_file(obj) as binary:
+        _assert_exhausted_next_is_stable(iter(binary.sections))
+        _assert_exhausted_next_is_stable(iter(binary.symbols))
+
+        sections = binary.sections
+        if not sections.is_at_end():
+            _assert_exhausted_next_is_stable(iter(sections.relocations))
+
+
 if __name__ == "__main__":
     test_binary_iterators_match_manual_iteration()
     print("test_binary_iterators_match_manual_iteration: PASSED")
+    test_binary_iterators_stay_stopped_after_exhaustion()
+    print("test_binary_iterators_stay_stopped_after_exhaustion: PASSED")

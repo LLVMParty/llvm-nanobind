@@ -108,6 +108,52 @@ def test_md_string_value_round_trips_to_python_string():
             raise AssertionError("expected Metadata.value to be unimplemented")
 
 
+def test_metadata_attachment_rejects_cross_context_metadata():
+    with llvm.create_context() as ctx1:
+        with llvm.create_context() as ctx2:
+            with ctx1.create_module("metadata_context_mismatch") as mod:
+                i32 = ctx1.types.i32
+                fn = mod.add_function("f", ctx1.types.function(i32, [i32]))
+                entry = fn.append_basic_block("entry")
+
+                with entry.create_builder() as builder:
+                    inst = builder.add(fn.get_param(0), i32.constant(1), "sum")
+                    foreign = ctx2.md_node([ctx2.md_string("foreign")])
+
+                    try:
+                        inst.metadata["example.foreign"] = foreign
+                    except llvm.LLVMAssertionError as exc:
+                        assert "same context" in str(exc)
+                    else:
+                        raise AssertionError("expected cross-context metadata error")
+
+                    builder.ret(inst)
+
+                assert "example.foreign" not in str(mod)
+                assert mod.verify(), mod.verification_error
+
+
+def test_metadata_map_rejects_use_after_module_disposed():
+    ctx_mgr = llvm.create_context()
+    ctx = ctx_mgr.__enter__()
+    try:
+        mod_mgr = ctx.create_module("metadata_map_lifetime")
+        mod = mod_mgr.__enter__()
+        fn = mod.add_function("f", ctx.types.function(ctx.types.void, []))
+        metadata_view = fn.metadata
+
+        mod_mgr.__exit__(None, None, None)
+
+        try:
+            metadata_view.get("example.kind")
+        except llvm.LLVMMemoryError as exc:
+            assert "module was disposed" in str(exc)
+        else:
+            raise AssertionError("expected disposed-module metadata view error")
+    finally:
+        ctx_mgr.__exit__(None, None, None)
+
+
 def test_metadata_copy_to_replaces_raw_kind_id_copying():
     with llvm.create_context() as ctx:
         with ctx.create_module("metadata_copy") as mod:
@@ -279,6 +325,12 @@ if __name__ == "__main__":
 
     test_md_string_value_round_trips_to_python_string()
     print("test_md_string_value_round_trips_to_python_string: PASSED")
+
+    test_metadata_attachment_rejects_cross_context_metadata()
+    print("test_metadata_attachment_rejects_cross_context_metadata: PASSED")
+
+    test_metadata_map_rejects_use_after_module_disposed()
+    print("test_metadata_map_rejects_use_after_module_disposed: PASSED")
 
     test_metadata_copy_to_replaces_raw_kind_id_copying()
     print("test_metadata_copy_to_replaces_raw_kind_id_copying: PASSED")
