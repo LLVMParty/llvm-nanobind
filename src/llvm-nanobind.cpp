@@ -16679,7 +16679,10 @@ Valid when:
                                                      self.m_binary_token);
           },
           nb::rv_policy::take_ownership,
+          nb::keep_alive<0, 1>(),
           R"(Relocation iterator.
+
+The returned relocation iterator keeps this section iterator alive.
 
 Valid when:
   - parent binary is still valid (not disposed)
