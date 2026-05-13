@@ -294,6 +294,7 @@ This section captures guard preconditions for wrapper classes other than
   - `return_attributes` for return-value attributes.
   - `param_attributes(i)` for parameter attributes, using a 0-based Python index.
   - Use `llvm.Attribute.enum/type/string(...)` or `slot.add("noreturn")`.
+  - Use `llvm.Attribute.memory(ctx, "none")` or `slot.add_memory("read")` for `memory(...)` effects without raw encoded integers.
 - `block_address` requires block ownership by that function.
   Prefer `bb.block_address()` when the function can be inferred.
 - Parent navigation:

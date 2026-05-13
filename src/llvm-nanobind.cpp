@@ -149,6 +149,141 @@ static unsigned require_enum_attribute_kind(const std::string &name) {
   return kind_id;
 }
 
+static std::string trim_copy(const std::string &text) {
+  size_t start = 0;
+  while (start < text.size() &&
+         std::isspace(static_cast<unsigned char>(text[start])))
+    ++start;
+  size_t end = text.size();
+  while (end > start && std::isspace(static_cast<unsigned char>(text[end - 1])))
+    --end;
+  return text.substr(start, end - start);
+}
+
+static std::string lower_copy(std::string text) {
+  for (char &c : text)
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  return text;
+}
+
+static std::string normalize_memory_keyword(const std::string &text) {
+  std::string result;
+  for (char c : trim_copy(text)) {
+    unsigned char uc = static_cast<unsigned char>(c);
+    if (std::isspace(uc) || c == '_' || c == '-')
+      continue;
+    result.push_back(static_cast<char>(std::tolower(uc)));
+  }
+  return result;
+}
+
+static uint64_t memory_access_bits(const std::string &access) {
+  std::string key = normalize_memory_keyword(access);
+  if (key == "none" || key == "nomodref" || key == "noaccess")
+    return 0;
+  if (key == "read" || key == "ref" || key == "readonly")
+    return 1;
+  if (key == "write" || key == "mod" || key == "writeonly")
+    return 2;
+  if (key == "readwrite" || key == "modref")
+    return 3;
+  throw LLVMAssertionError("Unknown memory access effect: " + access);
+}
+
+static bool memory_effects_has_errno_mem() {
+  unsigned major = 0;
+  LLVMGetVersion(&major, nullptr, nullptr);
+  return major >= 21;
+}
+
+static uint64_t encode_all_memory_locations(uint64_t access) {
+  uint64_t encoded = access | (access << 2);
+  if (memory_effects_has_errno_mem()) {
+    // LLVM 21 added ErrnoMem between InaccessibleMem and Other.
+    encoded |= (access << 4) | (access << 6);
+  } else {
+    encoded |= access << 4;
+  }
+  return encoded;
+}
+
+struct EncodedMemoryLocationEffect {
+  uint64_t encoded = 0;
+  unsigned seen_bit = 0;
+};
+
+static EncodedMemoryLocationEffect
+encode_memory_location_effect(const std::string &location, uint64_t access) {
+  std::string key = normalize_memory_keyword(location);
+  if (key == "argmem" || key == "arg" || key == "argument" ||
+      key == "argumentmem") {
+    return {access, 1u << 0};
+  }
+  if (key == "inaccessiblemem" || key == "inaccessible") {
+    return {access << 2, 1u << 1};
+  }
+  if (key == "errnomem" || key == "errno") {
+    if (!memory_effects_has_errno_mem()) {
+      throw LLVMAssertionError(
+          "memory effect location 'errnomem' requires LLVM 21+");
+    }
+    return {access << 4, 1u << 2};
+  }
+  if (key == "other") {
+    if (memory_effects_has_errno_mem())
+      return {access << 6, 1u << 3};
+    return {access << 4, 1u << 2};
+  }
+  throw LLVMAssertionError("Unknown memory effect location: " + location);
+}
+
+static uint64_t encode_memory_effects(const std::string &effects) {
+  std::string spec = trim_copy(effects);
+  if (spec.empty())
+    throw LLVMAssertionError("memory effects cannot be empty");
+
+  std::string lowered = lower_copy(spec);
+  if (lowered.size() >= 8 && lowered.compare(0, 7, "memory(") == 0 &&
+      spec.back() == ')') {
+    spec = trim_copy(spec.substr(7, spec.size() - 8));
+  }
+
+  if (spec.find(':') == std::string::npos) {
+    return encode_all_memory_locations(memory_access_bits(spec));
+  }
+
+  uint64_t encoded = 0;
+  unsigned seen_locations = 0;
+  size_t pos = 0;
+  while (pos <= spec.size()) {
+    size_t comma = spec.find(',', pos);
+    std::string part = trim_copy(spec.substr(
+        pos, comma == std::string::npos ? std::string::npos : comma - pos));
+    if (part.empty())
+      throw LLVMAssertionError("empty memory effect component in: " + effects);
+
+    size_t colon = part.find(':');
+    if (colon == std::string::npos) {
+      throw LLVMAssertionError(
+          "memory location effects must use 'location: access': " + part);
+    }
+
+    std::string location = trim_copy(part.substr(0, colon));
+    std::string access_name = trim_copy(part.substr(colon + 1));
+    EncodedMemoryLocationEffect effect =
+        encode_memory_location_effect(location, memory_access_bits(access_name));
+    if (seen_locations & effect.seen_bit)
+      throw LLVMAssertionError("duplicate memory effect location: " + location);
+    seen_locations |= effect.seen_bit;
+    encoded |= effect.encoded;
+
+    if (comma == std::string::npos)
+      break;
+    pos = comma + 1;
+  }
+  return encoded;
+}
+
 // =============================================================================
 // Diagnostic Information
 // =============================================================================
@@ -4283,6 +4418,10 @@ struct LLVMAttributeAccessorWrapper {
     LLVMAttributeRef attr = LLVMCreateEnumAttribute(ctx, kind_id, value);
     LLVMAttributeWrapper wrapped(attr, m_context_token);
     add(wrapped);
+  }
+
+  void add_memory(const std::string &effects = "none") {
+    add("memory", encode_memory_effects(effects));
   }
 
   void add_type(const std::string &name, const LLVMTypeWrapper &type) {
@@ -15219,6 +15358,25 @@ Examples:
 
 <sub>C API: LLVMCreateEnumAttribute</sub>)")
       .def_static(
+          "memory",
+          [](LLVMContextWrapper &ctx, const std::string &effects) {
+            return ctx.create_enum_attribute("memory",
+                                             encode_memory_effects(effects));
+          },
+          "context"_a, "effects"_a = "none",
+          R"(Create a memory(...) enum attribute.
+
+The effects string accepts "none", "read", "write", "readwrite", or
+location-specific entries such as "argmem: read". LLVM-version-specific memory
+locations such as errnomem are encoded when supported by the linked LLVM.
+
+Examples:
+    Attribute.memory(ctx, "none")
+    Attribute.memory(ctx, "read")
+    Attribute.memory(ctx, "argmem: read")
+
+<sub>C API: LLVMCreateEnumAttribute</sub>)")
+      .def_static(
           "type",
           [](LLVMContextWrapper &ctx, const std::string &name,
              const LLVMTypeWrapper &type) {
@@ -15314,6 +15472,20 @@ Examples:
     attrs.add("align", 16)
 
 <sub>C API: LLVMAddAttributeAtIndex / LLVMAddCallSiteAttribute</sub>)")
+      .def("add_memory", &LLVMAttributeAccessorWrapper::add_memory,
+           "effects"_a = "none",
+           R"(Add a memory(...) enum attribute.
+
+The effects string accepts "none", "read", "write", "readwrite", or
+location-specific entries such as "argmem: read". LLVM-version-specific memory
+locations such as errnomem are encoded when supported by the linked LLVM.
+
+Examples:
+    attrs.add_memory("none")
+    attrs.add_memory("read")
+    attrs.add_memory("argmem: read")
+
+<sub>C API: LLVMCreateEnumAttribute, LLVMAddAttributeAtIndex / LLVMAddCallSiteAttribute</sub>)")
       .def("add_type", &LLVMAttributeAccessorWrapper::add_type, "name"_a,
            "type"_a,
            R"(Add a type attribute by name.)")
