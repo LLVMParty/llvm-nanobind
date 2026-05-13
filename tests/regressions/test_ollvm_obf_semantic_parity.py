@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -495,17 +496,75 @@ def clang_target_triple(clang_exe: Path) -> str:
     return proc.stdout.strip().lower()
 
 
+@lru_cache(maxsize=1)
+def macos_sdk_flags() -> tuple[str, ...]:
+    if sys.platform != "darwin":
+        return ()
+
+    try:
+        proc = subprocess.run(
+            ["xcrun", "--show-sdk-path"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError:
+        return ()
+
+    sdk_path = proc.stdout.strip()
+    if proc.returncode != 0 or not sdk_path:
+        return ()
+
+    flags = ["-isysroot", sdk_path]
+    if deployment_target := os.environ.get("MACOSX_DEPLOYMENT_TARGET"):
+        flags.append(f"-mmacosx-version-min={deployment_target}")
+    return tuple(flags)
+
+
+def clang_can_compile_and_run(clang_exe: Path, tmp_path: Path) -> tuple[bool, str]:
+    source_path = tmp_path / "smoke.c"
+    exe_path = tmp_path / "smoke.exe"
+    source_path.write_text(
+        '#include <stdio.h>\nint main(void) { printf("ok\\n"); return 0; }\n',
+        encoding="utf-8",
+    )
+
+    build = subprocess.run(
+        [str(clang_exe), *macos_sdk_flags(), str(source_path), "-o", str(exe_path)],
+        capture_output=True,
+        text=True,
+    )
+    if build.returncode != 0:
+        return False, build.stderr or build.stdout
+
+    run = subprocess.run([str(exe_path)], capture_output=True, text=True)
+    if run.returncode != 0:
+        return False, run.stderr or run.stdout
+
+    return run.stdout == "ok\n", run.stderr or run.stdout
+
+
 @pytest.fixture(scope="module")
-def clang_exe() -> Path:
+def clang_exe(tmp_path_factory: pytest.TempPathFactory) -> Path:
     clang = find_clang()
     if clang is None:
         pytest.skip("clang not found in PATH; semantic parity tests require an external compiler")
+    assert clang is not None
 
     target = clang_target_triple(clang)
     if sys.platform == "darwin" and not is_x86_target(target):
         pytest.skip(
             "semantic parity tests execute generated native code and are currently "
             f"skipped on non-x86 macOS targets (got {target or 'unknown'})"
+        )
+
+    can_compile, reason = clang_can_compile_and_run(
+        clang, tmp_path_factory.mktemp("clang-smoke")
+    )
+    if not can_compile:
+        pytest.skip(
+            "semantic parity tests require a clang that can compile and run native code: "
+            f"{reason.strip() or 'unknown error'}"
         )
 
     return clang
@@ -528,6 +587,7 @@ def compile_and_run(
             str(clang_exe),
             "-O0",
             "-Wno-override-module",
+            *macos_sdk_flags(),
             *extra_flags,
             str(ir_path),
             str(driver_path),
