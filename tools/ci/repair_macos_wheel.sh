@@ -5,10 +5,12 @@
 # Usage as CIBW_REPAIR_WHEEL_COMMAND_MACOS:
 #   bash tools/ci/repair_macos_wheel.sh {wheel} {dest_dir} {delocate_archs}
 #
-# The script first runs delocate-wheel, then renames vendored dylibs from e.g.
-# libLLVM.dylib to libLLVM-<sha256-prefix>.dylib and patches Mach-O load
-# commands. This prevents DYLD_LIBRARY_PATH from shadowing a bundled dylib with
-# a same-named system/Homebrew dylib.
+# The script first runs delocate-wheel, then renames vendored dylibs to include
+# a content hash and patches Mach-O load commands. The replacement basename is
+# kept no longer than the original because install_name_tool cannot grow load
+# commands unless the binary was linked with enough header padding. This still
+# prevents DYLD_LIBRARY_PATH from shadowing a bundled dylib with a same-named
+# system/Homebrew dylib.
 
 set -euo pipefail
 
@@ -47,11 +49,19 @@ delocate_args+=("$WHEEL")
 echo "+ delocate-wheel ${delocate_args[*]}"
 delocate-wheel "${delocate_args[@]}"
 
-REPAIRED_WHEEL="$DEST_DIR/$(basename "$WHEEL")"
-if [[ ! -f "$REPAIRED_WHEEL" ]]; then
-  echo "delocate did not create expected wheel: $REPAIRED_WHEEL" >&2
+REPAIRED_WHEELS=()
+while IFS= read -r -d '' repaired_wheel; do
+  REPAIRED_WHEELS+=("$repaired_wheel")
+done < <(find "$DEST_DIR" -maxdepth 1 -type f -name '*.whl' -print0)
+
+if [[ ${#REPAIRED_WHEELS[@]} -ne 1 ]]; then
+  echo "expected delocate to create exactly one wheel in $DEST_DIR, found ${#REPAIRED_WHEELS[@]}" >&2
+  ls -la "$DEST_DIR" >&2 || true
   exit 1
 fi
+
+REPAIRED_WHEEL="${REPAIRED_WHEELS[0]}"
+echo "Delocated wheel: $REPAIRED_WHEEL"
 
 # Step 2: unpack the repaired wheel.
 WORK="$(mktemp -d)"
@@ -71,6 +81,33 @@ fi
 
 OLD_BASENAMES=()
 NEW_BASENAMES=()
+
+make_hashed_basename() {
+  local old_basename="$1"
+  local full_hash="$2"
+  local suffix=".dylib"
+  local stem="${old_basename%$suffix}"
+  local stem_len=${#stem}
+  local hash_chars="$HASH_LEN"
+
+  # Keep at least one original stem character when the name is long enough,
+  # while never exceeding the original basename length.
+  if [[ "$stem_len" -gt 1 && "$hash_chars" -ge "$stem_len" ]]; then
+    hash_chars=$((stem_len - 1))
+  elif [[ "$hash_chars" -gt "$stem_len" ]]; then
+    hash_chars="$stem_len"
+  fi
+
+  if [[ "$hash_chars" -lt 1 ]]; then
+    hash_chars=1
+  fi
+
+  local prefix_chars=$((stem_len - hash_chars))
+  local prefix="${stem:0:$prefix_chars}"
+  local hash_prefix="${full_hash:0:$hash_chars}"
+
+  printf '%s%s%s' "$prefix" "$hash_prefix" "$suffix"
+}
 
 add_rename_mapping() {
   local old_name="$1"
@@ -105,9 +142,8 @@ collect_macho_files() {
 for dylib_dir in "${DYLIB_DIRS[@]}"; do
   while IFS= read -r -d '' dylib; do
     old_basename="$(basename "$dylib")"
-    stem="${old_basename%.dylib}"
-    hash="$(shasum -a 256 "$dylib" | awk -v n="$HASH_LEN" '{ print substr($1, 1, n) }')"
-    new_basename="${stem}-${hash}.dylib"
+    hash="$(shasum -a 256 "$dylib" | awk '{ print $1 }')"
+    new_basename="$(make_hashed_basename "$old_basename" "$hash")"
     new_path="$dylib_dir/$new_basename"
 
     if [[ "$old_basename" == "$new_basename" ]]; then
