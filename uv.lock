@@ -114,7 +114,7 @@ wheels = [
 
 [[package]]
 name = "llvm-nanobind"
-version = "21.1.6.2"
+version = "21.1.6.3"
 source = { editable = "." }
 
 [package.dev-dependencies]
