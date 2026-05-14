@@ -134,8 +134,9 @@ jobs:
           CIBW_REPAIR_WHEEL_COMMAND_LINUX: >-
             auditwheel repair --plat ${{ matrix.auditwheel-plat }} -w {dest_dir} {wheel}
 
-          # macOS builds run directly on the hosted runner. delocate is invoked
-          # by cibuildwheel to copy dependent dylibs into the wheel.
+          # macOS builds run directly on the hosted runner. The repair wrapper
+          # runs delocate, then hash-mangles vendored dylib basenames so
+          # DYLD_LIBRARY_PATH cannot shadow bundled LLVM with Homebrew LLVM.
           CIBW_ENVIRONMENT_MACOS: >-
             CMAKE_PREFIX_PATH="${{ github.workspace }}/.llvm"
             CMAKE_OSX_DEPLOYMENT_TARGET="13.0"
@@ -146,6 +147,11 @@ jobs:
             --archive "${{ matrix.llvm-archive }}"
             --dest "${{ github.workspace }}/.llvm"
             --prefix-file "${{ github.workspace }}/.llvm-prefix"
+          CIBW_REPAIR_WHEEL_COMMAND_MACOS: >-
+            bash "${{ github.workspace }}/tools/ci/repair_macos_wheel.sh"
+            "{wheel}"
+            "{dest_dir}"
+            "{delocate_archs}"
 
           # Windows wheels are built on the hosted runner. The CMake install
           # step copies LLVM-C.dll next to llvm/__init__.pyd.
